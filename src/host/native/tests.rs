@@ -1,5 +1,5 @@
-//! The native host: what it reports, its directory, and (with the network, which CI has) a real file installed
-//! through it.
+//! The native host: what it reports, its directory, and (with the network, which CI has) a real file and a backend's
+//! library archive installed through it.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -102,6 +102,7 @@ fn it_installs_a_real_file_and_finds_it_installed_afterwards() {
         key: "preprocessor_config.json".to_owned(),
         url: PINNED.to_owned(),
         sha256: PINNED_SHA256.to_owned(),
+        archive_path: None,
     }];
     let sizes = std::sync::Mutex::new(Vec::new());
     let progress = |progress: crate::Progress| sizes.lock().unwrap().push(progress);
@@ -152,4 +153,91 @@ fn it_installs_a_real_file_and_finds_it_installed_afterwards() {
     }];
     let failed = block_on(Installer.install(&missing, &host, &|_| {}, &Cancel::new()));
     assert_eq!(failed.map_err(|error| error.code), Err("download-failed"));
+}
+
+#[test]
+fn its_directory_stores_a_tree_only_once_committed_and_finds_its_members() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let storage = host.storage();
+
+    let mut dropped = block_on(storage.create_tree("tree")).expect("tree");
+    block_on(dropped.file("lib/half.so")).expect("file");
+    drop(dropped);
+    assert_eq!(entries(&scratch.0.join("partial")), 0);
+    assert_eq!(block_on(storage.find("tree")), Ok(None));
+
+    let mut tree = block_on(storage.create_tree("tree")).expect("tree");
+    block_on(tree.directory("data/empty")).expect("directory");
+    block_on(tree.file("lib/libfake.so")).expect("file");
+    block_on(tree.write(b"a lib")).expect("written");
+    block_on(tree.write(b"rary")).expect("written");
+    let location = block_on(tree.commit()).expect("committed");
+    assert_eq!(Path::new(&location), scratch.0.join("files").join("tree"));
+
+    let library = block_on(storage.find_member("tree", "lib/libfake.so"))
+        .expect("found")
+        .expect("a member");
+    assert_eq!(std::fs::read(library).expect("stored"), b"a library");
+    let lib = block_on(storage.find_member("tree", "lib")).expect("found");
+    assert!(lib.is_some_and(|lib| Path::new(&lib).is_dir()));
+    assert!(block_on(storage.find_member("tree", "data/empty")).is_ok_and(|dir| dir.is_some()));
+    assert_eq!(
+        block_on(storage.find_member("tree", "lib/other.so")),
+        Ok(None)
+    );
+    let escape = block_on(storage.find_member("tree", "../tree")).map_err(|error| error.code);
+    assert_eq!(escape, Err("storage-name-invalid"));
+
+    block_on(storage.remove("tree")).expect("removed");
+    assert_eq!(block_on(storage.find("tree")), Ok(None));
+    assert_eq!(
+        block_on(storage.remove("tree")),
+        Ok(()),
+        "nothing to remove"
+    );
+}
+
+#[test]
+fn its_directory_reads_a_stored_file_back() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let storage = host.storage();
+    let mut file = block_on(storage.create("file")).expect("writer");
+    let bytes = vec![7; 200_000];
+    block_on(file.write(&bytes)).expect("written");
+    block_on(file.commit()).expect("committed");
+
+    let mut read = block_on(storage.read("file")).expect("reader");
+    assert_eq!(read.size(), Some(bytes.len() as u64));
+    let mut back = Vec::new();
+    while let Some(part) = block_on(read.chunk()).expect("read") {
+        back.extend(part);
+    }
+    assert_eq!(back, bytes);
+}
+
+#[test]
+#[ignore = "downloads sherpa-onnx's library for this platform (about 10 MB): CI runs it"]
+fn it_installs_a_backend_library_archive_and_hands_over_its_lib_directory() {
+    use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
+
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let platform = crate::host::Platform::of(&host.capabilities()).expect("a known platform");
+    let artifacts =
+        crate::backend::runtime_files("sherpa-onnx", platform).expect("sherpa-onnx runs here");
+    assert!(artifacts
+        .iter()
+        .all(|artifact| artifact.archive_path.is_some()));
+
+    let installed =
+        block_on(Installer.install(&artifacts, &host, &|_| {}, &Cancel::new())).expect("installed");
+    let lib = Path::new(installed.file("library").expect("by key"));
+    assert!(lib.is_dir(), "{}", lib.display());
+    let c_api = lib.join(format!("{DLL_PREFIX}sherpa-onnx-c-api{DLL_SUFFIX}"));
+    assert!(c_api.is_file(), "{}", c_api.display());
+    let archive = scratch.0.join("files").join(&artifacts[0].sha256);
+    assert!(!archive.exists(), "the archive is removed once unpacked");
+    assert_eq!(entries(&scratch.0.join("partial")), 0);
 }

@@ -9,13 +9,34 @@
 //! because a file is only stored once its bytes hash to its name. Files stay on disk when their models leave memory;
 //! removing them is a separate policy.
 //!
-//! Inside: `progress` (what the installer reports as it goes), `cancel` (how it is stopped) and `digest` (SHA-256).
+//! An artifact with an `archive_path` is a member of an archive: several keys may share one archive (the same `url`
+//! and `sha256`), each naming its own member. Each distinct archive is downloaded once, checked against its digest,
+//! and only then unpacked, once, into a tree stored as `<sha256>-unpacked`; the archive itself is then removed, unless
+//! an artifact also wants it whole. `Installed::file(key)` is then where that member is: a file or a directory.
+//!
+//! The codes it fails with, and the engine's English text for each:
+//!
+//! - `digest-invalid`: a file's digest is not a SHA-256 in lowercase hex.
+//! - `artifact-key-conflict`: two files of the build have the same name.
+//! - `archive-path-invalid`: a file's path inside its archive is not a plain relative path.
+//! - `digest-mismatch`: a downloaded file is not the one expected.
+//! - `archive-corrupt`: an archive could not be read.
+//! - `archive-entry-unsupported`: an archive holds something that is not a plain file or directory inside it.
+//! - `archive-too-large`: an archive unpacks to more than is allowed.
+//! - `archive-member-missing`: an archive does not hold a file the build needs.
+//! - `cancelled`: the install was cancelled.
+//! - the host's own: `download-failed` (a file could not be downloaded), `storage-failed` (a file could not be
+//!   stored).
+//!
+//! Inside: `progress` (what the installer reports as it goes), `cancel` (how it is stopped), `digest` (SHA-256) and
+//! `archive` (unpacking, safely).
 
 use std::collections::BTreeMap;
 
-use crate::host::Host;
+use crate::host::{Host, Storage};
 use crate::{Error, Result};
 
+mod archive;
 mod cancel;
 mod digest;
 mod progress;
@@ -26,27 +47,31 @@ pub use cancel::Cancel;
 use digest::Hasher;
 pub use progress::{Progress, ProgressSink};
 
-/// One file to download: where from, its digest, and the name `load` finds it by.
+/// One file to download, or one member of an archive to download: where from, its digest, and the name `load` finds
+/// it by.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Artifact {
     /// The name the backend's `load` finds it by: its key in the catalogue, or its `name` in `backends.json`. Not its
     /// name in [`Storage`](crate::Storage), which is its digest.
     pub key: String,
-    /// Where it is downloaded from.
+    /// Where it is downloaded from: the file, or the archive it is in.
     pub url: String,
-    /// Its SHA-256 digest: 64 lowercase hex digits.
+    /// The SHA-256 digest of what `url` serves (the file, or the whole archive): 64 lowercase hex digits.
     pub sha256: String,
+    /// `None` for a file. For a member of an archive (a tar, bzip2-compressed or not), its path inside it,
+    /// `/`-separated (`kokoro-int8-en-v0_19/model.int8.onnx`): a file or a directory.
+    pub archive_path: Option<String>,
 }
 
-/// A build whose files are in storage: each artifact's key, and where the host keeps it (a path, an OPFS name, ...).
-/// A backend file's key is its name in `backends.json`.
+/// A build whose files are in storage: each artifact's key, and where the host keeps it (a path, an OPFS name, ...):
+/// the file, or the member of the unpacked archive. A backend file's key is its name in `backends.json`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Installed {
     pub(crate) files: BTreeMap<String, String>,
 }
 
 impl Installed {
-    /// Where the host keeps the file whose key is `name`, if it is installed.
+    /// Where the host keeps the file or directory whose key is `name`, if it is installed.
     #[allow(dead_code, reason = "the stub backends load nothing yet")]
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)
@@ -57,17 +82,23 @@ impl Installed {
 #[derive(Debug)]
 pub(crate) struct Installer;
 
+/// One distinct digest the build needs: whole, unpacked, or both.
+struct Wanted<'a> {
+    sha256: &'a str,
+    url: &'a str,
+    whole: bool,
+    unpacked: bool,
+}
+
 impl Installer {
-    /// Downloads, checks and stores whatever of `artifacts` is not stored yet, one file at a time, telling `progress`
-    /// as it goes, and stops between two parts of a file once `cancel` is cancelled. Dropping the future stops it too;
-    /// either way, a file only half downloaded is never stored.
+    /// Downloads, checks and stores whatever of `artifacts` is not stored yet, one distinct file at a time, unpacking
+    /// archives once checked, telling `progress` as it goes, and stops between two parts of a file once `cancel` is
+    /// cancelled. Dropping the future stops it too; either way, nothing half downloaded or half unpacked is stored.
     ///
     /// # Errors
     ///
-    /// `digest-invalid` if an artifact's digest is not 64 lowercase hex digits, `artifact-key-conflict` if two
-    /// artifacts share a key with different digests (both checked before anything is downloaded), `digest-mismatch` if
-    /// a file's bytes do not match its digest, `cancelled`, and whatever the host's fetcher or storage fails with
-    /// (`download-failed`, `storage-failed`).
+    /// The codes listed above. `digest-invalid`, `artifact-key-conflict` and `archive-path-invalid` are found before
+    /// anything is downloaded.
     pub(crate) async fn install(
         &self,
         artifacts: &[Artifact],
@@ -75,54 +106,128 @@ impl Installer {
         progress: &dyn ProgressSink,
         cancel: &Cancel,
     ) -> Result<Installed> {
-        check(artifacts)?;
-        let mut installed = Installed::default();
+        let members = check(artifacts)?;
+        let wanted = wanted(artifacts);
+        let storage = host.storage();
         let mut report = Progress {
-            files: artifacts.len(),
+            files: wanted.len(),
             done: 0,
             received: 0,
             size: None,
         };
-        for artifact in artifacts {
+        for wanted in &wanted {
             cancel.check()?;
-            let location = match host.storage().find(&artifact.sha256).await? {
-                Some(location) => location,
-                None => download(artifact, host, progress, cancel, report).await?,
-            };
-            installed.files.insert(artifact.key.clone(), location);
+            if wanted.whole && storage.find(wanted.sha256).await?.is_none() {
+                download(wanted, host, progress, cancel, report).await?;
+            }
+            if wanted.unpacked && storage.find(&unpacked(wanted.sha256)).await?.is_none() {
+                if storage.find(wanted.sha256).await?.is_none() {
+                    download(wanted, host, progress, cancel, report).await?;
+                }
+                unpack(storage, wanted.sha256, cancel).await?;
+                if !wanted.whole {
+                    storage.remove(wanted.sha256).await?;
+                }
+            }
             report.done += 1;
             progress.progress(report);
+        }
+        let mut installed = Installed::default();
+        for (artifact, member) in artifacts.iter().zip(members) {
+            let location = match member {
+                None => storage.find(&artifact.sha256).await?,
+                Some(path) => {
+                    let tree = unpacked(&artifact.sha256);
+                    let member = storage.find_member(&tree, &path).await?;
+                    Some(member.ok_or(Error::new("archive-member-missing"))?)
+                }
+            };
+            let location = location.ok_or(Error::new("storage-failed"))?;
+            installed.files.insert(artifact.key.clone(), location);
         }
         Ok(installed)
     }
 }
 
-/// Every digest well formed, and no key naming two different files.
-fn check(artifacts: &[Artifact]) -> Result<()> {
-    let mut digests = BTreeMap::new();
+/// Every digest well formed, every archive path a plain relative path, and no key naming two different things.
+/// Returns each artifact's archive path, normalised.
+fn check(artifacts: &[Artifact]) -> Result<Vec<Option<String>>> {
+    let mut keys = BTreeMap::new();
+    let mut members = Vec::new();
     for artifact in artifacts {
         if !digest::is_valid(&artifact.sha256) {
             return Err(Error::new("digest-invalid"));
         }
-        let digest = digests.entry(&artifact.key).or_insert(&artifact.sha256);
-        if *digest != &artifact.sha256 {
+        let member = match &artifact.archive_path {
+            None => None,
+            Some(path) => {
+                Some(archive::member_path(path).ok_or(Error::new("archive-path-invalid"))?)
+            }
+        };
+        let named = (artifact.sha256.as_str(), member.clone());
+        if *keys
+            .entry(artifact.key.as_str())
+            .or_insert_with(|| named.clone())
+            != named
+        {
             return Err(Error::new("artifact-key-conflict"));
         }
+        members.push(member);
     }
-    Ok(())
+    Ok(members)
 }
 
-/// Downloads `artifact` into storage under its digest, and returns where the host keeps it. `report` is the progress
-/// so far, before this file.
+/// The distinct digests of `artifacts`, in order, each with the first URL that serves it and how it is wanted.
+fn wanted(artifacts: &[Artifact]) -> Vec<Wanted<'_>> {
+    let mut wanted: Vec<Wanted<'_>> = Vec::new();
+    for artifact in artifacts {
+        let entry = match wanted
+            .iter_mut()
+            .position(|wanted| wanted.sha256 == artifact.sha256)
+        {
+            Some(i) => &mut wanted[i],
+            None => {
+                wanted.push(Wanted {
+                    sha256: &artifact.sha256,
+                    url: &artifact.url,
+                    whole: false,
+                    unpacked: false,
+                });
+                wanted.last_mut().expect("just pushed")
+            }
+        };
+        if artifact.archive_path.is_some() {
+            entry.unpacked = true;
+        } else {
+            entry.whole = true;
+        }
+    }
+    wanted
+}
+
+/// The storage name of the tree the archive `sha256` unpacks to.
+fn unpacked(sha256: &str) -> String {
+    format!("{sha256}-unpacked")
+}
+
+/// Unpacks the stored archive `sha256` into its tree.
+async fn unpack(storage: &dyn Storage, sha256: &str, cancel: &Cancel) -> Result<()> {
+    let archive = storage.read(sha256).await?;
+    let mut tree = storage.create_tree(&unpacked(sha256)).await?;
+    archive::unpack(archive, tree.as_mut(), archive::Limits::DEFAULT, cancel).await?;
+    tree.commit().await.map(drop)
+}
+
+/// Downloads `wanted` into storage under its digest. `report` is the progress so far, before this file.
 async fn download(
-    artifact: &Artifact,
+    wanted: &Wanted<'_>,
     host: &dyn Host,
     progress: &dyn ProgressSink,
     cancel: &Cancel,
     mut report: Progress,
-) -> Result<String> {
-    let mut download = host.fetcher().fetch(&artifact.url).await?;
-    let mut file = host.storage().create(&artifact.sha256).await?;
+) -> Result<()> {
+    let mut download = host.fetcher().fetch(wanted.url).await?;
+    let mut file = host.storage().create(wanted.sha256).await?;
     let mut sha256 = Hasher::default();
     report.size = download.size();
     progress.progress(report);
@@ -134,8 +239,8 @@ async fn download(
         report.received += bytes.len() as u64;
         progress.progress(report);
     }
-    if sha256.finish() != artifact.sha256 {
+    if sha256.finish() != wanted.sha256 {
         return Err(Error::new("digest-mismatch"));
     }
-    file.commit().await
+    file.commit().await.map(drop)
 }

@@ -34,7 +34,9 @@ pub use engine::{
 };
 #[cfg(native)]
 pub use host::NativeHost;
-pub use host::{Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter};
+pub use host::{
+    Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter, TreeWriter,
+};
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
 pub use resolver::{Offer, Reason, Rejection};

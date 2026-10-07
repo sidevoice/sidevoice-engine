@@ -15,11 +15,12 @@ pub trait Fetcher: MaybeSend + MaybeSync {
     async fn fetch(&self, url: &str) -> Result<Box<dyn Download>>;
 }
 
-/// A download under way. Dropping it stops it.
+/// Bytes arriving a part at a time: a download under way, or a stored file being read
+/// ([`Storage::read`](crate::Storage::read)). Dropping it stops it.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 pub trait Download: MaybeSend {
-    /// Its size in bytes, when the server says.
+    /// Its size in bytes, when known (a server may not say).
     fn size(&self) -> Option<u64>;
 
     /// The next bytes, never empty, or `None` once all have arrived.

@@ -4,7 +4,7 @@
 use std::sync::Mutex;
 
 use super::{Artifact, Cancel, Installed, Installer, Progress};
-use crate::test_support::{artifact, block_on, sha256, MemoryHost};
+use crate::test_support::{artifact, block_on, bzip2, member, sha256, tar, MemoryHost, TarEntry};
 use crate::Result;
 
 #[cfg(web)]
@@ -180,6 +180,120 @@ fn malformed_digests_and_conflicting_keys_are_refused_before_downloading() {
         artifact("model.onnx", "https://backends/library", LIBRARY),
     ];
     let (installed, _) = install(&host, &conflicting, &Cancel::new());
+    assert_eq!(
+        installed.expect_err("conflict").code,
+        "artifact-key-conflict"
+    );
+    assert_eq!(host.fetches(), 0);
+}
+
+/// Kokoro's shape: one archive holding a model file and a data directory, each wanted under its own key.
+fn kokoro() -> Vec<u8> {
+    bzip2(&tar(&[
+        TarEntry::Directory("kokoro/"),
+        TarEntry::File("kokoro/model.onnx", MODEL),
+        TarEntry::Directory("kokoro/espeak-ng-data/"),
+        TarEntry::File("kokoro/espeak-ng-data/phontab", b"phonemes"),
+    ]))
+}
+
+const KOKORO: &str = "https://models/kokoro.tar.bz2";
+
+fn kokoro_artifacts(archive: &[u8]) -> Vec<Artifact> {
+    vec![
+        member("model", KOKORO, archive, "kokoro/model.onnx"),
+        member("espeak-ng-data", KOKORO, archive, "kokoro/espeak-ng-data/"),
+    ]
+}
+
+#[test]
+fn an_archive_is_downloaded_and_unpacked_once_and_each_key_finds_its_member() {
+    let archive = kokoro();
+    let host = MemoryHost::serving(&[(KOKORO, &archive)]);
+    let (installed, reported) = install(&host, &kokoro_artifacts(&archive), &Cancel::new());
+    let installed = installed.expect("installed");
+
+    let tree = format!("{}-unpacked", sha256(&archive));
+    assert_eq!(host.fetches(), 1);
+    assert_eq!(
+        installed.file("model"),
+        Some(format!("memory:{tree}/kokoro/model.onnx").as_str())
+    );
+    assert_eq!(
+        installed.file("espeak-ng-data"),
+        Some(format!("memory:{tree}/kokoro/espeak-ng-data").as_str())
+    );
+    let unpacked = host.tree(&tree).expect("unpacked");
+    assert_eq!(unpacked["kokoro/model.onnx"].as_deref(), Some(MODEL));
+    assert!(
+        host.stored().is_empty(),
+        "the archive is removed once unpacked"
+    );
+    let last = reported.last().expect("progress");
+    assert_eq!((last.done, last.files), (1, 1), "one archive");
+
+    let (again, _) = install(&host, &kokoro_artifacts(&archive), &Cancel::new());
+    assert_eq!(again.expect("installed"), installed);
+    assert_eq!(host.fetches(), 1, "already unpacked");
+}
+
+#[test]
+fn an_archive_wanted_whole_too_is_kept() {
+    let archive = kokoro();
+    let host = MemoryHost::serving(&[(KOKORO, &archive)]);
+    let mut artifacts = kokoro_artifacts(&archive);
+    artifacts.push(artifact("tarball", KOKORO, &archive));
+    let (installed, _) = install(&host, &artifacts, &Cancel::new());
+
+    let installed = installed.expect("installed");
+    assert_eq!(
+        installed.file("tarball"),
+        Some(format!("memory:{}", sha256(&archive)).as_str())
+    );
+    assert_eq!(host.fetches(), 1);
+}
+
+#[test]
+fn a_member_the_archive_does_not_hold_fails_the_install() {
+    let archive = kokoro();
+    let host = MemoryHost::serving(&[(KOKORO, &archive)]);
+    let artifacts = [member("voices", KOKORO, &archive, "kokoro/voices.bin")];
+    let (installed, _) = install(&host, &artifacts, &Cancel::new());
+
+    assert_eq!(
+        installed.expect_err("missing").code,
+        "archive-member-missing"
+    );
+}
+
+#[test]
+fn an_archive_that_does_not_match_its_digest_is_never_unpacked() {
+    let archive = kokoro();
+    let host = MemoryHost::serving(&[(KOKORO, &bzip2(b"something else"))]);
+    let (installed, _) = install(&host, &kokoro_artifacts(&archive), &Cancel::new());
+
+    assert_eq!(installed.expect_err("mismatch").code, "digest-mismatch");
+    assert!(host.stored().is_empty());
+    assert!(host
+        .tree(&format!("{}-unpacked", sha256(&archive)))
+        .is_none());
+}
+
+#[test]
+fn bad_archive_paths_and_keys_naming_two_members_are_refused_before_downloading() {
+    let archive = kokoro();
+    let host = MemoryHost::serving(&[(KOKORO, &archive)]);
+    for path in ["../outside", "/kokoro/model.onnx", ""] {
+        let artifacts = [member("model", KOKORO, &archive, path)];
+        let (installed, _) = install(&host, &artifacts, &Cancel::new());
+        assert_eq!(installed.expect_err(path).code, "archive-path-invalid");
+    }
+
+    let two = [
+        member("model", KOKORO, &archive, "kokoro/model.onnx"),
+        member("model", KOKORO, &archive, "kokoro/espeak-ng-data"),
+    ];
+    let (installed, _) = install(&host, &two, &Cancel::new());
     assert_eq!(
         installed.expect_err("conflict").code,
         "artifact-key-conflict"

@@ -80,6 +80,10 @@ pub(super) struct File {
     /// Where from; `{version}` is the backend's version.
     pub(super) url: String,
     pub(super) sha256: String,
+    /// For a member of an archive, its path inside it; `{version}` is the backend's version. Optional: absent, the
+    /// file is the one `url` serves (the catalogue's `archive_path` works the same way).
+    #[serde(default)]
+    pub(super) archive_path: Option<String>,
 }
 
 /// Every backend's entry, parsed once.

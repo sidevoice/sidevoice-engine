@@ -7,9 +7,9 @@ use crate::maybe_send::{MaybeSend, MaybeSync};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Progress {
-    /// The files the build needs.
+    /// The distinct files the build needs: an archive counts once, however many of its members it needs.
     pub files: usize,
-    /// How many of them are stored.
+    /// How many of them are stored (and unpacked, for an archive).
     pub done: usize,
     /// Bytes received of the file being downloaded; 0 between files.
     pub received: u64,

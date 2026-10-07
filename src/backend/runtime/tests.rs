@@ -30,3 +30,36 @@ fn runtime_files_are_artifacts_keyed_by_their_name_at_the_backends_version() {
     assert!(!url.contains("{version}"), "{url}");
     assert!(url.contains(&format!("v{}", entry.version)), "{url}");
 }
+
+#[test]
+fn the_sherpa_onnx_library_is_the_lib_directory_of_its_archive_at_the_backends_version() {
+    let version = &entries()
+        .iter()
+        .find(|entry| entry.id == "sherpa-onnx")
+        .expect("sherpa-onnx")
+        .version;
+    for platform in [
+        Platform::MacosAarch64,
+        Platform::MacosX86_64,
+        Platform::LinuxX86_64,
+        Platform::LinuxAarch64,
+        Platform::WindowsX86_64,
+    ] {
+        let files = runtime_files("sherpa-onnx", platform).expect("native");
+        let path = files[0]
+            .archive_path
+            .as_deref()
+            .expect("a member of the archive");
+        assert!(
+            path.starts_with(&format!("sherpa-onnx-v{version}-")),
+            "{path}"
+        );
+        assert!(path.ends_with("/lib"), "{path}");
+        let archive = files[0].url.rsplit('/').next().expect("a file name");
+        assert_eq!(
+            archive.strip_suffix(".tar.bz2"),
+            path.strip_suffix("/lib"),
+            "{platform:?}"
+        );
+    }
+}

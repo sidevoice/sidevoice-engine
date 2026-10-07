@@ -95,6 +95,13 @@ let handle = engine.prepare(&selection, &|progress: Progress| report(progress), 
   arrives, and only stored whole once it matches; `key` is only the name the backend finds it by. A file already
   stored is not downloaded again, whichever build or version asks for it. Files stay on disk when their models leave
   memory.
+- **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
+  `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
+  one archive (Kokoro: `model` and `espeak-ng-data` from one tarball; sherpa-onnx: `library`, the `lib/` directory
+  of its tarball). Each distinct archive is downloaded once, checked against its digest, and only then unpacked,
+  once, into a tree stored under its digest; the archive itself is then removed. Unpacking takes directories and
+  regular files only (no links of any kind), refuses any path that leaves the tree, and bounds the total size and
+  the number of entries.
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
 - **A build's state** is `Engine::state(&build)`: `Absent → Installing → Installed → Loading → Ready`, or `Failed`
@@ -256,8 +263,9 @@ nothing here touches the public API. As an example, whisper.cpp:
    `src/backend/runtime/schema.rs`, strict (an unknown or a missing key fails the tests), and *Build and test* above
    says how the platforms and digests work. The entry has its `id`, a name and description, its `upstream` and one
    `version`, and all six platforms: `null` where it does not run, `[]` where it runs and downloads nothing, or the
-   files, each with the `name` that `open` finds it by in `files`, a `url` that may say `{version}`, and a `sha256`
-   that `cargo xtask pin-backends` writes.
+   files, each with the `name` that `open` finds it by in `files`, a `url` that may say `{version}`, a `sha256`
+   that `cargo xtask pin-backends` writes, and, for a member of an archive, its optional `archive_path` inside it
+   (which may say `{version}` too).
 
    ```json
    {

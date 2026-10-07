@@ -14,7 +14,7 @@ use sha2::Digest;
 
 use crate::{
     async_trait, Accelerator, Artifact, Build, Capabilities, CatalogFragment, CatalogSource,
-    Download, Error, Fetcher, Host, Model, Result, Runs, Storage, StorageWriter, Task,
+    Download, Error, Fetcher, Host, Model, Result, Runs, Storage, StorageWriter, Task, TreeWriter,
 };
 
 pub(crate) struct FakeHost;
@@ -51,8 +51,24 @@ impl Storage for FakeHost {
         Ok(None)
     }
 
+    async fn find_member(&self, _tree: &str, _path: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     async fn create(&self, _name: &str) -> Result<Box<dyn StorageWriter>> {
         unreachable!("offers never store")
+    }
+
+    async fn create_tree(&self, _name: &str) -> Result<Box<dyn TreeWriter>> {
+        unreachable!("offers never store")
+    }
+
+    async fn read(&self, _name: &str) -> Result<Box<dyn Download>> {
+        unreachable!("offers never read")
+    }
+
+    async fn remove(&self, _name: &str) -> Result<()> {
+        unreachable!("offers never remove")
     }
 }
 
@@ -64,13 +80,18 @@ impl Fetcher for FakeHost {
     }
 }
 
-/// [`FakeHost`]'s capabilities, a storage in memory, and a fetcher that serves some URLs, a few bytes at a time.
+/// [`FakeHost`]'s capabilities, a storage in memory (files, and trees), and a fetcher that serves some URLs, a few
+/// bytes at a time.
 #[derive(Default)]
 pub(crate) struct MemoryHost {
     served: BTreeMap<String, Vec<u8>>,
     stored: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    trees: Arc<Mutex<BTreeMap<String, MemoryTree>>>,
     fetches: AtomicUsize,
 }
+
+/// A tree's paths: a file's bytes, or `None` for a directory.
+pub(crate) type MemoryTree = BTreeMap<String, Option<Vec<u8>>>;
 
 impl MemoryHost {
     /// Serving each `(url, bytes)`.
@@ -92,6 +113,11 @@ impl MemoryHost {
     /// What is stored, by name.
     pub(crate) fn stored(&self) -> BTreeMap<String, Vec<u8>> {
         lock(&self.stored).clone()
+    }
+
+    /// The tree stored as `name`.
+    pub(crate) fn tree(&self, name: &str) -> Option<MemoryTree> {
+        lock(&self.trees).get(name).cloned()
     }
 
     /// How many downloads were started.
@@ -118,9 +144,16 @@ impl Host for MemoryHost {
 #[cfg_attr(web, async_trait(?Send))]
 impl Storage for MemoryHost {
     async fn find(&self, name: &str) -> Result<Option<String>> {
-        Ok(lock(&self.stored)
-            .contains_key(name)
-            .then(|| format!("memory:{name}")))
+        let stored = lock(&self.stored).contains_key(name) || lock(&self.trees).contains_key(name);
+        Ok(stored.then(|| format!("memory:{name}")))
+    }
+
+    async fn find_member(&self, tree: &str, path: &str) -> Result<Option<String>> {
+        let below = format!("{path}/");
+        let found = lock(&self.trees).get(tree).is_some_and(|paths| {
+            paths.contains_key(path) || paths.keys().any(|other| other.starts_with(&below))
+        });
+        Ok(found.then(|| format!("memory:{tree}/{path}")))
     }
 
     async fn create(&self, name: &str) -> Result<Box<dyn StorageWriter>> {
@@ -129,6 +162,65 @@ impl Storage for MemoryHost {
             bytes: Vec::new(),
             stored: Arc::clone(&self.stored),
         }))
+    }
+
+    async fn create_tree(&self, name: &str) -> Result<Box<dyn TreeWriter>> {
+        Ok(Box::new(MemoryTreeWriter {
+            name: name.to_owned(),
+            paths: MemoryTree::new(),
+            current: None,
+            trees: Arc::clone(&self.trees),
+        }))
+    }
+
+    async fn read(&self, name: &str) -> Result<Box<dyn Download>> {
+        let bytes = lock(&self.stored).get(name).cloned();
+        Ok(Box::new(MemoryDownload(
+            bytes.ok_or(Error::new("storage-failed"))?,
+        )))
+    }
+
+    async fn remove(&self, name: &str) -> Result<()> {
+        lock(&self.stored).remove(name);
+        lock(&self.trees).remove(name);
+        Ok(())
+    }
+}
+
+struct MemoryTreeWriter {
+    name: String,
+    paths: MemoryTree,
+    current: Option<String>,
+    trees: Arc<Mutex<BTreeMap<String, MemoryTree>>>,
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl TreeWriter for MemoryTreeWriter {
+    async fn directory(&mut self, path: &str) -> Result<()> {
+        self.current = None;
+        self.paths.insert(path.to_owned(), None);
+        Ok(())
+    }
+
+    async fn file(&mut self, path: &str) -> Result<()> {
+        self.current = Some(path.to_owned());
+        self.paths.insert(path.to_owned(), Some(Vec::new()));
+        Ok(())
+    }
+
+    async fn write(&mut self, bytes: &[u8]) -> Result<()> {
+        let path = self.current.as_ref().ok_or(Error::new("storage-failed"))?;
+        if let Some(Some(file)) = self.paths.get_mut(path) {
+            file.extend_from_slice(bytes);
+        }
+        Ok(())
+    }
+
+    async fn commit(self: Box<Self>) -> Result<String> {
+        let location = format!("memory:{}", self.name);
+        lock(&self.trees).insert(self.name, self.paths);
+        Ok(location)
     }
 }
 
@@ -192,7 +284,92 @@ pub(crate) fn artifact(key: &str, url: &str, bytes: &[u8]) -> Artifact {
         key: key.to_owned(),
         url: url.to_owned(),
         sha256: sha256(bytes),
+        archive_path: None,
     }
+}
+
+/// An artifact keyed `key`: the member `path` of the archive at `url`, whose content is `archive`.
+pub(crate) fn member(key: &str, url: &str, archive: &[u8], path: &str) -> Artifact {
+    Artifact {
+        archive_path: Some(path.to_owned()),
+        ..artifact(key, url, archive)
+    }
+}
+
+/// One entry of a tar built by [`tar`].
+pub(crate) enum TarEntry<'a> {
+    Directory(&'a str),
+    File(&'a str, &'a [u8]),
+    /// A file whose path is given by a GNU long name entry before it.
+    LongNamed(&'a str, &'a [u8]),
+    /// A file whose path is given by a pax header before it.
+    PaxNamed(&'a str, &'a [u8]),
+    /// A symbolic link to the second path.
+    Symlink(&'a str, &'a str),
+}
+
+/// A tar of `entries` (ustar headers), ended by two empty blocks.
+pub(crate) fn tar(entries: &[TarEntry<'_>]) -> Vec<u8> {
+    fn header(path: &str, size: usize, kind: u8, link: &str) -> Vec<u8> {
+        let mut header = vec![0; 512];
+        let name = &path.as_bytes()[..path.len().min(100)];
+        header[..name.len()].copy_from_slice(name);
+        header[100..108].copy_from_slice(b"0000644\0");
+        header[124..136].copy_from_slice(format!("{size:011o}\0").as_bytes());
+        header[136..148].copy_from_slice(b"00000000000\0");
+        header[156] = kind;
+        header[157..157 + link.len()].copy_from_slice(link.as_bytes());
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        header[148..156].copy_from_slice(b"        ");
+        let sum: u32 = header.iter().map(|&byte| u32::from(byte)).sum();
+        header[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+        header
+    }
+    fn content(out: &mut Vec<u8>, bytes: &[u8]) {
+        out.extend_from_slice(bytes);
+        out.resize(out.len().div_ceil(512) * 512, 0);
+    }
+    let mut out = Vec::new();
+    for entry in entries {
+        match entry {
+            TarEntry::Directory(path) => out.extend(header(path, 0, b'5', "")),
+            TarEntry::File(path, bytes) => {
+                out.extend(header(path, bytes.len(), b'0', ""));
+                content(&mut out, bytes);
+            }
+            TarEntry::LongNamed(path, bytes) => {
+                let name = format!("{path}\0");
+                out.extend(header("././@LongLink", name.len(), b'L', ""));
+                content(&mut out, name.as_bytes());
+                out.extend(header("truncated", bytes.len(), b'0', ""));
+                content(&mut out, bytes);
+            }
+            TarEntry::PaxNamed(path, bytes) => {
+                let body = format!(" path={path}\n");
+                let mut length = body.len() + 1;
+                while format!("{length}{body}").len() != length {
+                    length += 1;
+                }
+                let record = format!("{length}{body}");
+                out.extend(header("PaxHeader", record.len(), b'x', ""));
+                content(&mut out, record.as_bytes());
+                out.extend(header("truncated", bytes.len(), b'0', ""));
+                content(&mut out, bytes);
+            }
+            TarEntry::Symlink(path, target) => out.extend(header(path, 0, b'2', target)),
+        }
+    }
+    out.extend([0; 1024]);
+    out
+}
+
+/// `bytes`, bzip2-compressed.
+pub(crate) fn bzip2(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());
+    encoder.write_all(bytes).expect("in memory");
+    encoder.finish().expect("in memory")
 }
 
 /// The SHA-256 of `bytes`, in lowercase hex.
@@ -203,30 +380,33 @@ pub(crate) fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Runs `future` to its end on this thread. On the web, where a test cannot wait, it must not wait.
+/// Runs `future` to its end on this thread, parking it while the future waits.
+#[cfg(native)]
 pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = pin!(future);
-    #[cfg(native)]
-    let waker = {
-        struct Unpark(std::thread::Thread);
-        impl std::task::Wake for Unpark {
-            fn wake(self: Arc<Self>) {
-                self.0.unpark();
-            }
+    struct Unpark(std::thread::Thread);
+    impl std::task::Wake for Unpark {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
         }
-        std::task::Waker::from(Arc::new(Unpark(std::thread::current())))
-    };
-    #[cfg(web)]
-    let waker = std::task::Waker::noop().clone();
+    }
+    let mut future = pin!(future);
+    let waker = std::task::Waker::from(Arc::new(Unpark(std::thread::current())));
     let mut context = Context::from_waker(&waker);
     loop {
-        match future.as_mut().poll(&mut context) {
-            Poll::Ready(output) => return output,
-            #[cfg(native)]
-            Poll::Pending => std::thread::park(),
-            #[cfg(web)]
-            Poll::Pending => panic!("a test future on the web must not wait"),
+        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
+            return output;
         }
+        std::thread::park();
+    }
+}
+
+/// Runs `future`, which must not wait: on the web a test cannot block, and the fakes never wait.
+#[cfg(web)]
+pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    match pin!(future).poll(&mut context) {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("a test future on the web must not wait"),
     }
 }
 
