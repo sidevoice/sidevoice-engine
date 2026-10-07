@@ -4,19 +4,21 @@
 //! kept with its reason.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
-use crate::backend::{Backend, BackendId, MinMemoryMb, Requirement};
+use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
 use crate::catalog::{Build, Catalog, Model, Task};
 use crate::host::{Accelerator, Capabilities};
 use crate::offer::{Offer, Reason, Rejection};
 
-#[derive(Default)]
+/// Offers per task, remembering each backend's probe.
+#[derive(Debug, Default)]
 pub(crate) struct Resolver {
     probes: Mutex<HashMap<BackendId, Vec<Accelerator>>>,
 }
 
 impl Resolver {
+    /// Every model of `task`, offered with its best build, and every build that cannot run here, with why.
     pub(crate) fn offers(
         &self,
         catalog: &Catalog,
@@ -28,23 +30,21 @@ impl Resolver {
         for model in catalog.models(task) {
             let mut fitting = Vec::new();
             for build in &model.builds {
-                let backend = backends
-                    .iter()
-                    .find(|backend| backend.spec().id == build.backend);
-                match backend.map(|backend| self.fit(build, backend.as_ref(), caps)) {
+                match backend::find(backends, &build.backend)
+                    .map(|backend| self.fit(build, backend, caps))
+                {
                     None => out.push(rejected(model, build, Rejection::BackendNotInThisBuild)),
                     Some(Err(why)) => out.push(rejected(model, build, why)),
                     Some(Ok(accelerator)) => fitting.push((build.clone(), accelerator)),
                 }
             }
-            if !fitting.is_empty() {
-                let (build, accelerator) = fitting.remove(0);
-                let alternatives = fitting.into_iter().map(|(build, _)| build).collect();
+            let mut fitting = fitting.into_iter();
+            if let Some((build, accelerator)) = fitting.next() {
                 out.push(Offer::Offered {
                     model: model.clone(),
                     build,
                     accelerator,
-                    alternatives,
+                    alternatives: fitting.map(|(build, _)| build).collect(),
                 });
             }
         }
@@ -52,7 +52,7 @@ impl Resolver {
     }
 
     /// The best accelerator this build can run on here, or why it cannot.
-    pub(crate) fn fit(
+    fn fit(
         &self,
         build: &Build,
         backend: &dyn Backend,
@@ -79,7 +79,8 @@ impl Resolver {
     }
 
     fn probe(&self, backend: &dyn Backend, caps: &Capabilities) -> Vec<Accelerator> {
-        let mut probes = self.probes.lock().expect("probe cache lock");
+        // A poisoned cache still holds whole answers: a panic cannot leave an entry half written.
+        let mut probes = self.probes.lock().unwrap_or_else(PoisonError::into_inner);
         probes
             .entry(backend.spec().id)
             .or_insert_with(|| backend.probe(caps))

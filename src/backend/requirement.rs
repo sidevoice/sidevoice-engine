@@ -3,15 +3,17 @@
 //! ships are in requirement/, one file each, and a backend can write its own without changing the contract.
 
 use crate::host::Capabilities;
+use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::offer::Reason;
 
 mod min_cores;
 mod min_memory_mb;
 
-pub use min_cores::MinCores;
-pub use min_memory_mb::MinMemoryMb;
+pub(crate) use min_cores::MinCores;
+pub(crate) use min_memory_mb::MinMemoryMb;
 
 /// One condition the machine must meet.
-pub trait Requirement: Send + Sync {
+pub(crate) trait Requirement: MaybeSend + MaybeSync {
+    /// `Ok` if `caps` meet it; otherwise why not, with the numbers.
     fn check(&self, caps: &Capabilities) -> Result<(), Reason>;
 }

@@ -3,7 +3,7 @@ name: ci
 # Every pull request: format and Clippy (Clippy on macOS too, the only place the MLX backend compiles), the tests on
 # every native target and on wasm32 in Node, and the npm package `@sidevoice/engine` built and installed as a
 # consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing: what passes here is what merging
-# publishes (release.yml). Which backends a build contains is checked here, per target (src/tests.rs, and in the
+# publishes (release.yml). Which backends a build contains is checked here, per target (src/backend/tests.rs, and in the
 # packaged build by npm-smoke); whether they work on a given machine is never: that is each backend's probe().
 on:
   pull_request:

@@ -29,6 +29,10 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
   and installs for every backend alike. Which models a backend runs is the catalogue's to say, and what it downloads
   is data too, never code. A backend's code only checks its accelerators for real when the default `probe()` is not
   enough, and loads a model. Preparing a model installs and loads only the selected build.
+- **Everything is closed by default.** Each item gets the narrowest visibility that works: private, then
+  `pub(super)` or `pub(crate)`, and `pub` only for what consumers of the crate actually need. The public API is
+  deliberate: opening something later is cheap, closing it later is a breaking change. Backends, for instance, are
+  crate-private; if plugins ever need to add backends, that part of the contract is opened then, on purpose.
 - **Nothing heavy is linked into the app.** Engine libraries and models are downloaded on demand.
 
 ## How work lands

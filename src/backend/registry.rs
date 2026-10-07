@@ -9,14 +9,23 @@
 use crate::backend::Backend;
 
 /// Makes a backend's lazy, empty object: nothing is loaded.
-pub struct BackendFactory(pub fn() -> Box<dyn Backend>);
+pub(crate) struct BackendFactory(pub(crate) fn() -> Box<dyn Backend>);
 
 inventory::collect!(BackendFactory);
 
 /// Every backend compiled into this build, in no particular order.
-pub fn built_in() -> Vec<Box<dyn Backend>> {
+#[must_use]
+pub(crate) fn built_in() -> Vec<Box<dyn Backend>> {
     inventory::iter::<BackendFactory>
         .into_iter()
         .map(|factory| (factory.0)())
         .collect()
+}
+
+/// The backend of `backends` that catalogue builds call `id`, if this build has it.
+pub(crate) fn find<'a>(backends: &'a [Box<dyn Backend>], id: &str) -> Option<&'a dyn Backend> {
+    backends
+        .iter()
+        .map(Box::as_ref)
+        .find(|backend| backend.spec().id == id)
 }

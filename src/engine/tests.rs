@@ -1,6 +1,6 @@
 //! The funnel over a fake host and catalogue: what fits is offered, and every other build comes back with why not.
 
-use crate::fakes::{FakeCatalog, FakeHost};
+use crate::test_support::{FakeCatalog, FakeHost};
 use crate::{Engine, Offer, Reason, Rejection, Task};
 
 #[cfg(target_arch = "wasm32")]
@@ -38,10 +38,24 @@ fn an_engine_with_a_fake_host_offers_what_fits_and_says_why_the_rest_does_not() 
         // Its only build is native: on the web, its backend does not exist.
         Rejection::BackendNotInThisBuild
     } else {
-        Rejection::DoesNotFit(Reason::numbers("memory", 16_384, 8_192))
+        Rejection::DoesNotFit(Reason::with_numbers("memory", 16_384, 8_192))
     };
     assert!(rejected.contains(&("whisper-large-onnx", large_rejection)));
     assert!(offers
         .iter()
         .all(|offer| !matches!(offer, Offer::Offered { model, .. } if model.task != Task::Stt)));
+}
+
+#[cfg(native)]
+#[test]
+fn a_native_engine_and_its_futures_can_cross_threads() {
+    fn shared<T: Send + Sync>(_: &T) {}
+    fn sent<T: Send>(_: T) {}
+
+    let engine = Engine::new(Box::new(FakeHost), vec![Box::new(FakeCatalog)]).expect("engine");
+    shared(&engine);
+    let selection = engine
+        .select(Task::Stt, &crate::Preferences::default())
+        .expect("a selection");
+    sent(engine.prepare(&selection));
 }

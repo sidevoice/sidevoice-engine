@@ -1,8 +1,9 @@
 //! Which backends each build contains. The expected lists use the raw target conditions, not the engine's aliases:
 //! these tests are what checks the aliases.
 
-use crate::fakes::FakeHost;
-use crate::{built_in, Host};
+use super::built_in;
+use crate::host::Host;
+use crate::test_support::FakeHost;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as test;

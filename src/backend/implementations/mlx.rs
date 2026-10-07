@@ -3,10 +3,14 @@
 
 use async_trait::async_trait;
 
-use crate::{Accelerator, Backend, BackendFactory, BackendSpec, Build, LoadedModel, MinMemoryMb};
-use crate::{Error, Installed, Result};
+use crate::backend::{Backend, BackendFactory, BackendSpec, MinMemoryMb};
+use crate::catalog::Build;
+use crate::host::Accelerator;
+use crate::install::Installed;
+use crate::model::LoadedModel;
+use crate::{Error, Result};
 
-pub(crate) struct Mlx;
+struct Mlx;
 
 const SPEC: BackendSpec = BackendSpec {
     id: "mlx",

@@ -3,12 +3,14 @@ name = "sidevoice-engine"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.98"
+# Shipped through git tags and the npm package, never crates.io (RELEASING.md).
+publish = false
 license = "Apache-2.0"
 repository = "https://github.com/sidevoice/sidevoice-engine"
 description = "Sidevoice engine: the local-model catalogue, resolver, selector and lifecycle, and the backends that run models"
 
 [dependencies]
-async-trait = "0.1.89"
+async-trait = "=0.1.92"
 # Backends register themselves (src/backend/registry.rs). linkme does not compile to wasm32; inventory does.
 inventory = "0.3.24"
 

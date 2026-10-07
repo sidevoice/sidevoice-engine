@@ -52,6 +52,7 @@ model runs yet.
 ```
 src/            the crate sidevoice-engine, one small file per piece:
   host.rs         Host: the platform contract (capabilities, storage, downloads)
+  maybe_send.rs   MaybeSend, MaybeSync: Send and Sync in a native build, nothing on the web
   backend.rs      Backend: the interface every backend implements; backend/: requirement.rs (+ requirement/),
                   registry.rs, implementations.rs (+ implementations/: one file per backend)
   model.rs        LoadedModel, Transcriber, Synthesizer: what a backend's load returns

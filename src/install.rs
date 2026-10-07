@@ -9,24 +9,33 @@ use crate::host::Host;
 use crate::{Error, Result};
 
 /// One file to download: where from, its digest, and its key in storage.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Artifact {
+    /// Its key in [`Storage`](crate::Storage).
     pub key: String,
+    /// Where it is downloaded from.
     pub url: String,
+    /// Its SHA-256 digest, in hex.
     pub sha256: String,
 }
 
 /// A build whose files are in storage: each artifact's key, and where the host keeps it (a path, an OPFS name, ...).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Installed {
-    pub files: BTreeMap<String, String>,
+pub(crate) struct Installed {
+    pub(crate) files: BTreeMap<String, String>,
 }
 
-pub struct Installer;
+/// Puts a build's files in storage.
+#[derive(Debug)]
+pub(crate) struct Installer;
 
 impl Installer {
     /// Downloads and checks whatever of `artifacts` is not in storage yet.
-    pub async fn install(&self, _artifacts: &[Artifact], _host: &dyn Host) -> Result<Installed> {
+    pub(crate) async fn install(
+        &self,
+        _artifacts: &[Artifact],
+        _host: &dyn Host,
+    ) -> Result<Installed> {
         Err(Error::new("not-implemented"))
     }
 }

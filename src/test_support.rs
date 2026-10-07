@@ -38,16 +38,16 @@ impl Host for FakeHost {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
 impl Storage for FakeHost {
     async fn contains(&self, _key: &str) -> Result<bool> {
         Ok(false)
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
 impl Fetcher for FakeHost {
     async fn fetch(&self, _url: &str, _sha256: &str, _key: &str) -> Result<()> {
         unreachable!("offers never download")
@@ -58,9 +58,9 @@ pub(crate) struct FakeCatalog;
 
 impl CatalogSource for FakeCatalog {
     fn load(&self) -> Result<CatalogFragment> {
-        let build = |id: &str, backend, format: &str, memory_mb| Build {
+        let build = |id: &str, backend: &str, format: &str, memory_mb| Build {
             id: id.to_owned(),
-            backend,
+            backend: backend.to_owned(),
             format: format.to_owned(),
             memory_mb,
             files: Vec::new(),
