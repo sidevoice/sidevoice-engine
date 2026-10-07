@@ -55,7 +55,8 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
     fn spec(&self) -> &BackendSpec;
 
     /// Which of the declared accelerators work here. By default, the ones the host reports. A backend overrides it
-    /// when only trying can tell (a CUDA driver, a WebGPU adapter, CoreML). The engine caches the answer.
+    /// when only trying can tell (a CUDA driver, a WebGPU adapter, CoreML). The engine caches the answer, and keeps
+    /// only what the host reports: a probe narrows, it never adds an accelerator the host did not see.
     fn probe(&self, caps: &Capabilities) -> Vec<Accelerator> {
         self.spec()
             .accelerators
