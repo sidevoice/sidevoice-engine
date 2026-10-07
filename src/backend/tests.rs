@@ -1,7 +1,7 @@
 //! Which backends each build contains. The expected lists use the raw target conditions, not the engine's aliases:
 //! these tests are what checks the aliases.
 
-use super::built_in;
+use super::{built_in, downloads, Platform};
 use crate::host::Host;
 use crate::test_support::FakeHost;
 
@@ -30,6 +30,19 @@ fn backends_probe_and_fit_without_loading_anything() {
             !backend.probe(&caps).is_empty(),
             "{} should work on the fake host",
             backend.spec().id
+        );
+    }
+}
+
+#[test]
+fn every_backend_of_this_build_has_downloads_for_this_platform() {
+    let platform =
+        Platform::of(&FakeHost.capabilities()).expect("backends.json knows this platform");
+    for backend in built_in() {
+        let id = backend.spec().id;
+        assert!(
+            downloads(id, platform).is_some(),
+            "backends.json has no {platform:?} entry for {id}, which this platform compiles"
         );
     }
 }

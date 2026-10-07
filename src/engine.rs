@@ -4,7 +4,7 @@
 use std::fmt;
 use std::sync::{Mutex, PoisonError};
 
-use crate::backend::{self, Backend, BackendId, LoadedModel};
+use crate::backend::{self, Backend, BackendId, LoadedModel, Platform};
 use crate::catalog::{Build, Catalog, CatalogSource, Model, Problem, Task};
 use crate::host::{Accelerator, Host};
 use crate::install::Installer;
@@ -160,20 +160,28 @@ impl Engine {
         })
     }
 
-    /// Installs the selected build and loads it: only that backend is ever activated. Today the installer gets the
-    /// model's files; the backend's own library files come from the backends' data file once it exists (#3).
+    /// Installs the selected build and loads it: only that backend is ever activated. The installer gets the model's
+    /// files and the backend's files for this platform (`backends.json`), and nothing else.
     ///
     /// # Errors
     ///
-    /// `backend-not-in-this-build` if the selection's backend is not compiled in, and whatever installing or loading
-    /// fails with (today, `not-implemented`).
+    /// `backend-not-in-this-build` if the selection's backend is not compiled in, `no-runtime-for-platform` if it has
+    /// nothing to download for this platform, and whatever installing or loading fails with (today, `not-implemented`).
     pub async fn prepare(&self, selection: &Selection) -> Result<Handle> {
         let backend = backend::find(&self.backends, &selection.build.backend)
             .ok_or(Error::new("backend-not-in-this-build"))?;
-        let files = self
-            .installer
-            .install(&selection.build.files, self.host.as_ref())
-            .await?;
+        let runtime = Platform::of(&self.host.capabilities())
+            .and_then(|platform| backend::downloads(backend.spec().id, platform))
+            .ok_or(Error::new("no-runtime-for-platform"))?;
+        // A model file is found by its key; a backend file, by its name in backends.json.
+        let wanted: Vec<_> = selection
+            .build
+            .files
+            .iter()
+            .map(|artifact| (artifact.key.clone(), artifact.clone()))
+            .chain(runtime)
+            .collect();
+        let files = self.installer.install(&wanted, self.host.as_ref()).await?;
         let model = backend
             .load(&selection.build, selection.accelerator, &files)
             .await?;

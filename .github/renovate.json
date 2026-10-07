@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Only the backends' versions in backends.json, closed by default: every other manager is off.",
+  "enabledManagers": ["custom.regex"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Each backend's version, from its upstream's GitHub releases (`upstream` right before `version`). Renovate cannot recalculate digests: `cargo xtask pin-backends` does, and the backends workflow fails until it has.",
+      "managerFilePatterns": ["/^backends\\.json$/"],
+      "matchStrings": [
+        "\"upstream\": \"https://github\\.com/(?<depName>[^\"]+)\",\\s*\"version\": \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.+)$"
+    }
+  ]
+}

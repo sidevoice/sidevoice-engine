@@ -1,0 +1,68 @@
+{
+  "backends": [
+    {
+      "id": "sherpa-onnx",
+      "name": "sherpa-onnx",
+      "description": "Speech recognition and synthesis on ONNX Runtime: the shared C library, without its command-line programs.",
+      "upstream": "https://github.com/k2-fsa/sherpa-onnx",
+      "version": "1.13.8",
+      "platforms": {
+        "macos-aarch64": [
+          {
+            "name": "library",
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v{version}/sherpa-onnx-v{version}-osx-arm64-shared-lib.tar.bz2",
+            "sha256": "ae77050cdae565496059d96f5ab33d77b397a0864282a4e4a26e3b3b3effb948"
+          }
+        ],
+        "macos-x86_64": [
+          {
+            "name": "library",
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v{version}/sherpa-onnx-v{version}-osx-x64-shared-lib.tar.bz2",
+            "sha256": "0f88371565a06372889c76266e253abd1b415fcc6f98232cabd968933efb0711"
+          }
+        ],
+        "linux-x86_64": [
+          {
+            "name": "library",
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v{version}/sherpa-onnx-v{version}-linux-x64-shared-lib.tar.bz2",
+            "sha256": "3892d184be41027e18165e67f549cd4e4cdd8dcd73ac5579e97afd55e14e30b6"
+          }
+        ],
+        "linux-aarch64": [
+          {
+            "name": "library",
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v{version}/sherpa-onnx-v{version}-linux-aarch64-shared-cpu-lib.tar.bz2",
+            "sha256": "fb98b80628a383909bf83626daca2e0d0ffc93bf1f7d222eaaa4282b388f072f"
+          }
+        ],
+        "windows-x86_64": [
+          {
+            "name": "library",
+            "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v{version}/sherpa-onnx-v{version}-win-x64-shared-MD-Release-lib.tar.bz2",
+            "sha256": "3c43d1efba780d7ae7f5d64cae08803dcecf417109a5f593684e536f3cbd5cf1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mlx",
+      "name": "MLX",
+      "description": "Apple's array framework for Apple silicon. Placeholder: upstream publishes no library to download, so nothing is downloaded yet.",
+      "upstream": "https://github.com/ml-explore/mlx",
+      "version": "0.32.3",
+      "platforms": {
+        "macos-aarch64": []
+      }
+    },
+    {
+      "id": "transformers-js",
+      "name": "Transformers.js",
+      "description": "Models in the browser on ONNX Runtime Web. Placeholder: it ships inside the npm package, so nothing is downloaded yet.",
+      "upstream": "https://github.com/huggingface/transformers.js",
+      "version": "4.3.1",
+      "platforms": {
+        "web": []
+      }
+    }
+  ]
+}

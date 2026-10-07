@@ -1,12 +1,12 @@
-//! The funnel, the same for every backend: for each build of the catalogue, is its backend compiled here, which of its
-//! accelerators work here (`probe`, cached), does the machine meet the build's and the backend's requirements. Then,
-//! per model, the best build: the catalogue's order, and the backend's accelerator preference. Every rejected build is
-//! kept with its reason.
+//! The funnel, the same for every backend: for each build of the catalogue, is its backend compiled here, does it have
+//! an entry for this platform in `backends.json`, which of its accelerators work here (`probe`, cached), does the
+//! machine meet the build's and the backend's requirements. Then, per model, the best build: the catalogue's order, and
+//! the backend's accelerator preference. Every rejected build is kept with its reason.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
-use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
+use crate::backend::{self, Backend, BackendId, MinMemoryMb, Platform, Requirement};
 use crate::catalog::{Build, Catalog, Model, Task};
 use crate::host::{Accelerator, Capabilities};
 
@@ -61,6 +61,15 @@ impl Resolver {
         backend: &dyn Backend,
         caps: &Capabilities,
     ) -> Result<Accelerator, Rejection> {
+        // Data, not backend code: a backend with no entry for this platform in backends.json cannot run here.
+        if Platform::of(caps)
+            .and_then(|platform| backend::downloads(backend.spec().id, platform))
+            .is_none()
+        {
+            return Err(Rejection::BackendUnavailable(Reason::new(
+                "no-runtime-for-platform",
+            )));
+        }
         let spec = backend.spec();
         let working = self.probe(backend, caps);
         let Some(accelerator) = spec
