@@ -7,10 +7,8 @@
 //! add to it.
 
 mod accelerator;
-mod runs;
 
 pub use accelerator::Accelerator;
-pub use runs::Runs;
 
 /// What the host knows about the place the engine runs in, gathered once when the host is built.
 ///
@@ -42,4 +40,13 @@ impl Capabilities {
     pub fn has(&self, accelerator: Accelerator) -> bool {
         self.accelerators.contains(&accelerator)
     }
+}
+
+/// Whether the engine runs in a native process or in a page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Runs {
+    /// A native process: desktop, headless, a server.
+    Native,
+    /// A web page (the wasm32 build).
+    Page,
 }

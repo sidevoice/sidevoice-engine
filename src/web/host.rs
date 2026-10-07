@@ -1,17 +1,13 @@
 //! The JavaScript host as the engine sees it: any JavaScript object with the methods of [`JsHost`], wrapped as a
 //! [`Host`]. Storage and downloads are not bridged yet.
 //!
-//! Inside: `capabilities` (reading what the JavaScript host reports) and `unimplemented` (the storage and downloads
-//! not bridged yet).
+//! Inside: `capabilities`, reading what the JavaScript host reports.
 
 use wasm_bindgen::prelude::*;
 
-use crate::{Capabilities, Fetcher, Host, Storage};
+use crate::{async_trait, Capabilities, Error, Fetcher, Host, Result, Storage};
 
 mod capabilities;
-mod unimplemented;
-
-use unimplemented::Unimplemented;
 
 #[wasm_bindgen]
 extern "C" {
@@ -50,5 +46,22 @@ impl Host for WebHost {
 
     fn fetcher(&self) -> &dyn Fetcher {
         &Unimplemented
+    }
+}
+
+/// The storage and downloads of a JavaScript host, not bridged yet: every call fails with `not-implemented`.
+struct Unimplemented;
+
+#[async_trait(?Send)]
+impl Storage for Unimplemented {
+    async fn contains(&self, _key: &str) -> Result<bool> {
+        Err(Error::new("not-implemented"))
+    }
+}
+
+#[async_trait(?Send)]
+impl Fetcher for Unimplemented {
+    async fn fetch(&self, _url: &str, _sha256: &str, _key: &str) -> Result<()> {
+        Err(Error::new("not-implemented"))
     }
 }

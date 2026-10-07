@@ -81,18 +81,20 @@ model runs yet.
 ```
 src/            the crate sidevoice-engine, one package per concept (`x.rs` is the package, `x/` its parts):
   lib.rs          the front door: declares the packages, exports the public API
-  host.rs         Host, Storage, Fetcher: the platform contract; host/: capabilities (what a host reports),
-                  platform (which platform that is)
-  catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, models and their builds
-  backend.rs      Backend: the interface every backend implements; backend/: spec (a backend as data, and its
-                  id), runtime (its files: the lookup, and runtime/schema.rs, the shape of backends.json),
-                  requirement, registry, loaded_model (what load returns), implementations/ (one file per backend)
-  resolver.rs     the funnel; resolver/: offer (what it returns), rejection and reason (why not)
+  host.rs         Host, Storage, Fetcher: the platform contract; host/: capabilities (what a host reports, and
+                  capabilities/accelerator.rs), platform (which platform that is)
+  catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, a model, with model/build.rs and
+                  model/task.rs
+  backend.rs      Backend and BackendSpec: the interface every backend implements; backend/: runtime (its files:
+                  the lookup, and runtime/schema.rs, the shape of backends.json), requirement, registry,
+                  loaded_model (what load returns), implementations/ (one file per backend)
+  resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
   install.rs      the installer
   engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
                   lifecycle (a build's state)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
-                  the JavaScript host (JsHost) as the engine sees it
+                  the JavaScript host (JsHost) as the engine sees it, and web/host/capabilities.rs, reading what
+                  it reports
   maybe_send.rs   Send/Sync in native builds only
 backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
 build.rs        the three cfg aliases: web, native, apple_silicon

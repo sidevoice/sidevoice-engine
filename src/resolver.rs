@@ -12,14 +12,10 @@ use crate::catalog::{Build, Catalog, Model, Task};
 use crate::host::{Accelerator, Capabilities, Platform};
 
 mod offer;
-mod reason;
-mod rejection;
 #[cfg(test)]
 mod tests;
 
-pub use offer::Offer;
-pub use reason::Reason;
-pub use rejection::Rejection;
+pub use offer::{Offer, Reason, Rejection};
 
 /// Offers per task, remembering each backend's probe.
 #[derive(Debug, Default)]
