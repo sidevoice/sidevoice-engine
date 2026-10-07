@@ -5,6 +5,9 @@
 //! optionally, extra [`CatalogSource`]s. Backends are not passed in: they belong to the engine, and which ones a build
 //! contains is decided when it is compiled ([`Engine::backends`] names them). Nothing is downloaded or loaded until
 //! [`Engine::prepare`].
+//!
+//! Compiled to wasm32, the crate is also the npm package `@sidevoice/engine`: `web` is its bridge to JavaScript, and
+//! exists in no other build.
 #![warn(missing_docs)]
 
 /// The attribute that makes the engine's async traits implementable; see [`Host`] for how to apply it.
@@ -20,6 +23,7 @@ mod maybe_send;
 mod resolver;
 #[cfg(test)]
 mod test_support;
+mod web;
 
 pub use backend::BackendId;
 pub use catalog::{Build, CatalogFragment, CatalogSource, Model, Problem, Task};

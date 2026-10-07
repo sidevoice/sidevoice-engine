@@ -59,6 +59,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   resolver.rs     the funnel; resolver/offer.rs, what it returns
   install.rs      the installer
   engine.rs       Engine: puts it together; engine/lifecycle.rs, a build's state
+  web.rs          the bridge to JavaScript (WebEngine, JsHost), only in the wasm32 build: the npm package
   maybe_send.rs   Send/Sync in native builds only
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
