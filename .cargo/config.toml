@@ -1,0 +1,4 @@
+[alias]
+# Build tooling (the wasm32 tests, the npm package, release assets, publishing): `cargo xtask <command>`, see
+# xtask/src/main.rs.
+xtask = "run --quiet --locked --manifest-path xtask/Cargo.toml --"
