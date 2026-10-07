@@ -41,6 +41,9 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
 
 - **One package per concept.** `x.rs` is the module and holds its main type or trait, the interface at the module root
   (never `x/x.rs`: Clippy's `module_inception`); `x/` holds its parts, one small file per piece.
+- **A file holds one idea.** A module's root file keeps its main type or trait and the module's docs; its secondary
+  pieces (its errors, data shapes, helpers, related types) go to files in its folder. A file that mixes concerns is
+  split.
 - **Names say what a thing is**: `runtime.rs` (the library files a backend needs), not `downloads.rs`;
   `loaded_model.rs`; `SttModel` and `TtsModel`, after the catalogue's `Task`.
 - **Unit tests live in `x/tests.rs`** beside their module (`#[cfg(test)] mod tests;`), never inline. Test doubles

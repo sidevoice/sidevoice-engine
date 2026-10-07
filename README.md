@@ -52,13 +52,16 @@ model runs yet.
 ```
 src/            the crate sidevoice-engine, one package per concept (`x.rs` is the package, `x/` its parts):
   lib.rs          the front door: declares the packages, exports the public API
-  host.rs         Host, Storage, Fetcher: the platform contract; host/capabilities.rs, what a host reports
+  host.rs         Host, Storage, Fetcher: the platform contract; host/: capabilities (what a host reports),
+                  platform (which platform that is)
   catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, models and their builds
-  backend.rs      Backend: the interface every backend implements; backend/: runtime (its files, from backends.json),
-                  requirement, registry, loaded_model (what load returns), implementations/ (one file per backend)
+  backend.rs      Backend: the interface every backend implements; backend/: runtime (its files: the lookup, and
+                  runtime/schema.rs, the shape of backends.json), requirement, registry, loaded_model (what load
+                  returns), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns
   install.rs      the installer
-  engine.rs       Engine: puts it together; engine/lifecycle.rs, a build's state
+  engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
+                  lifecycle (a build's state)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
                   the JavaScript host (JsHost) as the engine sees it
   maybe_send.rs   Send/Sync in native builds only

@@ -7,8 +7,10 @@ use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
 
 mod capabilities;
+mod platform;
 
 pub use capabilities::{Accelerator, Capabilities, Runs};
+pub(crate) use platform::Platform;
 
 /// The facts, storage and downloads of the place the engine runs in. There is no default: without a host there is
 /// no engine.

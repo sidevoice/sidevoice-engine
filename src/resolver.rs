@@ -6,9 +6,9 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
-use crate::backend::{self, Backend, BackendId, MinMemoryMb, Platform, Requirement};
+use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
 use crate::catalog::{Build, Catalog, Model, Task};
-use crate::host::{Accelerator, Capabilities};
+use crate::host::{Accelerator, Capabilities, Platform};
 
 mod offer;
 

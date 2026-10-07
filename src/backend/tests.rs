@@ -1,8 +1,8 @@
 //! Which backends each build contains. The expected lists use the raw target conditions, not the engine's aliases:
 //! these tests are what checks the aliases.
 
-use super::{built_in, runtime_files, Platform};
-use crate::host::Host;
+use super::{built_in, runtime_files};
+use crate::host::{Host, Platform};
 use crate::test_support::FakeHost;
 
 #[cfg(web)]

@@ -32,7 +32,7 @@ pub(crate) use registry::{built_in, find, BackendFactory};
 )]
 pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
-pub(crate) use runtime::{runtime_files, Platform};
+pub(crate) use runtime::runtime_files;
 
 /// A backend's stable id, as catalogue builds name it ([`Build::backend`]): "sherpa-onnx", "whisper-cpp", "mlx", ...
 pub type BackendId = &'static str;

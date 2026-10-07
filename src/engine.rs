@@ -1,19 +1,27 @@
 //! The engine of one place: its host, its catalogue and the backends compiled into it, and the steps from a task to
 //! a loaded model: offers (resolver.rs), the choice per stage, installing (install.rs) and loading.
+//!
+//! Inside: `selection` (what the person asks for and what is chosen), `error` (why an engine cannot be built) and
+//! `lifecycle` (a build's state).
 
 use std::fmt;
 use std::sync::{Mutex, PoisonError};
 
-use crate::backend::{self, Backend, BackendId, LoadedModel, Platform};
-use crate::catalog::{Build, Catalog, CatalogSource, Model, Problem, Task};
-use crate::host::{Accelerator, Host};
+use crate::backend::{self, Backend, BackendId, LoadedModel};
+use crate::catalog::{Catalog, CatalogSource, Task};
+use crate::host::{Host, Platform};
 use crate::install::Installer;
 use crate::resolver::{Offer, Resolver};
 use crate::{Error, Result};
 
+mod error;
 mod lifecycle;
+mod selection;
 #[cfg(test)]
 mod tests;
+
+pub use error::ConfigError;
+pub use selection::{Preferences, Selection};
 
 /// The engine of one place: what can run here, the choice per stage, and the models prepared.
 pub struct Engine {
@@ -32,57 +40,6 @@ impl fmt::Debug for Engine {
             .field("backends", &self.backends())
             .finish_non_exhaustive()
     }
-}
-
-/// Why an engine cannot be built.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ConfigError {
-    /// A catalogue source failed to load.
-    Source(Error),
-    /// The merged catalogue is inconsistent.
-    Catalog(Vec<Problem>),
-}
-
-impl fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Stable codes, like `Error`'s: the source's own code is its `source()`.
-        f.write_str(match self {
-            Self::Source(_) => "catalog-source-failed",
-            Self::Catalog(_) => "catalog-inconsistent",
-        })
-    }
-}
-
-impl std::error::Error for ConfigError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Source(error) => Some(error),
-            Self::Catalog(_) => None,
-        }
-    }
-}
-
-/// What the person asked for in advanced options; `None` leaves it to the engine.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Preferences {
-    /// A model id.
-    pub model: Option<String>,
-    /// A backend id, as [`Engine::backends`] lists them.
-    pub backend: Option<String>,
-    /// An accelerator.
-    pub accelerator: Option<Accelerator>,
-}
-
-/// The model, build and accelerator chosen for a stage.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Selection {
-    /// The model chosen.
-    pub model: Model,
-    /// Its build to run.
-    pub build: Build,
-    /// The accelerator to run it on.
-    pub accelerator: Accelerator,
 }
 
 /// A prepared model.
