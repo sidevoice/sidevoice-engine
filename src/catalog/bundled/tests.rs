@@ -16,7 +16,7 @@ fn every_bundled_family_parses_and_the_merge_has_no_problems() {
 }
 
 #[test]
-fn every_bundled_file_is_pinned_to_a_revision() {
+fn every_bundled_file_is_pinned_to_a_revision_or_marked_mutable() {
     let fragment = BundledCatalog.load().expect("bundled catalogue");
     let builds = fragment
         .families
@@ -26,6 +26,18 @@ fn every_bundled_file_is_pinned_to_a_revision() {
     for build in builds {
         for file in &build.files {
             let what = format!("{} {}", build.id, file.key);
+            assert!(file.bytes > 0, "{what}: no size");
+            // A release asset cannot be pinned by its URL: its digest is all that pins it, and the data says so.
+            if file.url.starts_with("https://github.com/")
+                && file.url.contains("/releases/download/")
+            {
+                assert!(file.mutable, "{what}: a release asset not marked mutable");
+                continue;
+            }
+            assert!(
+                !file.mutable,
+                "{what}: marked mutable, but pinned to a revision"
+            );
             let revision = file
                 .url
                 .strip_prefix("https://huggingface.co/")
@@ -39,7 +51,6 @@ fn every_bundled_file_is_pinned_to_a_revision() {
                 "{what}: {} is not pinned; run `cargo xtask pin-catalog`",
                 file.url
             );
-            assert!(file.bytes > 0, "{what}: no size");
         }
     }
 }
@@ -84,9 +95,16 @@ fn family_with(edit: impl FnOnce(&mut serde_json::Value)) -> Result<(), String> 
                 "id": "m/b",
                 "backend": "sherpa-onnx",
                 "precision": "q5_1",
-                "requires": {"webgpu_features": ["shader-f16"], "wasm_max_mb": 2048},
+                "requires": {"accelerators": ["cpu"], "webgpu_features": ["shader-f16"], "wasm_max_mb": 2048},
                 "memory": {"mb": 1, "source": "measured", "basis": "a test"},
-                "files": [{"key": "model", "url": "https://example.com/m", "sha256": "", "bytes": 1}]
+                "files": [{
+                    "key": "model",
+                    "url": "https://example.com/m.tar.bz2",
+                    "sha256": "",
+                    "bytes": 1,
+                    "archive_path": "m/model.onnx",
+                    "mutable": true
+                }]
             }]
         }]
     });
@@ -97,11 +115,16 @@ fn family_with(edit: impl FnOnce(&mut serde_json::Value)) -> Result<(), String> 
 #[test]
 fn a_family_file_is_read_strictly() {
     assert_eq!(family_with(|_| ()), Ok(()));
-    // `requires` is the only optional key, and its constraints are each optional.
+    // A build's `requires` and a file's `archive_path` and `mutable` are the only optional keys, and the constraints
+    // in `requires` are each optional.
     assert_eq!(
         family_with(|family| {
             let build = family["models"][0]["builds"][0].as_object_mut();
             build.expect("a build").remove("requires");
+            let file = family["models"][0]["builds"][0]["files"][0].as_object_mut();
+            let file = file.expect("a file");
+            file.remove("archive_path");
+            file.remove("mutable");
         }),
         Ok(())
     );
@@ -128,6 +151,9 @@ fn a_family_file_is_read_strictly() {
     });
     fails("an unknown constraint", &|family| {
         family["models"][0]["builds"][0]["requires"]["os"] = serde_json::json!(["linux"]);
+    });
+    fails("an unknown accelerator", &|family| {
+        family["models"][0]["builds"][0]["requires"]["accelerators"] = serde_json::json!(["npu"]);
     });
     fails("a missing family key", &|family| {
         family

@@ -5,7 +5,8 @@ use serde_json::json;
 use super::{estimate_mb, percent_decoded, repin, Entry, Hub};
 use crate::Result;
 
-/// A hub with one repository: `main` is commit `c…c`, `model.onnx` is in LFS and `config.json` is not.
+/// A Hugging Face repository whose `main` is commit `c…c`, where `model.onnx` is in LFS and `config.json` is not;
+/// and a GitHub release `models` whose `model.tar.bz2` has a digest and `old.tar.bz2` none.
 #[derive(Default)]
 struct FakeHub {
     downloads: Vec<String>,
@@ -28,7 +29,20 @@ impl Hub for FakeHub {
         let (bytes, lfs) = files.get(path).ok_or(format!("no file {path}"))?;
         Ok(Entry {
             bytes: *bytes,
-            lfs_sha256: lfs.map(str::to_owned),
+            sha256: lfs.map(str::to_owned),
+        })
+    }
+
+    fn release_asset(&mut self, repo: &str, tag: &str, name: &str) -> Result<Entry> {
+        assert_eq!((repo, tag), ("org/repo", "models"));
+        let sha256 = match name {
+            "model.tar.bz2" => Some("asset digest".to_owned()),
+            "old.tar.bz2" => None,
+            _ => return Err(format!("no asset {name}")),
+        };
+        Ok(Entry {
+            bytes: 100 * 1024 * 1024,
+            sha256,
         })
     }
 
@@ -99,12 +113,15 @@ fn a_declared_or_measured_memory_is_left_as_it_is() {
 }
 
 #[test]
-fn only_hugging_face_resolve_urls_can_be_pinned() {
+fn only_hugging_face_files_and_github_release_assets_can_be_pinned() {
     let mut doc = family(json!(null));
     doc["models"][0]["builds"][0]["files"][0]["url"] =
         "https://github.com/org/repo/releases/x.tar.bz2".into();
     let error = repin(&mut doc, &mut FakeHub::default()).unwrap_err();
-    assert_eq!(error, "m/b model: not a Hugging Face resolve URL");
+    assert_eq!(
+        error,
+        "m/b model: not a Hugging Face resolve URL or a GitHub release asset"
+    );
 }
 
 #[test]
@@ -123,4 +140,39 @@ fn a_url_path_is_looked_up_decoded() {
     );
     assert!(percent_decoded("bad%2").is_err());
     assert!(percent_decoded("bad%zz").is_err());
+}
+
+#[test]
+fn a_release_asset_is_pinned_by_its_digest_and_marked_mutable_and_its_archive_counts_once() {
+    let asset = "https://github.com/org/repo/releases/download/models/model.tar.bz2";
+    let old = "https://github.com/org/repo/releases/download/models/old.tar.bz2";
+    let mut doc = json!({"id": "f", "models": [{"id": "m", "builds": [{
+        "id": "m/b",
+        "files": [
+            {"key": "model", "url": asset, "archive_path": "m/model.onnx"},
+            {"key": "voices", "url": asset, "archive_path": "m/voices.bin"},
+            {"key": "data", "url": asset, "archive_path": "m/data", "mutable": false},
+            {"key": "old", "url": old}
+        ]
+    }]}]});
+    let mut hub = FakeHub::default();
+    repin(&mut doc, &mut hub).unwrap();
+    let files = &doc["models"][0]["builds"][0]["files"];
+    assert_eq!(
+        files[0],
+        json!({
+            "key": "model",
+            "url": asset,
+            "archive_path": "m/model.onnx",
+            "sha256": "asset digest",
+            "bytes": 104857600,
+            "mutable": true
+        })
+    );
+    assert_eq!(files[2]["mutable"], true);
+    // An asset the API has no digest for is downloaded and hashed.
+    assert_eq!(hub.downloads, [old]);
+    assert_eq!(files[3]["sha256"], format!("digest of {old}"));
+    // Two weights in one 100 MiB archive: 100 MiB, plus 30%.
+    assert_eq!(doc["models"][0]["builds"][0]["memory"]["mb"], 130);
 }

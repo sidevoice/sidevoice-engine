@@ -14,7 +14,7 @@ pub use capability::Capability;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Model {
-    /// Its stable id: "whisper-small", "kokoro-82m-v1.0", ... The app translates what it shows from it.
+    /// Its stable id: "whisper-small", "kokoro-82m-v0.19", ... The app translates what it shows from it.
     pub id: String,
     /// What it can do.
     pub capabilities: Vec<Capability>,

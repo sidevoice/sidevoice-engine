@@ -1,5 +1,5 @@
 //! The funnel's accelerator and requirement steps, on hosts that report little: what the host cannot tell passes, what
-//! it does not report is absent, and a probe only narrows what it reports.
+//! it does not report is absent, a probe only narrows what it reports, and a build only runs on what it requires.
 
 use async_trait::async_trait;
 
@@ -57,12 +57,14 @@ impl Backend for FixedProbeBackend {
     }
 }
 
-/// A catalogue of one model with one build for that backend that needs 2 GB.
-struct OneBuildCatalog;
+/// A catalogue of one model with one build for that backend that needs 2 GB and requires these accelerators.
+struct OneBuildCatalog(&'static [Accelerator]);
 
 impl CatalogSource for OneBuildCatalog {
     fn load(&self) -> Result<CatalogFragment> {
-        let builds = vec![build("model/sherpa-onnx", "sherpa-onnx", 2_048)];
+        let mut build = build("model/sherpa-onnx", "sherpa-onnx", 2_048);
+        build.requires.accelerators = self.0.to_vec();
+        let builds = vec![build];
         Ok(CatalogFragment {
             families: vec![family(
                 "family",
@@ -83,10 +85,19 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
     }
 }
 
-/// The accelerator the one build is offered on, or why it is rejected.
+/// The accelerator the one build, requiring none, is offered on, or why it is rejected.
 fn fit(probe: &'static [Accelerator], caps: &Capabilities) -> Result<Accelerator, Rejection> {
-    let catalog =
-        Catalog::merge(&[Box::new(OneBuildCatalog) as Box<dyn CatalogSource>]).expect("catalogue");
+    fit_requiring(&[], probe, caps)
+}
+
+/// The accelerator the one build, requiring `accelerators`, is offered on, or why it is rejected.
+fn fit_requiring(
+    accelerators: &'static [Accelerator],
+    probe: &'static [Accelerator],
+    caps: &Capabilities,
+) -> Result<Accelerator, Rejection> {
+    let source = OneBuildCatalog(accelerators);
+    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let offers = Resolver::default().offers(
         &catalog,
         &[FixedProbeBackend::probing(probe)],
@@ -142,5 +153,31 @@ fn a_probe_narrows_what_the_host_reports_and_never_widens_it() {
     assert_eq!(
         fit(COREML_AND_CPU, &caps(&[Accelerator::Cpu], None, None)),
         Ok(Accelerator::Cpu)
+    );
+}
+
+#[test]
+fn a_build_runs_only_on_accelerators_it_requires_in_the_backends_order() {
+    let host = caps(COREML_AND_CPU, None, None);
+    // Requiring both, or nothing, the backend's preference decides.
+    let both = &[Accelerator::Cpu, Accelerator::CoreMl];
+    assert_eq!(
+        fit_requiring(both, COREML_AND_CPU, &host),
+        Ok(Accelerator::CoreMl)
+    );
+    // Kokoro on sherpa-onnx: the CPU only.
+    assert_eq!(
+        fit_requiring(&[Accelerator::Cpu], COREML_AND_CPU, &host),
+        Ok(Accelerator::Cpu)
+    );
+    let build_accelerator = Err(Rejection::DoesNotFit(Reason::new("build-accelerator")));
+    assert_eq!(
+        fit_requiring(&[Accelerator::Cuda], COREML_AND_CPU, &host),
+        build_accelerator
+    );
+    // What the build requires must still have passed the probe.
+    assert_eq!(
+        fit_requiring(&[Accelerator::CoreMl], &[Accelerator::Cpu], &host),
+        build_accelerator
     );
 }

@@ -1,9 +1,11 @@
 use serde::Deserialize;
 
+use crate::host::Accelerator;
 use crate::install::Artifact;
 
 /// One way to run a model: the backend that runs it, its precision, what it strictly needs, the memory it takes, and
-/// its files. Which accelerators it runs on and its file format are its backend's to know, not the build's.
+/// its files. Which accelerators it runs on and its file format are its backend's to know, short of a hard restriction
+/// in `requires`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Build {
@@ -45,6 +47,10 @@ pub enum Precision {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requires {
+    /// The only accelerators it can run on, when its backend runs on more than it can take (Kokoro on sherpa-onnx: Core
+    /// ML aborts the process, so the CPU only). Empty, any its backend runs on.
+    #[serde(default)]
+    pub accelerators: Vec<Accelerator>,
     /// WebGPU features the adapter must have, as WebGPU names them: "shader-f16", ...
     #[serde(default)]
     pub webgpu_features: Vec<String>,
@@ -76,23 +82,31 @@ pub enum MemorySource {
     Measured,
 }
 
-/// One file of a build, pinned: its URL names an immutable revision, and its digest and size are the file's.
+/// One file of a build, pinned: its URL names an immutable revision (or is marked `mutable`), and its digest and size
+/// are what it serves.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelFile {
-    /// What the backend finds it by: a role ("encoder", "tokens", ...), or its path inside the model's directory
-    /// when the backend reads a directory ("espeak-ng-data/en_dict").
+    /// What the backend finds it by: "encoder", "tokens", "espeak-ng-data" (a directory), ...
     pub key: String,
-    /// Where it is downloaded from, at a pinned revision.
+    /// Where it is downloaded from: pinned to a revision, unless `mutable`.
     pub url: String,
-    /// Its SHA-256 digest, in lowercase hex.
+    /// Its SHA-256 digest, in lowercase hex: what is downloaded from `url`, the archive when there is one.
     pub sha256: String,
-    /// Its size, in bytes.
+    /// Its size, in bytes: what is downloaded from `url`.
     pub bytes: u64,
+    /// When `url` is an archive, the file or directory inside it that `key` names. Several keys may name parts of one
+    /// archive: they repeat its `url`, `sha256` and `bytes`, and it is downloaded and unpacked once, by its digest.
+    pub archive_path: Option<String>,
+    /// Whether `url` can serve other bytes over time (a GitHub release asset, which can be uploaded again): then only
+    /// `sha256` pins it.
+    #[serde(default)]
+    pub mutable: bool,
 }
 
 impl ModelFile {
-    /// What the installer downloads for it.
+    /// What the installer downloads for it. Its `archive_path` is not part of that yet: unpacking is the installer's to
+    /// add (sidevoice-engine#6).
     pub(crate) fn artifact(&self) -> Artifact {
         Artifact {
             key: self.key.clone(),

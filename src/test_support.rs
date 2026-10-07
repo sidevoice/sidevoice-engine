@@ -70,6 +70,8 @@ pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> Build {
             url: format!("https://example.com/{id}"),
             sha256: "0".repeat(64),
             bytes: 1,
+            archive_path: None,
+            mutable: false,
         }],
     }
 }

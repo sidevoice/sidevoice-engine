@@ -1,9 +1,9 @@
 //! The funnel, the same for every backend: for each build of the catalogue, is its backend compiled here, does it have
 //! an entry for this platform in `backends.json`, which of its accelerators work here (what the host reports, narrowed
-//! by `probe`, cached), does the machine meet the build's and the backend's requirements (a value the host cannot tell
-//! passes). Then, per model, a build: the catalogue's builds carry no order, and ranking them is still to come
-//! (sidevoice-engine#4); until then it is the first that fits, on its backend's preferred accelerator. Every rejected
-//! build is kept with its reason.
+//! by `probe`, cached), is one of them an accelerator the build can take (its `requires`), does the machine meet the
+//! build's and the backend's requirements (a value the host cannot tell passes). Then, per model, a build: the
+//! catalogue's builds carry no order, and ranking them is still to come (sidevoice-engine#4); until then it is the
+//! first that fits, on its backend's preferred accelerator. Every rejected build is kept with its reason.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
@@ -60,7 +60,7 @@ impl Resolver {
     }
 
     /// The best accelerator this build can run on here, or why it cannot: the backend's preference order, kept to
-    /// what its probe confirms of what the host reports.
+    /// what its probe confirms of what the host reports, then to what the build requires.
     fn fit(
         &self,
         build: &Build,
@@ -79,16 +79,24 @@ impl Resolver {
         let spec = backend.spec();
         let probed = self.probe(backend, caps);
         // A probe narrows what the host reports, never widens it.
-        let Some(accelerator) = spec
+        let mut working = spec
             .accelerators
             .iter()
             .copied()
-            .find(|accelerator| caps.has(*accelerator) && probed.contains(accelerator))
-        else {
+            .filter(|accelerator| caps.has(*accelerator) && probed.contains(accelerator))
+            .peekable();
+        if working.peek().is_none() {
             return Err(Rejection::BackendUnavailable(Reason::new("no-accelerator")));
+        }
+        // A build that runs on fewer accelerators than its backend says so in `requires`.
+        let accepted = &build.requires.accelerators;
+        let Some(accelerator) =
+            working.find(|accelerator| accepted.is_empty() || accepted.contains(accelerator))
+        else {
+            return Err(Rejection::DoesNotFit(Reason::new("build-accelerator")));
         };
-        // The build's own needs (catalogue) are checked like the backend's. Its `requires` are not checked yet: the
-        // host does not report WebGPU features, and the WebAssembly cap is the ranking's (sidevoice-engine#4).
+        // The build's own needs (catalogue) are checked like the backend's. Its other `requires` are not checked yet:
+        // the host does not report WebGPU features, and the WebAssembly cap is the ranking's (sidevoice-engine#4).
         let build_needs = MinMemoryMb(build.memory.mb);
         let requirements = std::iter::once(&build_needs as &dyn Requirement)
             .chain(spec.requirements.iter().copied());

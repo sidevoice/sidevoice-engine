@@ -5,7 +5,7 @@
 //! Inside: `family` and `model` (the shape, read strictly: an unknown or a missing key is an error) and `bundled`
 //! (the families this repository ships, `catalog/families/<family>.json`, compiled in).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::backend;
 use crate::maybe_send::{MaybeSend, MaybeSync};
@@ -105,6 +105,14 @@ pub enum Problem {
         /// The file's key.
         key: String,
     },
+    /// Two files of one build with this `url` but not the same `sha256`, `bytes` or `mutable`: keys that name parts of
+    /// one archive must repeat what it is, since it is downloaded and unpacked once.
+    InconsistentDownload {
+        /// The build.
+        build: String,
+        /// The key of the file that disagrees with an earlier one.
+        key: String,
+    },
 }
 
 impl Catalog {
@@ -186,6 +194,7 @@ fn check_build(build: &Build, problems: &mut Vec<Problem>) {
         });
     }
     let mut keys = HashSet::new();
+    let mut downloads = HashMap::new();
     for file in &build.files {
         if !keys.insert(&file.key) {
             problems.push(Problem::DuplicateFile {
@@ -196,6 +205,13 @@ fn check_build(build: &Build, problems: &mut Vec<Problem>) {
         let hex = |c: u8| c.is_ascii_digit() || (b'a'..=b'f').contains(&c);
         if file.sha256.len() != 64 || !file.sha256.bytes().all(hex) {
             problems.push(Problem::FileWithoutDigest {
+                build: build.id.clone(),
+                key: file.key.clone(),
+            });
+        }
+        let download = (&file.sha256, file.bytes, file.mutable);
+        if *downloads.entry(&file.url).or_insert(download) != download {
+            problems.push(Problem::InconsistentDownload {
                 build: build.id.clone(),
                 key: file.key.clone(),
             });

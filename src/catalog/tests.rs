@@ -92,10 +92,14 @@ fn a_build_needs_a_known_backend_and_files_with_digests_and_distinct_keys() {
     let unknown = build("m/nope", "no-such-backend", 1);
     let mut files = build("m/files", "sherpa-onnx", 1);
     let file = files.files[0].clone();
-    files.files.push(file.clone());
+    files.files.push(crate::ModelFile {
+        url: "https://example.com/again".to_owned(),
+        ..file.clone()
+    });
     files.files[0].sha256 = "A".repeat(64);
     files.files.push(crate::ModelFile {
         key: "short".to_owned(),
+        url: "https://example.com/short".to_owned(),
         sha256: "0".repeat(63),
         ..file
     });
@@ -145,4 +149,39 @@ fn models_are_found_by_any_of_their_capabilities() {
             .collect();
         assert_eq!(ids, ["both"]);
     }
+}
+
+#[test]
+fn keys_inside_one_archive_repeat_what_it_is() {
+    let mut archive = build("m/archive", "sherpa-onnx", 1);
+    let model_file = crate::ModelFile {
+        archive_path: Some("m/model.onnx".to_owned()),
+        mutable: true,
+        ..archive.files[0].clone()
+    };
+    let voices = crate::ModelFile {
+        key: "voices".to_owned(),
+        archive_path: Some("m/voices.bin".to_owned()),
+        ..model_file.clone()
+    };
+    let other_size = crate::ModelFile {
+        key: "tokens".to_owned(),
+        bytes: 2,
+        ..voices.clone()
+    };
+    let not_mutable = crate::ModelFile {
+        key: "data".to_owned(),
+        mutable: false,
+        ..voices.clone()
+    };
+    archive.files = vec![model_file, voices, other_size, not_mutable];
+    let found = problems(vec![family(
+        "f",
+        vec![model("m", Capability::Stt, vec![archive])],
+    )]);
+    let inconsistent = |key: &str| Problem::InconsistentDownload {
+        build: "m/archive".to_owned(),
+        key: key.to_owned(),
+    };
+    assert_eq!(found, [inconsistent("tokens"), inconsistent("data")]);
 }

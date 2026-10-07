@@ -67,8 +67,9 @@ anything, gathered once when the host is built:
   missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
-A build is offered on the first accelerator in its backend's order of preference that the host reports and the probe
-confirms: which accelerators a build runs on is its backend's to know, not the catalogue's.
+A build is offered on the first accelerator in its backend's order of preference that the host reports, the probe
+confirms and the build allows: which accelerators a build runs on is its backend's to know, unless the build cannot
+take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
 
 ## Status
 
@@ -137,19 +138,24 @@ cargo xtask pin-backends --check   # what CI runs when backends.json changes
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
 (`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
 model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and `license`; a build, its `id`, the
-`backend` that runs it, its `precision`, `requires` (hard constraints only, and optional), its `memory` (`mb`, with
-the `source` of the figure, `estimated`, `declared` or `measured`, and its `basis`), and its `files`, each a `key`
-the backend finds it by, a `url` pinned to a revision, its `sha256` and its `bytes`. Builds carry no order: ranking
-them is the resolver's. Reading is strict (an unknown or a missing key fails the tests) and the merge of every source
-is checked by `Catalog::check`. Sizes, digests and pinned revisions come from the Hugging Face API, never by hand: a
-new file is written with its `key` and a `url` at any revision (`…/resolve/main/…`), and then
+`backend` that runs it, its `precision`, `requires` (hard constraints only, and optional: the only `accelerators` it
+can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `source` of the figure, `estimated`,
+`declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by, a `url`,
+its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
+keys that name parts of one archive repeat its url, digest and size (it is downloaded and unpacked once). A url is
+pinned to a revision (a Hugging Face commit); a GitHub release asset cannot be, so it is marked `mutable` and only its
+digest pins it. Builds carry no order: ranking them is the resolver's. Reading is strict (an unknown or a missing key
+fails the tests) and the merge of every source is checked by `Catalog::check`. Sizes, digests and pinned revisions
+come from the Hugging Face and GitHub APIs, never by hand: a new file is written with its `key` and a `url` (on
+Hugging Face at any revision, `…/resolve/main/…`), and then
 
 ```sh
-cargo xtask pin-catalog            # pin every url to its commit, write sizes, digests and estimated memory
+cargo xtask pin-catalog            # pin every url, write sizes, digests and estimated memory
 cargo xtask pin-catalog --check    # what CI runs when the catalogue changes
 ```
 
-Estimated memory is the weights plus 30%; a `declared` or `measured` figure is never overwritten.
+Estimated memory is the weights plus 30% (an archive counts once, at its size); a `declared` or `measured` figure is
+never overwritten.
 
 ## How to add a backend
 

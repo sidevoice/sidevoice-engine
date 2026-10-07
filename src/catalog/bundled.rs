@@ -1,7 +1,7 @@
 //! The catalogue this repository ships: one file per family, `catalog/families/<family>.json` at the repository root,
 //! compiled in. Its files' URLs, sizes and digests, and its estimated memory, are written by `cargo xtask
-//! pin-catalog` from the Hugging Face API, never by hand. The tests parse every file on every target, check the merge,
-//! and fail if a file in the directory is not listed here.
+//! pin-catalog` from the Hugging Face and GitHub APIs, never by hand. The tests parse every file on every target,
+//! check the merge, and fail if a file in the directory is not listed here.
 
 use super::{CatalogFragment, CatalogSource, Family};
 use crate::{Error, Result};

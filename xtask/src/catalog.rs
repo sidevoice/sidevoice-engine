@@ -1,15 +1,22 @@
-//! The catalogue's pins, which nobody types. `pin-catalog` reads every family in `catalog/families/`, and for each file
-//! of each build, whose `url` is a Hugging Face `resolve` URL at any revision (a branch, a tag or a commit):
+//! The catalogue's pins, which nobody types. `pin-catalog` reads every family in `catalog/families/` and pins each file
+//! of each build from its source's API:
 //!
-//! - pins the URL to the commit that revision names, so that the file can never change under it;
-//! - writes its `bytes` and `sha256` from the Hugging Face API: the LFS digest the API reports, or, for a small file
-//!   kept in git rather than LFS, the digest of the file downloaded (`curl`).
+//! - a Hugging Face `resolve` URL at any revision (a branch, a tag or a commit) is pinned to the commit that revision
+//!   names, so that the file can never change under it; its `bytes` and `sha256` are the API's (the LFS digest), or,
+//!   for a small file kept in git rather than LFS, those of the file downloaded (`curl`);
+//! - a GitHub release asset (`https://github.com/<owner>/<repo>/releases/download/<tag>/<name>`) cannot be pinned by
+//!   its URL, since an asset can be uploaded again: it is marked `mutable`, and its `bytes` and `sha256` are the
+//!   release API's (or, for an asset the API has no digest for, those of the file downloaded). Its `sha256` is then
+//!   all that pins it.
 //!
-//! A build with no `memory`, or an `estimated` one, gets its estimate: its weights (its `.onnx`, `.bin`, `.npz`,
-//! `.safetensors` and `.gguf` files) plus 30%, in MB rounded up to a multiple of 10. A `declared` or `measured` figure
-//! is left as it is. `pin-catalog --check` derives all of it again and fails if anything differs, writing nothing.
+//! A file's `archive_path` (the file or directory inside an archive that its key names) is left as it is.
+//!
+//! A build with no `memory`, or an `estimated` one, gets its estimate: its weights (the files whose name, or path
+//! inside their archive, ends in `.onnx`, `.bin`, `.npz`, `.safetensors` or `.gguf`; an archive counted once, at its
+//! size) plus 30%, in MB rounded up to a multiple of 10. A `declared` or `measured` figure is left as it is.
+//! `pin-catalog --check` derives all of it again and fails if anything differs, writing nothing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::Path;
 
@@ -18,25 +25,36 @@ use serde_json::{json, Value};
 use crate::{empty_dir, read, repo, run_in, sha256, write, Result};
 
 const HUB: &str = "https://huggingface.co/";
+const RELEASES: &str = "https://github.com/";
 const WEIGHTS: [&str; 5] = [".onnx", ".bin", ".npz", ".safetensors", ".gguf"];
 const BASIS: &str = "weights size + 30%";
 
-/// What the Hugging Face API says about one file at one commit.
+/// What an API says about one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Entry {
     bytes: u64,
-    /// Its SHA-256, when it is in LFS.
-    lfs_sha256: Option<String>,
+    /// Its SHA-256, when the API reports it (Hugging Face for LFS files, GitHub for recent assets).
+    sha256: Option<String>,
 }
 
-/// What pinning asks Hugging Face, so that the tests can answer instead.
+/// What pinning asks Hugging Face and GitHub, so that the tests can answer instead.
 trait Hub {
-    /// The commit `revision` of `repo` names.
+    /// The commit `revision` of the Hugging Face `repo` names.
     fn commit(&mut self, repo: &str, revision: &str) -> Result<String>;
-    /// The file `path` of `repo` at `commit`.
+    /// The file `path` of the Hugging Face `repo` at `commit`.
     fn entry(&mut self, repo: &str, commit: &str, path: &str) -> Result<Entry>;
+    /// The asset `name` of the GitHub `repo`'s release `tag`.
+    fn release_asset(&mut self, repo: &str, tag: &str, name: &str) -> Result<Entry>;
     /// The SHA-256 of the file at `url`, downloaded.
     fn download_sha256(&mut self, url: &str) -> Result<String>;
+}
+
+/// A file pinned: where from, what it is, and whether only its digest pins it.
+struct Pinned {
+    url: String,
+    bytes: u64,
+    sha256: String,
+    mutable: bool,
 }
 
 /// `cargo xtask pin-catalog [--check]`.
@@ -48,7 +66,7 @@ pub(crate) fn pin(check: bool) -> Result<()> {
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .collect();
     paths.sort();
-    let mut hub = HuggingFace::default();
+    let mut hub = Sources::default();
     let mut failed = Vec::new();
     for path in paths {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
@@ -89,19 +107,31 @@ fn repin(doc: &mut Value, hub: &mut impl Hub) -> Result<Vec<String>> {
         for build in builds {
             let id = build["id"].as_str().ok_or("a build with no id")?.to_owned();
             let mut weights = 0;
+            // An archive several keys name is one download: its size counts once.
+            let mut counted = HashSet::new();
             let files = build["files"].as_array_mut();
             for file in files.ok_or(format!("{id}: no files"))? {
                 let what = format!("{id} {}", file["key"].as_str().unwrap_or_default());
                 let url = file["url"].as_str().ok_or(format!("{what}: no url"))?;
-                let (url, entry, sha256) =
-                    pin_file(url, hub).map_err(|e| format!("{what}: {e}"))?;
-                if WEIGHTS.iter().any(|ext| url.ends_with(ext)) {
-                    weights += entry.bytes;
+                let pinned = pin_file(url, hub).map_err(|e| format!("{what}: {e}"))?;
+                let name = file["archive_path"].as_str().unwrap_or(&pinned.url);
+                if WEIGHTS.iter().any(|ext| name.ends_with(ext))
+                    && counted.insert(pinned.url.clone())
+                {
+                    weights += pinned.bytes;
                 }
                 let before = file.clone();
-                file["url"] = url.into();
-                file["sha256"] = sha256.into();
-                file["bytes"] = entry.bytes.into();
+                file["url"] = pinned.url.into();
+                file["sha256"] = pinned.sha256.into();
+                file["bytes"] = pinned.bytes.into();
+                let object = file
+                    .as_object_mut()
+                    .ok_or(format!("{what}: not an object"))?;
+                if pinned.mutable {
+                    object.insert("mutable".into(), true.into());
+                } else {
+                    object.remove("mutable");
+                }
                 if *file != before {
                     stale.push(what);
                 }
@@ -120,12 +150,29 @@ fn repin(doc: &mut Value, hub: &mut impl Hub) -> Result<Vec<String>> {
     Ok(stale)
 }
 
-/// The URL pinned to a commit, what the API says of the file, and its digest.
-fn pin_file(url: &str, hub: &mut impl Hub) -> Result<(String, Entry, String)> {
+/// The file at `url`, pinned: a Hugging Face file to its commit, a GitHub release asset by its digest alone.
+fn pin_file(url: &str, hub: &mut impl Hub) -> Result<Pinned> {
+    if let Some(rest) = url.strip_prefix(RELEASES) {
+        let (repo, asset) = rest
+            .split_once("/releases/download/")
+            .ok_or("not a Hugging Face resolve URL or a GitHub release asset")?;
+        let (tag, name) = asset.split_once('/').ok_or("no asset after the tag")?;
+        let entry = hub.release_asset(repo, &percent_decoded(tag)?, &percent_decoded(name)?)?;
+        let sha256 = match entry.sha256 {
+            Some(sha256) => sha256,
+            None => hub.download_sha256(url)?,
+        };
+        return Ok(Pinned {
+            url: url.to_owned(),
+            bytes: entry.bytes,
+            sha256,
+            mutable: true,
+        });
+    }
     let (repo, rest) = url
         .strip_prefix(HUB)
         .and_then(|rest| rest.split_once("/resolve/"))
-        .ok_or("not a Hugging Face resolve URL")?;
+        .ok_or("not a Hugging Face resolve URL or a GitHub release asset")?;
     let (revision, path) = rest.split_once('/').ok_or("no path after the revision")?;
     let commit = if revision.len() == 40 && revision.bytes().all(|c| c.is_ascii_hexdigit()) {
         revision.to_owned()
@@ -134,11 +181,16 @@ fn pin_file(url: &str, hub: &mut impl Hub) -> Result<(String, Entry, String)> {
     };
     let url = format!("{HUB}{repo}/resolve/{commit}/{path}");
     let entry = hub.entry(repo, &commit, &percent_decoded(path)?)?;
-    let sha256 = match &entry.lfs_sha256 {
-        Some(sha256) => sha256.clone(),
+    let sha256 = match entry.sha256 {
+        Some(sha256) => sha256,
         None => hub.download_sha256(&url)?,
     };
-    Ok((url, entry, sha256))
+    Ok(Pinned {
+        url,
+        bytes: entry.bytes,
+        sha256,
+        mutable: false,
+    })
 }
 
 /// A URL's path as the API names the file: `espeak-ng-data/voices/%21v/Mr%20serious` is `…/!v/Mr serious`.
@@ -165,28 +217,32 @@ fn estimate_mb(weights: u64) -> u64 {
     mb.div_ceil(10) * 10
 }
 
-/// The Hugging Face API through `curl`, each answer asked once.
+/// The Hugging Face and GitHub APIs through `curl`, each answer asked once. GitHub is asked with `GITHUB_TOKEN` when
+/// it is set (CI's runners share the anonymous rate limit).
 #[derive(Default)]
-struct HuggingFace {
+struct Sources {
     commits: HashMap<(String, String), String>,
     trees: HashMap<(String, String), HashMap<String, Entry>>,
+    releases: HashMap<(String, String), Value>,
     digests: HashMap<String, String>,
 }
 
-impl HuggingFace {
-    fn get(url: &str) -> Result<Value> {
-        let body = run_in(Path::new("."), "curl -fsSL --retry 3", &[url])?;
+impl Sources {
+    fn get(url: &str, headers: &[&str]) -> Result<Value> {
+        let mut args: Vec<&str> = headers.iter().flat_map(|header| ["-H", header]).collect();
+        args.push(url);
+        let body = run_in(Path::new("."), "curl -fsSL --retry 3", &args)?;
         serde_json::from_str(&body).map_err(|error| format!("{url}: {error}"))
     }
 }
 
-impl Hub for HuggingFace {
+impl Hub for Sources {
     fn commit(&mut self, repo: &str, revision: &str) -> Result<String> {
         let key = (repo.to_owned(), revision.to_owned());
         if let Some(commit) = self.commits.get(&key) {
             return Ok(commit.clone());
         }
-        let info = Self::get(&format!("{HUB}api/models/{repo}/revision/{revision}"))?;
+        let info = Self::get(&format!("{HUB}api/models/{repo}/revision/{revision}"), &[])?;
         let commit = info["sha"]
             .as_str()
             .ok_or(format!("{repo}@{revision}: no commit"))?;
@@ -198,7 +254,7 @@ impl Hub for HuggingFace {
         let key = (repo.to_owned(), commit.to_owned());
         if !self.trees.contains_key(&key) {
             let url = format!("{HUB}api/models/{repo}/tree/{commit}?recursive=true");
-            let tree = Self::get(&url)?;
+            let tree = Self::get(&url, &[])?;
             let tree = tree.as_array().ok_or(format!("{url}: not a list"))?;
             // The API pages long listings; none of ours is that long, and a partial one must not pass for whole.
             if tree.len() >= 1000 {
@@ -210,7 +266,7 @@ impl Hub for HuggingFace {
                 .map(|item| {
                     let entry = Entry {
                         bytes: item["size"].as_u64().unwrap_or_default(),
-                        lfs_sha256: item["lfs"]["oid"].as_str().map(str::to_owned),
+                        sha256: item["lfs"]["oid"].as_str().map(str::to_owned),
                     };
                     (item["path"].as_str().unwrap_or_default().to_owned(), entry)
                 });
@@ -220,6 +276,33 @@ impl Hub for HuggingFace {
             .get(path)
             .cloned()
             .ok_or(format!("{repo}@{commit}: no file {path}"))
+    }
+
+    fn release_asset(&mut self, repo: &str, tag: &str, name: &str) -> Result<Entry> {
+        let key = (repo.to_owned(), tag.to_owned());
+        if !self.releases.contains_key(&key) {
+            let url = format!("https://api.github.com/repos/{repo}/releases/tags/{tag}");
+            let auth =
+                env::var("GITHUB_TOKEN").map(|token| format!("Authorization: Bearer {token}"));
+            let headers: Vec<&str> = auth.as_deref().into_iter().collect();
+            self.releases
+                .insert(key.clone(), Self::get(&url, &headers)?);
+        }
+        let assets = self.releases[&key]["assets"].as_array();
+        let asset = assets
+            .into_iter()
+            .flatten()
+            .find(|asset| asset["name"] == name)
+            .ok_or(format!("{repo} {tag}: no asset {name}"))?;
+        let sha256 = asset["digest"]
+            .as_str()
+            .and_then(|digest| digest.strip_prefix("sha256:"));
+        Ok(Entry {
+            bytes: asset["size"]
+                .as_u64()
+                .ok_or(format!("{repo} {tag} {name}: no size"))?,
+            sha256: sha256.map(str::to_owned),
+        })
     }
 
     fn download_sha256(&mut self, url: &str) -> Result<String> {
