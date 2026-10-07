@@ -44,9 +44,9 @@ pub(super) fn load(api: Arc<Api>, files: &Installed, provider: &str) -> Result<S
 pub(super) fn espeak_voice(tag: &str) -> String {
     let lowered = tag.replace('_', "-").to_ascii_lowercase();
     match (primary_language(tag).as_str(), lowered.split('-').nth(1)) {
-        ("en", Some(region)) if region == "gb" => "en-gb".to_owned(),
+        ("en", Some("gb")) => "en-gb".to_owned(),
         ("en", _) => "en-us".to_owned(),
-        ("pt", Some(region)) if region == "br" => "pt-br".to_owned(),
+        ("pt", Some("br")) => "pt-br".to_owned(),
         (primary, _) => primary.to_owned(),
     }
 }
