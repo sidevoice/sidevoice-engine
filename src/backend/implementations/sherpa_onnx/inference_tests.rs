@@ -205,9 +205,10 @@ fn wav_16k_mono(wav: &[u8]) -> Vec<f32> {
     panic!("the clip has no data");
 }
 
-/// Core ML on macOS, as the app would pick it there; the CPU elsewhere.
-fn accelerator() -> Accelerator {
-    if std::env::consts::OS == "macos" {
+/// What the app would pick: Core ML on macOS for Whisper, and the CPU for everything else (Kokoro runs on the CPU
+/// only, see *Accelerators* in `sherpa_onnx.rs`).
+fn accelerator(files: &Installed) -> Accelerator {
+    if std::env::consts::OS == "macos" && files.file("encoder").is_some() {
         Accelerator::CoreMl
     } else {
         Accelerator::Cpu
@@ -228,8 +229,9 @@ fn load(files: &Installed) -> Box<dyn LoadedModel> {
     } else {
         "Kokoro"
     };
-    eprintln!("loading {model} on {:?}", accelerator());
-    let loaded = ready(SherpaOnnx.load(&build, accelerator(), files)).expect("the model loads");
+    eprintln!("loading {model} on {:?}", accelerator(files));
+    let loaded =
+        ready(SherpaOnnx.load(&build, accelerator(files), files)).expect("the model loads");
     eprintln!("loaded {model}");
     loaded
 }

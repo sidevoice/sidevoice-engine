@@ -62,6 +62,10 @@ fn it_runs_on_core_ml_and_the_cpu_only() {
 }
 
 fn load(files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
+    load_on(Accelerator::Cpu, files)
+}
+
+fn load_on(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
     let build = Build {
         id: "test".to_owned(),
         backend: "sherpa-onnx".to_owned(),
@@ -76,7 +80,7 @@ fn load(files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
             .map(|(key, path)| ((*key).to_owned(), (*path).to_owned()))
             .collect(),
     };
-    ready(SherpaOnnx.load(&build, Accelerator::Cpu, &files))
+    ready(SherpaOnnx.load(&build, accelerator, &files))
 }
 
 fn code(result: Result<Box<dyn LoadedModel>>) -> &'static str {
@@ -132,4 +136,13 @@ fn metadata_is_read_past_the_other_fields_of_the_model() {
     assert_eq!(find("speaker_names").as_deref(), Some("af,am_adam"));
     assert_eq!(find("model_type").as_deref(), Some("kokoro"));
     assert_eq!(find("sample_rate"), None);
+}
+
+#[test]
+fn kokoro_runs_on_the_cpu_only() {
+    let kokoro = [("model", "m.onnx"), ("voices", "v.bin"), ("library", "l")];
+    assert_eq!(
+        code(load_on(Accelerator::CoreMl, &kokoro)),
+        "unsupported-accelerator"
+    );
 }

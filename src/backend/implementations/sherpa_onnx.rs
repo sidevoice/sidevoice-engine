@@ -23,6 +23,10 @@
 //!
 //! Core ML on macOS (ONNX Runtime's Core ML execution provider, which runs on the CPU whatever it cannot place) and
 //! the CPU everywhere. CUDA needs sherpa-onnx's CUDA builds, which `backends.json` does not pin yet.
+//!
+//! Kokoro runs on the CPU only: creating its TTS on Core ML throws a C++ exception that the C API does not catch,
+//! and an exception that reaches Rust aborts the process. `load` refuses it with `unsupported-accelerator` before the
+//! library is touched, and Kokoro's catalogue builds should accept the CPU only.
 
 use std::ffi::CString;
 use std::path::Path;
@@ -78,6 +82,10 @@ impl Backend for SherpaOnnx {
         let is_whisper = files.file("encoder").is_some();
         if !is_whisper && files.file("voices").is_none() {
             return Err(Error::new("unsupported-model"));
+        }
+        // Kokoro on Core ML throws from inside the library, which aborts the process (see *Accelerators*).
+        if !is_whisper && accelerator != Accelerator::Cpu {
+            return Err(Error::new("unsupported-accelerator"));
         }
         let api = Arc::new(Api::open(Path::new(path(files, "library")?))?);
         Ok(if is_whisper {
