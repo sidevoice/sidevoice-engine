@@ -1,7 +1,6 @@
 //! The bridge to JavaScript: the engine as the web sees it, `WebEngine.create(host)`, where `host` is any object
 //! with the methods of [`JsHost`]. The hosts themselves live with each platform, not here. Only in the wasm32 build
 //! (the npm package).
-#![cfg(web)]
 
 use crate::{
     async_trait, Accelerator, Capabilities, Engine, Error, Fetcher, Host, Offer, Rejection, Result,

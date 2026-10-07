@@ -23,6 +23,7 @@ mod maybe_send;
 mod resolver;
 #[cfg(test)]
 mod test_support;
+#[cfg(web)]
 mod web;
 
 pub use backend::BackendId;
