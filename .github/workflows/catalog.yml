@@ -1,0 +1,29 @@
+name: catalog
+
+# Every pull request that touches the catalogue: each file of each build is looked up again in the Hugging Face API at
+# its pinned commit (small files kept in git are downloaded), and its size, digest and estimated memory must be what
+# the file says (`cargo xtask pin-catalog --check`); to fix it, run `cargo xtask pin-catalog` and push the result.
+# Separate from ci.yml so that other pull requests ask Hugging Face nothing.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - catalog/**
+      - xtask/**
+      - .github/workflows/catalog.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pinned:
+    name: Catalogue pinned
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+      - run: cargo xtask pin-catalog --check

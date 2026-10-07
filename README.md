@@ -67,9 +67,8 @@ anything, gathered once when the host is built:
   missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
-A catalogue build may also list the accelerators it accepts; none means any its backend runs on. A build is offered
-on the first accelerator in its backend's order of preference that the host reports, the probe confirms and the build
-accepts.
+A build is offered on the first accelerator in its backend's order of preference that the host reports and the probe
+confirms: which accelerators a build runs on is its backend's to know, not the catalogue's.
 
 ## Status
 
@@ -83,8 +82,8 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   lib.rs          the front door: declares the packages, exports the public API
   host.rs         Host, Storage, Fetcher: the platform contract; host/: capabilities (what a host reports, and
                   capabilities/accelerator.rs), platform (which platform that is)
-  catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, a model, with model/build.rs and
-                  model/task.rs
+  catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
+                  and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements; backend/: runtime (its files:
                   the lookup, and runtime/schema.rs, the shape of backends.json), requirement, registry,
                   loaded_model (what load returns: SttModel, TtsModel), implementations/ (one file per backend)
@@ -97,6 +96,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   reports), storage (WebStorage), fetcher (WebFetcher)
   maybe_send.rs   Send/Sync in native builds only
 backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
+catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own
@@ -133,6 +133,23 @@ platform fails the build's tests. Digests are never typed by hand: after changin
 cargo xtask pin-backends           # download every file at its pinned version and write its sha256
 cargo xtask pin-backends --check   # what CI runs when backends.json changes
 ```
+
+The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
+(`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
+model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and `license`; a build, its `id`, the
+`backend` that runs it, its `precision`, `requires` (hard constraints only, and optional), its `memory` (`mb`, with
+the `source` of the figure, `estimated`, `declared` or `measured`, and its `basis`), and its `files`, each a `key`
+the backend finds it by, a `url` pinned to a revision, its `sha256` and its `bytes`. Builds carry no order: ranking
+them is the resolver's. Reading is strict (an unknown or a missing key fails the tests) and the merge of every source
+is checked by `Catalog::check`. Sizes, digests and pinned revisions come from the Hugging Face API, never by hand: a
+new file is written with its `key` and a `url` at any revision (`…/resolve/main/…`), and then
+
+```sh
+cargo xtask pin-catalog            # pin every url to its commit, write sizes, digests and estimated memory
+cargo xtask pin-catalog --check    # what CI runs when the catalogue changes
+```
+
+Estimated memory is the weights plus 30%; a `declared` or `measured` figure is never overwritten.
 
 ## How to add a backend
 
@@ -208,7 +225,8 @@ As an example, whisper.cpp:
    says how the platforms and digests work. The entry has its `id`, a name and description, its `upstream` and one
    `version`, and all six platforms: `null` where it does not run, `[]` where it runs and downloads nothing, or the
    files, each with the `name` that `load` finds it by in `files`, a `url` that may say `{version}`, and a `sha256`
-   that `cargo xtask pin-backends` writes.
+   that `cargo xtask pin-backends` writes. A backend the catalogue names before its code exists (whisper.cpp, today)
+   already has an entry, all `null`, which is filled in then.
 
    ```json
    {

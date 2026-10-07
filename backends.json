@@ -74,6 +74,21 @@
         "windows-x86_64": null,
         "web": []
       }
+    },
+    {
+      "id": "whisper-cpp",
+      "name": "whisper.cpp",
+      "description": "Whisper in C/C++ on ggml. Placeholder: no build of the engine has its backend yet, so it runs nowhere and nothing is downloaded; the catalogue already names it.",
+      "upstream": "https://github.com/ggml-org/whisper.cpp",
+      "version": "1.9.5",
+      "platforms": {
+        "macos-aarch64": null,
+        "macos-x86_64": null,
+        "linux-x86_64": null,
+        "linux-aarch64": null,
+        "windows-x86_64": null,
+        "web": null
+      }
     }
   ]
 }

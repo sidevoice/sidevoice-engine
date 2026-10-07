@@ -1,10 +1,10 @@
 //! The brain of local models: which models exist, which build fits on this device, which to use for each stage, and
 //! the state each one is in.
 //!
-//! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads) and,
-//! optionally, extra [`CatalogSource`]s. Backends are not passed in: they belong to the engine, and which ones a build
-//! contains is decided when it is compiled ([`Engine::backends`] names them). Nothing is downloaded or loaded until
-//! [`Engine::prepare`].
+//! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads) and
+//! the [`CatalogSource`]s to merge, usually the [`BundledCatalog`] and any others. Backends are not passed in: they
+//! belong to the engine, and which ones a build contains is decided when it is compiled ([`Engine::backends`] names
+//! them). Nothing is downloaded or loaded until [`Engine::prepare`].
 //!
 //! Compiled to wasm32, the crate is also the npm package `@sidevoice/engine`: `web` is its bridge to JavaScript, and
 //! exists in no other build.
@@ -27,7 +27,10 @@ mod test_support;
 mod web;
 
 pub use backend::BackendId;
-pub use catalog::{Build, CatalogFragment, CatalogSource, Model, Problem, Task};
+pub use catalog::{
+    Build, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Memory,
+    MemorySource, Model, ModelFile, Precision, Problem, Requires,
+};
 pub use engine::{ConfigError, Engine, Handle, Preferences, Selection};
 pub use host::{Accelerator, Capabilities, Fetcher, Host, Runs, Storage};
 pub use install::Artifact;

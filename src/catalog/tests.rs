@@ -1,0 +1,148 @@
+//! What `Catalog::check` finds in a merged catalogue, and how sources merge.
+
+use super::{Catalog, CatalogFragment, CatalogSource, Problem};
+use crate::test_support::{build, family, model, FakeCatalog};
+use crate::{Capability, Family, Result};
+
+#[cfg(web)]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
+/// A source of these families.
+struct Families(Vec<Family>);
+
+impl CatalogSource for Families {
+    fn load(&self) -> Result<CatalogFragment> {
+        Ok(CatalogFragment {
+            families: self.0.clone(),
+        })
+    }
+}
+
+fn problems(families: Vec<Family>) -> Vec<Problem> {
+    Catalog::merge(&[Box::new(Families(families)) as Box<dyn CatalogSource>])
+        .expect("catalogue")
+        .check()
+}
+
+#[test]
+fn a_consistent_catalogue_has_no_problems() {
+    let catalog = Catalog::merge(&[Box::new(FakeCatalog) as Box<dyn CatalogSource>]);
+    assert_eq!(catalog.expect("catalogue").check(), []);
+}
+
+#[test]
+fn sources_merge_in_order_and_a_family_twice_is_a_problem() {
+    let catalog = Catalog::merge(&[
+        Box::new(FakeCatalog) as Box<dyn CatalogSource>,
+        Box::new(FakeCatalog),
+    ])
+    .expect("catalogue");
+    let problems = catalog.check();
+    assert!(problems.contains(&Problem::DuplicateFamily {
+        family: "whisper".to_owned()
+    }));
+    assert!(problems.contains(&Problem::DuplicateModel {
+        model: "whisper-small".to_owned()
+    }));
+    assert!(problems.contains(&Problem::DuplicateBuild {
+        build: "kokoro-onnx".to_owned()
+    }));
+}
+
+#[test]
+fn empty_levels_are_problems() {
+    let mut no_capabilities = model("m", Capability::Stt, vec![build("m/b", "sherpa-onnx", 1)]);
+    no_capabilities.capabilities.clear();
+    let mut no_files = build("n/b", "sherpa-onnx", 1);
+    no_files.files.clear();
+    let found = problems(vec![
+        family("empty", Vec::new()),
+        family(
+            "f",
+            vec![
+                no_capabilities,
+                model("no-builds", Capability::Stt, Vec::new()),
+                model("n", Capability::Stt, vec![no_files]),
+            ],
+        ),
+    ]);
+    assert_eq!(
+        found,
+        [
+            Problem::FamilyWithoutModels {
+                family: "empty".to_owned()
+            },
+            Problem::ModelWithoutCapabilities {
+                model: "m".to_owned()
+            },
+            Problem::ModelWithoutBuilds {
+                model: "no-builds".to_owned()
+            },
+            Problem::BuildWithoutFiles {
+                build: "n/b".to_owned()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_build_needs_a_known_backend_and_files_with_digests_and_distinct_keys() {
+    // whisper-cpp is in backends.json, compiled here or not: it is known.
+    let known = build("m/whisper-cpp", "whisper-cpp", 1);
+    let unknown = build("m/nope", "no-such-backend", 1);
+    let mut files = build("m/files", "sherpa-onnx", 1);
+    let file = files.files[0].clone();
+    files.files.push(file.clone());
+    files.files[0].sha256 = "A".repeat(64);
+    files.files.push(crate::ModelFile {
+        key: "short".to_owned(),
+        sha256: "0".repeat(63),
+        ..file
+    });
+    let found = problems(vec![family(
+        "f",
+        vec![model("m", Capability::Stt, vec![known, unknown, files])],
+    )]);
+    assert_eq!(
+        found,
+        [
+            Problem::UnknownBackend {
+                build: "m/nope".to_owned(),
+                backend: "no-such-backend".to_owned()
+            },
+            Problem::FileWithoutDigest {
+                build: "m/files".to_owned(),
+                key: "model".to_owned()
+            },
+            Problem::DuplicateFile {
+                build: "m/files".to_owned(),
+                key: "model".to_owned()
+            },
+            Problem::FileWithoutDigest {
+                build: "m/files".to_owned(),
+                key: "short".to_owned()
+            },
+        ]
+    );
+}
+
+#[test]
+fn models_are_found_by_any_of_their_capabilities() {
+    let mut both = model(
+        "both",
+        Capability::Stt,
+        vec![build("both/b", "sherpa-onnx", 1)],
+    );
+    both.capabilities.push(Capability::Tts);
+    let catalog = Catalog::merge(&[
+        Box::new(Families(vec![family("f", vec![both])])) as Box<dyn CatalogSource>
+    ])
+    .expect("catalogue");
+    for capability in [Capability::Stt, Capability::Tts] {
+        let ids: Vec<_> = catalog
+            .models(capability)
+            .map(|model| model.id.as_str())
+            .collect();
+        assert_eq!(ids, ["both"]);
+    }
+}
