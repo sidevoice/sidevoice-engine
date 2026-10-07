@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 
 use super::Resolver;
-use crate::backend::{Backend, BackendSpec, LoadedModel, MinCores};
+use crate::backend::{Backend, BackendSpec, Library, MinCores};
 use crate::catalog::{Catalog, CatalogFragment, CatalogSource};
 use crate::install::Installed;
 use crate::{
@@ -46,12 +46,7 @@ impl Backend for FixedProbeBackend {
         self.probe.to_vec()
     }
 
-    async fn load(
-        &self,
-        _build: &Build,
-        _accelerator: Accelerator,
-        _files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
         Err(Error::new("not-implemented"))
     }
 }

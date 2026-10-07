@@ -5,17 +5,20 @@
 //!
 //! Inside: `runtime` (the library files each backend needs per platform, from `backends.json`), `requirement` (what
 //! the machine must meet, and the common requirements), `registry` (how the backends of this build are found),
-//! `loaded_model` (what `load` returns) and `implementations` (one file per backend).
+//! `library` (what `open` returns, which loads models), `loaded_model` (what `load` returns) and `implementations`
+//! (one file per backend).
 //!
 //! # The contract
 //!
-//! A backend is its record, an optional `probe` and its `load`. Everything else is somebody else's:
+//! A backend is its record, an optional `probe`, its `open` and its library's `load`. Everything else is somebody
+//! else's:
 //!
-//! - which models it runs: each catalogue build names its backend ([`Build::backend`]);
+//! - which models it runs: each catalogue build names its backend ([`Build::backend`](crate::Build::backend));
 //! - what it downloads: its entry in `backends.json`, read by `runtime`, with its files per platform, which the
 //!   installer fetches next to the model's files; where the entry says it does not run (`null`), the resolver rejects
 //!   its builds with `no-runtime-for-platform` before asking the backend anything;
-//! - whether a build fits here, which build and accelerator win, and installing them: the resolver and the installer.
+//! - whether a build fits here, which build and accelerator win, and installing them: the resolver and the installer;
+//! - when its library is opened and closed, and when a model leaves memory: the engine (see *`open` and `load`*).
 //!
 //! ## `spec`: the record
 //!
@@ -40,23 +43,28 @@
 //!   it may ask the system (load the CUDA driver, query a device) and answers "no" when that fails;
 //! - is called at most once per backend and resolver: the answer is cached, so it must not depend on the model.
 //!
-//! ## `load`: from installed files to a running model
+//! ## `open` and `load`: from installed files to a running model
 //!
 //! Called only for the selected build, after the installer has put the build's files and this backend's
-//! `backends.json` files for this platform in storage. It:
+//! `backends.json` files for this platform in storage. `open` opens the backend's library (see *Binding the library*)
+//! from its files, each found in `files` by its `name` in `backends.json`, and returns it as a [`Library`]; the
+//! library's `load` loads one model. The engine keeps one open library per backend, counted by the models loaded from
+//! it: it opens the library for the first of them and drops it once the last one has left memory (a model unused for a
+//! while is unloaded; its files stay installed). So a library outlives every model it loaded, and a model may rely on
+//! it. `load`:
 //!
-//! - opens the backend's library (see *Binding the library*), and finds each file it needs in `files` by its `name`
-//!   in `backends.json` or its key in the catalogue;
+//! - finds each file it needs in `files` by its key in the catalogue;
 //! - loads the model's files on the `accelerator` it is given, one that `probe` returned; it does not fall back to
 //!   another one by itself (the engine decides that, with a new selection);
 //! - returns a [`LoadedModel`] that is a speech-to-text model, a text-to-speech model, or both, and keeps nothing:
-//!   the engine owns what it returns, and the backend object stays empty and stateless.
+//!   the engine owns what it returns, and the backend object stays empty and stateless (what is open lives in the
+//!   library).
 //!
-//! It must not download, fetch or write anything, nor read files that are not in `files`: the engine does not reach
+//! Neither may download, fetch or write anything, nor read files that are not in `files`: the engine does not reach
 //! for the network or the file system by itself, and the host only hands over what it installed. It fails with a
 //! stable [`Error`](crate::Error) code, never with a sentence: the codes say what failed (the library did not open,
 //! the model did not load) and are shared by every backend, so a client translates them once; the cause goes to the
-//! logs. Until a backend loads something, the stubs fail with `not-implemented`.
+//! logs. Until a backend loads something, the stubs fail to `open` with `not-implemented`.
 //!
 //! ## Binding the library
 //!
@@ -79,13 +87,13 @@
 
 use async_trait::async_trait;
 
-use crate::catalog::Build;
 use crate::host::{Accelerator, Capabilities};
 use crate::install::Installed;
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
 
 mod implementations;
+mod library;
 mod loaded_model;
 mod registry;
 mod requirement;
@@ -93,6 +101,7 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use library::Library;
 pub(crate) use loaded_model::LoadedModel;
 pub(crate) use registry::{built_in, find, BackendFactory};
 #[allow(
@@ -103,7 +112,8 @@ pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
 pub(crate) use runtime::runtime_files;
 
-/// A backend's stable id, as catalogue builds name it ([`Build::backend`]): "sherpa-onnx", "whisper-cpp", "mlx", ...
+/// A backend's stable id, as catalogue builds name it ([`Build::backend`](crate::Build::backend)): "sherpa-onnx",
+/// "whisper-cpp", "mlx", ...
 pub type BackendId = &'static str;
 
 /// What a backend is and needs, as data: a `const`, no I/O (see *`spec`: the record* above). Adding a backend is
@@ -117,7 +127,7 @@ pub(crate) struct BackendSpec {
     pub(crate) requirements: &'static [&'static dyn Requirement],
 }
 
-/// What runs models: its data ([`BackendSpec`]), which of its accelerators work here, and loading a build.
+/// What runs models: its data ([`BackendSpec`]), which of its accelerators work here, and opening its library.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 pub(crate) trait Backend: MaybeSend + MaybeSync {
@@ -138,13 +148,8 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
             .collect()
     }
 
-    /// Loads an installed build on `accelerator`, one that `probe` found: opens this backend's library and the
-    /// model's files, each by name in `files`, and hands back something that transcribes or speaks. It downloads
-    /// nothing, reads nothing outside `files`, keeps nothing, and fails with a stable code (see *`load`* above).
-    async fn load(
-        &self,
-        build: &Build,
-        accelerator: Accelerator,
-        files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>>;
+    /// Opens this backend's library from its installed files, each by name in `files`, for the engine to load models
+    /// with. It downloads nothing, reads nothing outside `files`, keeps nothing, and fails with a stable code (see
+    /// *`open` and `load`* above).
+    async fn open(&self, files: &Installed) -> Result<Box<dyn Library>>;
 }

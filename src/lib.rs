@@ -2,9 +2,10 @@
 //! the state each one is in.
 //!
 //! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads) and,
-//! optionally, extra [`CatalogSource`]s. Backends are not passed in: they belong to the engine, and which ones a build
-//! contains is decided when it is compiled ([`Engine::backends`] names them). Nothing is downloaded or loaded until
-//! [`Engine::prepare`].
+//! optionally, extra [`CatalogSource`]s. A native build ships one, [`NativeHost`], which keeps its files in a directory
+//! the app chooses; any other host can stand in for it. Backends are not passed in: they belong to the engine, and
+//! which ones a build contains is decided when it is compiled ([`Engine::backends`] names them). Nothing is downloaded
+//! or loaded until [`Engine::prepare`], and what goes unused is unloaded from memory again ([`BuildState`]).
 //!
 //! Compiled to wasm32, the crate is also the npm package `@sidevoice/engine`: `web` is its bridge to JavaScript, and
 //! exists in no other build.
@@ -28,9 +29,13 @@ mod web;
 
 pub use backend::BackendId;
 pub use catalog::{Build, CatalogFragment, CatalogSource, Model, Problem, Task};
-pub use engine::{ConfigError, Engine, Handle, Preferences, Selection};
-pub use host::{Accelerator, Capabilities, Fetcher, Host, Runs, Storage};
-pub use install::Artifact;
+pub use engine::{
+    BuildState, ConfigError, Engine, Handle, Preferences, Selection, DEFAULT_IDLE_UNLOAD,
+};
+#[cfg(native)]
+pub use host::NativeHost;
+pub use host::{Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter};
+pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
 pub use resolver::{Offer, Reason, Rejection};
 

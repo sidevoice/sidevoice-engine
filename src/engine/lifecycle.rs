@@ -1,24 +1,21 @@
-//! A build's lifecycle, from absent to ready. Crate-private: the engine exposes no build state yet; it becomes public
-//! when an [`Engine`](crate::Engine) method reports one.
+//! A build's lifecycle, from absent to ready and back: what [`Engine::state`](crate::Engine::state)
+//! reports.
 
-/// Where a build is on its way to running: `Absent → Installing → Installed → Loading → Ready`, or `Failed`.
+/// Where a build is on its way to running: `Absent → Installing → Installed → Loading → Ready`, or `Failed`. A ready
+/// model left unused is unloaded from memory, and its build is `Installed` again: its files stay on disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-#[allow(
-    dead_code,
-    reason = "the installer does not move builds through their lifecycle yet"
-)]
-pub(crate) enum BuildState {
-    /// Nothing of it is in storage.
+pub enum BuildState {
+    /// Some of its files are not in storage.
     Absent,
     /// Its files are being downloaded.
     Installing,
-    /// Its files are in storage.
+    /// Its files are in storage, and it is not in memory.
     Installed,
     /// Its backend is loading it.
     Loading,
     /// Loaded, ready to use.
     Ready,
-    /// Installing or loading failed.
+    /// The last attempt to install or load it failed, with this code. Preparing it again starts over.
     Failed(crate::Error),
 }
