@@ -171,7 +171,7 @@ impl Engine {
         let backend = backend::find(&self.backends, &selection.build.backend)
             .ok_or(Error::new("backend-not-in-this-build"))?;
         let runtime = Platform::of(&self.host.capabilities())
-            .and_then(|platform| backend::downloads(backend.spec().id, platform))
+            .and_then(|platform| backend::runtime_files(backend.spec().id, platform))
             .ok_or(Error::new("no-runtime-for-platform"))?;
         // A model file is found by its key; a backend file, by its name in backends.json.
         let wanted: Vec<_> = selection

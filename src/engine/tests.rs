@@ -82,7 +82,7 @@ impl Host for Elsewhere {
 }
 
 #[test]
-fn a_platform_with_no_downloads_rejects_every_build_of_this_engine_in_the_funnel() {
+fn a_platform_with_no_runtime_rejects_every_build_of_this_engine_in_the_funnel() {
     let engine = Engine::new(Box::new(Elsewhere), vec![Box::new(FakeCatalog)]).expect("engine");
     let offers = engine.offers(Task::Stt);
     assert!(!offers.is_empty());

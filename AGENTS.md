@@ -35,6 +35,25 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
   crate-private; if plugins ever need to add backends, that part of the contract is opened then, on purpose.
 - **Nothing heavy is linked into the app.** Engine libraries and models are downloaded on demand.
 
+## Code layout
+
+How the crate (`src/`) is laid out; `README.md` maps where each package is.
+
+- **One package per concept.** `x.rs` is the module and holds its main type or trait, the interface at the module root
+  (never `x/x.rs`: Clippy's `module_inception`); `x/` holds its parts, one small file per piece.
+- **Names say what a thing is**: `runtime.rs` (the library files a backend needs), not `downloads.rs`;
+  `loaded_model.rs`; `SttModel` and `TtsModel`, after the catalogue's `Task`.
+- **Unit tests live in `x/tests.rs`** beside their module (`#[cfg(test)] mod tests;`), never inline. Test doubles
+  shared between modules are in `src/test_support.rs`, compiled in test builds only. Tests that must run on wasm32 are
+  unit tests: an rlib linked into an integration test loses its `inventory` registrations there
+  (`src/backend/registry.rs`).
+- **Platform conditions use the crate's aliases** (`web`, `native`, `apple_silicon`, from `build.rs`), except in a test
+  that checks the aliases themselves. A crate-level module's condition goes on its declaration (`#[cfg(web)] mod web;`);
+  a backend file carries its own `#![cfg]`.
+- **Closed by default**, as above.
+- **What is data stays data**: versions, URLs and digests live in `backends.json` and the catalogue, not in code, and
+  are validated strictly when read: an unknown or a missing key is an error.
+
 ## How work lands
 
 - Pull request titles are [Conventional Commits](https://www.conventionalcommits.org) (CI checks them); a PR is

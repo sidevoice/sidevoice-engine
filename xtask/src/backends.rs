@@ -51,8 +51,8 @@ fn repin(doc: &mut Value, mut digest: impl FnMut(&str) -> Result<String>) -> Res
         let version = version.ok_or(format!("{id}: no version"))?.to_owned();
         let platforms = backend["platforms"].as_object_mut();
         for (platform, files) in platforms.ok_or(format!("{id}: no platforms"))? {
-            // `null`: the backend does not run there, so there is nothing to pin. Which keys must be there is the engine's
-            // to check (src/backend/downloads.rs).
+            // `null`: the backend does not run there, so there is nothing to pin. Which keys must be there is the
+            // engine's to check (src/backend/runtime.rs).
             if files.is_null() {
                 continue;
             }

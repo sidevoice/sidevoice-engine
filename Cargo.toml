@@ -18,7 +18,7 @@ crate-type = ["rlib", "cdylib"]
 async-trait = "=0.1.92"
 # Backends register themselves (src/backend/registry.rs). linkme does not compile to wasm32; inventory does.
 inventory = "0.3.24"
-# backends.json (src/backend/downloads.rs), compiled in and read once.
+# backends.json (src/backend/runtime.rs), compiled in and read once.
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 

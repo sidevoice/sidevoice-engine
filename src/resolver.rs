@@ -63,7 +63,7 @@ impl Resolver {
     ) -> Result<Accelerator, Rejection> {
         // Data, not backend code: a backend with no entry for this platform in backends.json cannot run here.
         if Platform::of(caps)
-            .and_then(|platform| backend::downloads(backend.spec().id, platform))
+            .and_then(|platform| backend::runtime_files(backend.spec().id, platform))
             .is_none()
         {
             return Err(Rejection::BackendUnavailable(Reason::new(

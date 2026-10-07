@@ -54,7 +54,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   lib.rs          the front door: declares the packages, exports the public API
   host.rs         Host, Storage, Fetcher: the platform contract; host/capabilities.rs, what a host reports
   catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, models and their builds
-  backend.rs      Backend: the interface every backend implements; backend/: downloads (backends.json read),
+  backend.rs      Backend: the interface every backend implements; backend/: runtime (its files, from backends.json),
                   requirement, registry, loaded_model (what load returns), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns
   install.rs      the installer
@@ -62,7 +62,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
                   the JavaScript host (JsHost) as the engine sees it
   maybe_send.rs   Send/Sync in native builds only
-backends.json   what each backend downloads per platform, compiled in; digests written by `cargo xtask pin-backends`
+backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own
