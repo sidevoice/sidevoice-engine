@@ -13,6 +13,9 @@ use crate::offer::Offer;
 use crate::resolver::Resolver;
 use crate::{Error, Result};
 
+#[cfg(test)]
+mod tests;
+
 pub struct Engine {
     host: Box<dyn Host>,
     catalog: Catalog,

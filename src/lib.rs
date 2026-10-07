@@ -10,14 +10,14 @@ pub use async_trait::async_trait;
 mod backend;
 mod catalog;
 mod engine;
+#[cfg(test)]
+mod fakes;
 mod host;
 mod install;
 mod lifecycle;
 mod model;
 mod offer;
 mod resolver;
-#[cfg(test)]
-mod tests;
 
 pub use backend::{
     built_in, Backend, BackendFactory, BackendId, BackendSpec, MinCores, MinMemoryMb, Requirement,

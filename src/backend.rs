@@ -17,6 +17,8 @@ use crate::Result;
 mod implementations;
 mod registry;
 mod requirement;
+#[cfg(test)]
+mod tests;
 
 pub use registry::{built_in, BackendFactory};
 pub use requirement::{MinCores, MinMemoryMb, Requirement};
