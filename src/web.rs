@@ -1,26 +1,20 @@
 //! The bridge to JavaScript: the engine as the web sees it, `WebEngine.create(host)`, where `host` is any object
 //! with the methods of [`JsHost`]. The hosts themselves live with each platform, not here. Only in the wasm32 build
 //! (the npm package).
+//!
+//! This file is the engine as JavaScript sees it ([`WebEngine`]); `host` is the JavaScript host as the engine sees it.
 
-use crate::{
-    async_trait, Accelerator, Capabilities, Engine, Error, Fetcher, Host, Offer, Rejection, Result,
-    Runs, Storage, Task,
-};
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::prelude::*;
 
+use crate::{Engine, Offer, Rejection, Task};
+
+mod host;
 #[cfg(test)]
 mod tests;
 
-#[wasm_bindgen]
-extern "C" {
-    /// A JavaScript object that fulfils the engine's `Host` contract.
-    pub type JsHost;
-
-    /// `{ os, arch, accelerators: string[], memoryMb?: number, cores?: number }`
-    #[wasm_bindgen(method, catch)]
-    async fn capabilities(this: &JsHost) -> Result<JsValue, JsValue>;
-}
+pub use host::JsHost;
+use host::WebHost;
 
 #[wasm_bindgen]
 pub struct WebEngine {
@@ -35,9 +29,7 @@ impl WebEngine {
             .capabilities()
             .await
             .map_err(|_| JsError::new("host-capabilities"))?;
-        let host = WebHost {
-            capabilities: capabilities(&caps)?,
-        };
+        let host = WebHost::from_capabilities(&caps)?;
         let engine = Engine::new(Box::new(host), vec![])
             .map_err(|error| JsError::new(&error.to_string()))?;
         Ok(WebEngine { engine })
@@ -83,70 +75,6 @@ impl WebEngine {
         }
         Ok(out)
     }
-}
-
-/// The JavaScript host as the engine sees it. Storage and downloads are not bridged yet.
-struct WebHost {
-    capabilities: Capabilities,
-}
-
-impl Host for WebHost {
-    fn capabilities(&self) -> Capabilities {
-        self.capabilities.clone()
-    }
-
-    fn storage(&self) -> &dyn Storage {
-        &Unimplemented
-    }
-
-    fn fetcher(&self) -> &dyn Fetcher {
-        &Unimplemented
-    }
-}
-
-struct Unimplemented;
-
-#[async_trait(?Send)]
-impl Storage for Unimplemented {
-    async fn contains(&self, _key: &str) -> Result<bool> {
-        Err(Error::new("not-implemented"))
-    }
-}
-
-#[async_trait(?Send)]
-impl Fetcher for Unimplemented {
-    async fn fetch(&self, _url: &str, _sha256: &str, _key: &str) -> Result<()> {
-        Err(Error::new("not-implemented"))
-    }
-}
-
-fn capabilities(value: &JsValue) -> Result<Capabilities, JsError> {
-    let text = |key| {
-        get(value, key)
-            .as_string()
-            .ok_or_else(|| JsError::new(&format!("host-capabilities-{key}")))
-    };
-    let accelerators = Array::from(&get(value, "accelerators"))
-        .iter()
-        .filter_map(|name| match name.as_string()?.as_str() {
-            "cpu" => Some(Accelerator::Cpu),
-            "webgpu" => Some(Accelerator::WebGpu),
-            "wasm" => Some(Accelerator::Wasm),
-            _ => None,
-        })
-        .collect();
-    Ok(Capabilities {
-        runs: Runs::Page,
-        os: text("os")?,
-        arch: text("arch")?,
-        accelerators,
-        memory_mb: get(value, "memoryMb").as_f64().map(|mb| mb as u32),
-        cores: get(value, "cores").as_f64().map(|cores| cores as u32),
-    })
-}
-
-fn get(object: &JsValue, key: &str) -> JsValue {
-    Reflect::get(object, &key.into()).unwrap_or(JsValue::UNDEFINED)
 }
 
 fn set(object: &Object, key: &str, value: &JsValue) {
