@@ -63,6 +63,17 @@ You need the Rust toolchain pinned in the repository.
 cargo test --locked
 ```
 
+The wasm32 tests run in Node (Node.js and npm on the `PATH`) and need the wasm32 target. The pinned wasm-bindgen CLI
+they need comes by itself: one of the version in `Cargo.lock` on the `PATH` is used, otherwise `cargo xtask`
+downloads it, checks its digest and keeps it in `target/tools/`. The npm package is built and installed as a
+consumer would, then run in Node, by the next two:
+
+```sh
+cargo xtask test-wasm
+cargo xtask npm        # target/npm/sidevoice-engine-X.Y.Z.tgz
+cargo xtask npm-smoke
+```
+
 ## Contributing
 
 Issues and pull requests are welcome. Read [`AGENTS.md`](AGENTS.md) first: it holds the rules for code, texts and
