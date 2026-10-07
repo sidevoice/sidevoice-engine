@@ -9,6 +9,11 @@ license = "Apache-2.0"
 repository = "https://github.com/sidevoice/sidevoice-engine"
 description = "Sidevoice engine: the local-model catalogue, resolver, selector and lifecycle, and the backends that run models"
 
+[lib]
+# cdylib: the wasm32 build that becomes the npm package (src/web.rs, `cargo xtask npm`). Native consumers depend on
+# the crate as source and get the rlib.
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 async-trait = "=0.1.92"
 # Backends register themselves (src/backend/registry.rs). linkme does not compile to wasm32; inventory does.
@@ -18,8 +23,12 @@ inventory = "0.3.24"
 # libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,
 # not linked. Specific platforms first, then the general native one. The stub backends link nothing yet.
 
-# The web build (the npm package): backends whose engine is a JavaScript module.
+# The web build (the npm package): the bridge to JavaScript (src/web.rs), and backends whose engine is a JavaScript
+# module.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3.106"
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
 
 # macOS on Apple silicon, on top of everything native: MLX.
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
