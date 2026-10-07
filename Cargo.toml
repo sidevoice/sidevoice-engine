@@ -1,0 +1,32 @@
+[package]
+name = "sidevoice-engine"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "Apache-2.0"
+repository = "https://github.com/sidevoice/sidevoice-engine"
+description = "Sidevoice engine: the local-model catalogue, resolver, selector and lifecycle, and the backends that run models"
+
+[dependencies]
+async-trait = "0.1.89"
+# Backends register themselves (src/registry.rs). linkme does not compile to wasm32; inventory does.
+inventory = "0.3.24"
+
+# Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The
+# libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,
+# not linked. Specific platforms first, then the general native one. The stub backends link nothing yet.
+
+# The web build (the npm package): backends whose engine is a JavaScript module.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+
+# macOS on Apple silicon, on top of everything native: MLX.
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+
+# Every native build.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.79"
+
+[build-dependencies]
+cfg_aliases = "0.2.2"

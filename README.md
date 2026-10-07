@@ -33,13 +33,14 @@ device is one more provider.
 | [sidevoice-web](https://github.com/sidevoice/sidevoice-web) | The call interface the app bundles; it can also be served as a static site. |
 
 One Rust repository, one version. Native consumers (the desktop app, later the core as a provider for its own
-machine) depend on the crate and compile it themselves. The web gets a WebAssembly build, to be published on npm as
-`@sidevoice/engine` (not published yet: [`RELEASING.md`](RELEASING.md)).
+machine) depend on the crate at a release's git tag and compile it themselves. The web gets a WebAssembly build,
+published on npm as `@sidevoice/engine` for every release; every push to `main` also publishes a `nightly`
+pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)).
 
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
-files (`BrowserHost` in the browser, `NativeHost` on desktop). The backends that run models are internal to the
-engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine when
-it runs. Engine libraries and models are downloaded when they are needed, never linked into the app.
+files; each platform implements its own (the browser, the desktop app). The backends that run models are internal
+to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
+when it runs. Engine libraries and models are downloaded when they are needed, never linked into the app.
 
 ## Status
 
@@ -49,16 +50,19 @@ model runs yet.
 ## Layout
 
 ```
-crates/engine/         the crate sidevoice-engine: traits, data types, Engine, the catalogue, backends/
-crates/engine-native/  the crate sidevoice-engine-native: NativeHost, the native entry point
-crates/engine-web/     the crate sidevoice-engine-web: the wasm-bindgen entry point (WebEngine, JsHost),
-                       compiled to the npm package
-xtask/                 build tooling (`cargo xtask`)
+src/            the crate sidevoice-engine: the traits (Host, Backend, CatalogSource), data types, Engine, the
+                catalogue and the backend registry
+src/backends/   one file per backend, each with its #![cfg] when its library cannot compile everywhere
+build.rs        the three cfg aliases: web, native, apple_silicon
+npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
+xtask/          build tooling (`cargo xtask`), a package of its own
 ```
 
 ## Build and test
 
-You need the Rust toolchain pinned in the repository.
+You need Rust 1.98.1 (the version `.github/actions/setup` installs). The native tests build and check this
+platform's backends:
+
 ```sh
 cargo test --locked
 ```
