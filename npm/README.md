@@ -1,3 +1,6 @@
+<!-- npm shows this file on the package page. Images by absolute URL: npm serves no file of the repository. -->
+<img alt="Sidevoice — Give your coding agent a voice. Keep the conversation." src="https://raw.githubusercontent.com/sidevoice/sidevoice-engine/main/.github/assets/readme-header.svg" width="750" />
+
 # @sidevoice/engine
 
 The [Sidevoice](https://github.com/sidevoice) engine for the web: it knows a catalogue of local voice models, works
