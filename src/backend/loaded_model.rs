@@ -51,5 +51,13 @@ pub(crate) trait TtsModel {
     /// The sample rate of what [`TtsModel::speak`] returns, in Hz.
     fn sample_rate(&self) -> u32;
     /// `text` spoken with `voice` at `speed` (1.0 is normal), as mono samples at [`TtsModel::sample_rate`].
-    async fn speak(&mut self, text: &str, voice: &str, speed: f32) -> Result<Vec<f32>>;
+    /// `language`: `text`'s, as a BCP 47 tag, for a model that speaks several; `None` leaves it to the model, and a
+    /// model of one language ignores it.
+    async fn speak(
+        &mut self,
+        text: &str,
+        voice: &str,
+        language: Option<&str>,
+        speed: f32,
+    ) -> Result<Vec<f32>>;
 }

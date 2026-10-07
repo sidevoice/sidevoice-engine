@@ -8,9 +8,10 @@ use std::mem::{offset_of, size_of};
 use super::c_api::{
     GeneratedAudio, GenerationConfig, KokoroModelConfig, OfflineModelConfig,
     OfflineRecognizerConfig, OfflineRecognizerResult, OfflineTtsConfig, OfflineTtsModelConfig,
-    WhisperModelConfig,
+    SupertonicModelConfig, TransducerModelConfig, VitsModelConfig, WhisperModelConfig,
 };
-use super::{model_metadata, provider, Kind, SherpaOnnx};
+use super::kokoro::espeak_voice;
+use super::{model_metadata, primary_language, provider, Kind, SherpaOnnx};
 use crate::backend::Backend;
 use crate::host::Accelerator;
 use crate::install::Installed;
@@ -21,6 +22,8 @@ use crate::Result;
 /// target. If the header changes, these are measured again, and c_api.rs follows.
 #[test]
 fn the_c_structs_have_the_headers_layout() {
+    assert_eq!(size_of::<TransducerModelConfig>(), 24);
+    assert_eq!(offset_of!(OfflineModelConfig, transducer), 0);
     assert_eq!(size_of::<WhisperModelConfig>(), 48);
     assert_eq!(size_of::<OfflineModelConfig>(), 504);
     assert_eq!(offset_of!(OfflineModelConfig, whisper), 40);
@@ -33,10 +36,18 @@ fn the_c_structs_have_the_headers_layout() {
     assert_eq!(size_of::<OfflineRecognizerResult>(), 128);
     assert_eq!(size_of::<KokoroModelConfig>(), 64);
     assert_eq!(offset_of!(KokoroModelConfig, dict_dir), 40);
+    assert_eq!(offset_of!(KokoroModelConfig, lexicon), 48);
+    assert_eq!(offset_of!(KokoroModelConfig, lang), 56);
+    assert_eq!(size_of::<VitsModelConfig>(), 56);
+    assert_eq!(offset_of!(VitsModelConfig, length_scale), 40);
+    assert_eq!(offset_of!(VitsModelConfig, dict_dir), 48);
+    assert_eq!(size_of::<SupertonicModelConfig>(), 56);
+    assert_eq!(offset_of!(OfflineTtsModelConfig, vits), 0);
     assert_eq!(size_of::<OfflineTtsModelConfig>(), 416);
     assert_eq!(offset_of!(OfflineTtsModelConfig, num_threads), 56);
     assert_eq!(offset_of!(OfflineTtsModelConfig, provider), 64);
     assert_eq!(offset_of!(OfflineTtsModelConfig, kokoro), 128);
+    assert_eq!(offset_of!(OfflineTtsModelConfig, supertonic), 360);
     assert_eq!(size_of::<OfflineTtsConfig>(), 448);
     assert_eq!(size_of::<GenerationConfig>(), 56);
     assert_eq!(offset_of!(GenerationConfig, sid), 8);
@@ -76,23 +87,60 @@ fn kind(files: &[(&str, &str)]) -> Result<Kind> {
 
 #[test]
 fn the_model_follows_from_its_files() {
-    assert_eq!(kind(&[("encoder", "e.onnx")]), Ok(Kind::Whisper));
-    assert_eq!(kind(&[("voices", "v.bin")]), Ok(Kind::Kokoro));
+    let whisper = [("encoder", "e"), ("decoder", "d"), ("tokens", "t")];
+    let transducer = [("encoder", "e"), ("decoder", "d"), ("joiner", "j")];
+    let kokoro = [("model", "m"), ("voices", "v"), ("espeak-ng-data", "d")];
+    let vits = [("model", "m"), ("tokens", "t"), ("espeak-ng-data", "d")];
+    let supertonic = [("duration_predictor", "p"), ("text_encoder", "e")];
+    assert_eq!(kind(&whisper), Ok(Kind::Whisper));
+    assert_eq!(kind(&transducer), Ok(Kind::Transducer));
+    assert_eq!(kind(&kokoro), Ok(Kind::Kokoro));
+    assert_eq!(kind(&vits), Ok(Kind::Vits));
+    assert_eq!(kind(&supertonic), Ok(Kind::Supertonic));
     assert_eq!(kind(&[]).unwrap_err().code, "unsupported-model");
     assert_eq!(
-        kind(&[("model", "m.onnx")]).unwrap_err().code,
+        kind(&[("tokens", "t")]).unwrap_err().code,
         "unsupported-model"
     );
 }
 
 #[test]
-fn kokoro_runs_on_the_cpu_only_and_whisper_on_core_ml_too() {
-    assert_eq!(Kind::Whisper.provider(Accelerator::CoreMl), Ok("coreml"));
+fn kokoro_runs_on_the_cpu_only_and_the_rest_on_core_ml_too() {
+    for other in [
+        Kind::Whisper,
+        Kind::Transducer,
+        Kind::Vits,
+        Kind::Supertonic,
+    ] {
+        assert_eq!(
+            other.provider(Accelerator::CoreMl),
+            Ok("coreml"),
+            "{other:?}"
+        );
+    }
     assert_eq!(Kind::Kokoro.provider(Accelerator::Cpu), Ok("cpu"));
     assert_eq!(
         Kind::Kokoro.provider(Accelerator::CoreMl).unwrap_err().code,
         "unsupported-accelerator"
     );
+}
+
+#[test]
+fn a_language_reaches_a_model_as_its_primary_subtag() {
+    assert_eq!(primary_language("es-ES"), "es");
+    assert_eq!(primary_language("EN_gb"), "en");
+    assert_eq!(primary_language("es"), "es");
+}
+
+#[test]
+fn a_multilingual_kokoro_reads_a_language_with_its_espeak_voice() {
+    assert_eq!(espeak_voice("es-ES"), "es");
+    assert_eq!(espeak_voice("es"), "es");
+    assert_eq!(espeak_voice("en"), "en-us");
+    assert_eq!(espeak_voice("en-US"), "en-us");
+    assert_eq!(espeak_voice("en-GB"), "en-gb");
+    assert_eq!(espeak_voice("pt-BR"), "pt-br");
+    assert_eq!(espeak_voice("fr-FR"), "fr");
 }
 
 fn open(files: &[(&str, &str)]) -> &'static str {

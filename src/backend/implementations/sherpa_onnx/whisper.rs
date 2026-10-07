@@ -1,34 +1,32 @@
-//! Whisper through sherpa-onnx's offline recognizer: one whole turn at a time.
+//! Whisper through sherpa-onnx's offline recognizer: one whole turn at a time, in the language asked for or the one it
+//! detects.
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::c_api::{OfflineRecognizer, OfflineRecognizerConfig};
+use super::c_api::OfflineRecognizerConfig;
 use super::library::Api;
-use super::{c_string, num_threads, path};
+use super::recognizer::Recognizer;
+use super::{c_string, path, primary_language};
 use crate::backend::loaded_model::SttModel;
 use crate::backend::LoadedModel;
 use crate::install::Installed;
-use crate::{Error, Result};
-
-/// The sample rate [`SttModel::transcribe`] takes, and Whisper's.
-const SAMPLE_RATE: i32 = 16_000;
+use crate::Result;
 
 /// A Whisper model in memory: the recognizer, the config it was made from (to change its language), and the strings
 /// that config points to.
 pub(super) struct Whisper {
-    api: Arc<Api>,
-    recognizer: *const OfflineRecognizer,
+    recognizer: Recognizer,
     config: OfflineRecognizerConfig,
     /// The language `config` names now: `""` to detect it.
     language: CString,
     _strings: [CString; 5],
 }
 
-// SAFETY: the recognizer is a heap object of the library's, not tied to the thread that made it; it is only used
-// through `&mut self`, so never from two threads at once.
+// SAFETY: the config's pointers are to the strings this owns, which never move (a `CString` keeps its bytes on the
+// heap), and it is only read through `&mut self`.
 unsafe impl Send for Whisper {}
 
 impl Whisper {
@@ -44,23 +42,14 @@ impl Whisper {
         let [encoder, decoder, tokens, provider, task] = &strings;
         let language = CString::default();
         let mut config = OfflineRecognizerConfig::default();
-        config.feat_config.sample_rate = SAMPLE_RATE;
-        config.feat_config.feature_dim = 80;
         config.model_config.whisper.encoder = encoder.as_ptr();
         config.model_config.whisper.decoder = decoder.as_ptr();
         config.model_config.whisper.language = language.as_ptr();
         config.model_config.whisper.task = task.as_ptr();
         config.model_config.tokens = tokens.as_ptr();
         config.model_config.provider = provider.as_ptr();
-        config.model_config.num_threads = num_threads();
-        config.decoding_method = c"greedy_search".as_ptr();
-        // SAFETY: `config` has the header's layout (c_api.rs) and every pointer in it is to a live string.
-        let recognizer = unsafe { (api.create_offline_recognizer)(&config) };
-        if recognizer.is_null() {
-            return Err(Error::new("model-load-failed"));
-        }
+        let recognizer = Recognizer::new(api, &mut config)?;
         Ok(Self {
-            api,
             recognizer,
             config,
             language,
@@ -71,25 +60,14 @@ impl Whisper {
     /// Points the recognizer at `language` (a BCP 47 tag, of which Whisper reads the primary language), or at
     /// detecting it, unless it already is.
     fn set_language(&mut self, language: Option<&str>) -> Result<()> {
-        let code = language
-            .and_then(|tag| tag.split(['-', '_']).next())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
+        let code = language.map(primary_language).unwrap_or_default();
         if self.language.as_bytes() == code.as_bytes() {
             return Ok(());
         }
         self.language = c_string(&code)?;
         self.config.model_config.whisper.language = self.language.as_ptr();
-        // SAFETY: as in `load`; the recognizer copies what it needs from `config`.
-        unsafe { (self.api.offline_recognizer_set_config)(self.recognizer, &self.config) };
+        self.recognizer.set_config(&self.config);
         Ok(())
-    }
-}
-
-impl Drop for Whisper {
-    fn drop(&mut self) {
-        // SAFETY: made by `create_offline_recognizer` and destroyed only here.
-        unsafe { (self.api.destroy_offline_recognizer)(self.recognizer) };
     }
 }
 
@@ -108,35 +86,7 @@ impl LoadedModel for Whisper {
 impl SttModel for Whisper {
     /// Decodes on the calling thread: the engine decides where to run it.
     async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String> {
-        let failed = Error::new("transcription-failed");
         self.set_language(language)?;
-        let samples = i32::try_from(pcm.len()).map_err(|_| failed)?;
-        let api = &self.api;
-        // SAFETY: the stream and result are made and destroyed here, each once, and `pcm` outlives the calls that
-        // read it; the result's text is copied before the result is destroyed.
-        unsafe {
-            let stream = (api.create_offline_stream)(self.recognizer);
-            if stream.is_null() {
-                return Err(failed);
-            }
-            (api.accept_waveform_offline)(stream, SAMPLE_RATE, pcm.as_ptr(), samples);
-            (api.decode_offline_stream)(self.recognizer, stream);
-            let result = (api.get_offline_stream_result)(stream);
-            let text = if result.is_null() || (*result).text.is_null() {
-                None
-            } else {
-                Some(
-                    CStr::from_ptr((*result).text)
-                        .to_string_lossy()
-                        .trim()
-                        .to_owned(),
-                )
-            };
-            if !result.is_null() {
-                (api.destroy_offline_recognizer_result)(result);
-            }
-            (api.destroy_offline_stream)(stream);
-            text.ok_or(failed)
-        }
+        self.recognizer.decode(pcm)
     }
 }

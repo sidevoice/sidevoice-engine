@@ -31,6 +31,15 @@ pub(super) struct FeatureConfig {
     pub(super) feature_dim: i32,
 }
 
+/// `SherpaOnnxOfflineTransducerModelConfig`, whole: the transducers NeMo exports (FastConformer, Parakeet) among them.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(super) struct TransducerModelConfig {
+    pub(super) encoder: *const c_char,
+    pub(super) decoder: *const c_char,
+    pub(super) joiner: *const c_char,
+}
+
 /// `SherpaOnnxOfflineWhisperModelConfig`, whole.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -44,12 +53,13 @@ pub(super) struct WhisperModelConfig {
     pub(super) enable_segment_timestamps: i32,
 }
 
-/// `SherpaOnnxOfflineModelConfig`: Whisper's fields and the common ones.
+/// `SherpaOnnxOfflineModelConfig`: the transducer's and Whisper's fields, and the common ones.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(super) struct OfflineModelConfig {
-    /// `transducer`, `paraformer`, `nemo_ctc`.
-    pub(super) before_whisper: Reserved<5>,
+    pub(super) transducer: TransducerModelConfig,
+    /// `paraformer`, `nemo_ctc`.
+    pub(super) before_whisper: Reserved<2>,
     pub(super) whisper: WhisperModelConfig,
     /// `tdnn`.
     pub(super) tdnn: Reserved<1>,
@@ -83,6 +93,20 @@ pub(super) struct OfflineRecognizerResult {
     pub(super) rest: Reserved<15>,
 }
 
+/// `SherpaOnnxOfflineTtsVitsModelConfig`, whole: Piper's voices are VITS models.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(super) struct VitsModelConfig {
+    pub(super) model: *const c_char,
+    pub(super) lexicon: *const c_char,
+    pub(super) tokens: *const c_char,
+    pub(super) data_dir: *const c_char,
+    pub(super) noise_scale: f32,
+    pub(super) noise_scale_w: f32,
+    pub(super) length_scale: f32,
+    pub(super) dict_dir: *const c_char,
+}
+
 /// `SherpaOnnxOfflineTtsKokoroModelConfig`, whole.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -97,20 +121,33 @@ pub(super) struct KokoroModelConfig {
     pub(super) lang: *const c_char,
 }
 
-/// `SherpaOnnxOfflineTtsModelConfig`: Kokoro's fields and the common ones.
+/// `SherpaOnnxOfflineTtsSupertonicModelConfig`, whole.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(super) struct SupertonicModelConfig {
+    pub(super) duration_predictor: *const c_char,
+    pub(super) text_encoder: *const c_char,
+    pub(super) vector_estimator: *const c_char,
+    pub(super) vocoder: *const c_char,
+    pub(super) tts_json: *const c_char,
+    pub(super) unicode_indexer: *const c_char,
+    pub(super) voice_style: *const c_char,
+}
+
+/// `SherpaOnnxOfflineTtsModelConfig`: the VITS, Kokoro and Supertonic fields, and the common ones.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(super) struct OfflineTtsModelConfig {
-    /// `vits`.
-    pub(super) vits: Reserved<7>,
+    pub(super) vits: VitsModelConfig,
     pub(super) num_threads: i32,
     pub(super) debug: i32,
     pub(super) provider: *const c_char,
     /// `matcha`.
     pub(super) matcha: Reserved<7>,
     pub(super) kokoro: KokoroModelConfig,
-    /// `kitten`, `zipvoice`, `pocket`, `supertonic`.
-    pub(super) after_kokoro: Reserved<28>,
+    /// `kitten`, `zipvoice`, `pocket`.
+    pub(super) after_kokoro: Reserved<21>,
+    pub(super) supertonic: SupertonicModelConfig,
 }
 
 /// `SherpaOnnxOfflineTtsConfig`.

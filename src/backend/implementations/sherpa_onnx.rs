@@ -1,6 +1,7 @@
 // The sherpa-onnx library exists on every native platform.
 #![cfg(native)]
-//! sherpa-onnx: speech to text with Whisper and text to speech with Kokoro, on ONNX Runtime.
+//! sherpa-onnx, on ONNX Runtime: speech to text with Whisper and with transducers (NeMo's FastConformer and Parakeet),
+//! and text to speech with Kokoro, VITS (Piper's voices) and Supertonic.
 //!
 //! # Binding
 //!
@@ -10,14 +11,21 @@
 //! anyone loads a model, and the version would be the crate's rather than `backends.json`'s. Here the library is
 //! one more installed file, fetched on demand like a model and opened by the first model that needs it.
 //!
+//! Every speech-to-text model runs on the library's offline recognizer (`recognizer`), and every text-to-speech one on
+//! its offline TTS (`synthesizer`); a model's file only builds its config.
+//!
 //! # Files
 //!
 //! - `library` (`backends.json`): where the installer unpacked the platform's archive (the C API's library is found
 //!   below it, in `lib/`), or the C API's library itself; ONNX Runtime is beside it.
 //! - Whisper (catalogue): `encoder`, `decoder` and `tokens`.
-//! - Kokoro (catalogue): `model`, `voices`, `tokens`, and `espeak-ng-data`, a directory.
+//! - A transducer: `encoder`, `decoder`, `joiner` and `tokens`.
+//! - Kokoro: `model`, `voices`, `tokens`, and `espeak-ng-data`, a directory; a multilingual one, `lexicon` too.
+//! - VITS: `model`, `tokens` and `espeak-ng-data`.
+//! - Supertonic: `duration_predictor`, `text_encoder`, `vector_estimator`, `vocoder`, `tts_json`, `unicode_indexer`
+//!   and `voice_style`.
 //!
-//! Which of the two a build is follows from its files: `encoder` makes it Whisper, `voices` Kokoro.
+//! Which a build is follows from its files ([`Kind::of`]).
 //!
 //! # Accelerators
 //!
@@ -46,11 +54,15 @@ mod inference_tests;
 mod kokoro;
 mod library;
 mod model_metadata;
+mod recognizer;
+mod supertonic;
+mod synthesizer;
 #[cfg(test)]
 mod tests;
+mod transducer;
+mod vits;
 mod whisper;
 
-use kokoro::Kokoro;
 use library::Api;
 use whisper::Whisper;
 
@@ -96,7 +108,10 @@ impl Library for SherpaOnnxLibrary {
         let api = Arc::clone(&self.0);
         Ok(match kind {
             Kind::Whisper => Box::new(Whisper::load(api, files, provider)?),
-            Kind::Kokoro => Box::new(Kokoro::load(api, files, provider)?),
+            Kind::Transducer => Box::new(transducer::load(api, files, provider)?),
+            Kind::Kokoro => Box::new(kokoro::load(api, files, provider)?),
+            Kind::Vits => Box::new(vits::load(api, files, provider)?),
+            Kind::Supertonic => Box::new(supertonic::load(api, files, provider)?),
         })
     }
 }
@@ -105,16 +120,27 @@ impl Library for SherpaOnnxLibrary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Whisper,
+    Transducer,
     Kokoro,
+    Vits,
+    Supertonic,
 }
 
 impl Kind {
-    /// `encoder` makes it Whisper, `voices` Kokoro; anything else is `unsupported-model`.
+    /// By the file only it has: `joiner` makes it a transducer, an `encoder` without one Whisper, `voices` Kokoro,
+    /// `duration_predictor` Supertonic, and a `model` with none of those VITS; anything else is `unsupported-model`.
     fn of(files: &Installed) -> Result<Self> {
-        if files.file("encoder").is_some() {
+        let has = |key| files.file(key).is_some();
+        if has("joiner") {
+            Ok(Self::Transducer)
+        } else if has("encoder") {
             Ok(Self::Whisper)
-        } else if files.file("voices").is_some() {
+        } else if has("voices") {
             Ok(Self::Kokoro)
+        } else if has("duration_predictor") {
+            Ok(Self::Supertonic)
+        } else if has("model") {
+            Ok(Self::Vits)
         } else {
             Err(Error::new("unsupported-model"))
         }
@@ -154,4 +180,12 @@ fn c_string(text: &str) -> Result<CString> {
 /// The threads ONNX Runtime runs a model on: the machine's, up to 4, past which these small models gain little.
 fn num_threads() -> i32 {
     std::thread::available_parallelism().map_or(1, |n| i32::try_from(n.get().min(4)).unwrap_or(1))
+}
+
+/// The primary language subtag of the BCP 47 tag `tag`, lower-cased: `es-ES` → `es`.
+fn primary_language(tag: &str) -> String {
+    tag.split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
