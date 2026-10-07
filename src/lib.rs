@@ -34,7 +34,7 @@ pub use catalog::{
     MemorySource, Model, ModelFile, Precision, Problem, Requires,
 };
 pub use engine::{
-    BuildState, ConfigError, Engine, Handle, Preferences, Selection, DEFAULT_IDLE_UNLOAD,
+    BuildState, ConfigError, Engine, Handle, Preferences, Selection, Speech, DEFAULT_IDLE_UNLOAD,
 };
 #[cfg(native)]
 pub use host::NativeHost;

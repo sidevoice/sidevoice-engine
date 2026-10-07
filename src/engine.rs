@@ -10,7 +10,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use crate::backend::{self, Backend, BackendId};
+use crate::backend::{self, Backend, BackendId, LoadedModel};
 use crate::catalog::{Build, Capability, Catalog, CatalogSource, ModelFile};
 use crate::host::{Host, Platform};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
@@ -68,6 +68,15 @@ impl fmt::Debug for Engine {
 /// A prepared model. Once the model is unloaded for going unused, preparing its build again gives a new handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Handle(usize);
+
+/// What a text-to-speech model said: mono samples, in [-1, 1], at `sample_rate` Hz.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Speech {
+    /// The samples.
+    pub samples: Vec<f32>,
+    /// Their rate, in Hz: the model's own.
+    pub sample_rate: u32,
+}
 
 impl Engine {
     /// Builds nothing heavy: the backends are empty objects until [`Engine::prepare`]. The catalogue is the merge of
@@ -239,6 +248,71 @@ impl Engine {
         result
     }
 
+    /// The voices the prepared text-to-speech model `handle` speaks with, each a `voice` for [`Engine::speak`].
+    ///
+    /// # Errors
+    ///
+    /// `model-not-loaded` if `handle`'s model is not in memory (unloaded for going unused: prepare its build again),
+    /// `model-busy` if it is in use, `model-cannot-speak` if it is not a text-to-speech model.
+    pub fn voices(&self, handle: Handle) -> Result<Vec<String>> {
+        let mut in_use = InUse::take(&self.memory, handle)?;
+        let tts = in_use
+            .model()
+            .as_tts()
+            .ok_or(Error::new("model-cannot-speak"))?;
+        Ok(tts.voices())
+    }
+
+    /// What is said in `pcm` (mono samples at 16 kHz, one whole turn), as the prepared speech-to-text model `handle`
+    /// hears it: in `language`, a BCP 47 tag, or in the one it detects with `None`. A model that takes no language
+    /// ignores it. It runs on the calling task: the app decides where.
+    ///
+    /// # Errors
+    ///
+    /// `model-not-loaded`, `model-busy` (as [`Engine::voices`]), `model-cannot-transcribe` if it is not a speech-to-text
+    /// model, and the backend's `transcription-failed`.
+    pub async fn transcribe(
+        &self,
+        handle: Handle,
+        pcm: &[f32],
+        language: Option<&str>,
+    ) -> Result<String> {
+        let mut in_use = InUse::take(&self.memory, handle)?;
+        let stt = in_use
+            .model()
+            .as_stt()
+            .ok_or(Error::new("model-cannot-transcribe"))?;
+        stt.transcribe(pcm, language).await
+    }
+
+    /// `text` spoken by the prepared text-to-speech model `handle`, with `voice` (one of [`Engine::voices`]) at `speed`
+    /// (1.0 is normal). `language`, a BCP 47 tag, tells a model that speaks several which `text` is in; `None` leaves
+    /// it to the model, and a model of one language ignores it. It runs on the calling task: the app decides where.
+    ///
+    /// # Errors
+    ///
+    /// `model-not-loaded`, `model-busy`, `model-cannot-speak` (as [`Engine::voices`]), and the backend's
+    /// `unknown-voice`, `invalid-text` and `speech-failed`.
+    pub async fn speak(
+        &self,
+        handle: Handle,
+        text: &str,
+        voice: &str,
+        language: Option<&str>,
+        speed: f32,
+    ) -> Result<Speech> {
+        let mut in_use = InUse::take(&self.memory, handle)?;
+        let tts = in_use
+            .model()
+            .as_tts()
+            .ok_or(Error::new("model-cannot-speak"))?;
+        let samples = tts.speak(text, voice, language, speed).await?;
+        Ok(Speech {
+            samples,
+            sample_rate: tts.sample_rate(),
+        })
+    }
+
     /// Unloads from memory every model unused for the idle time, and closes the libraries of backends with no model
     /// left. Their files stay installed.
     pub fn unload_idle(&self) {
@@ -255,6 +329,37 @@ impl Engine {
         let mut artifacts: Vec<_> = build.files.iter().map(ModelFile::artifact).collect();
         artifacts.extend(runtime);
         Ok((backend, artifacts))
+    }
+}
+
+/// A model taken out of memory to be used: dropped, by finishing or by the future being dropped, it goes back. The
+/// lock on memory is held only to take it and to put it back, never while the model works.
+struct InUse<'a> {
+    memory: &'a Mutex<Memory>,
+    handle: Handle,
+    model: Option<Box<dyn LoadedModel>>,
+}
+
+impl<'a> InUse<'a> {
+    fn take(memory: &'a Mutex<Memory>, handle: Handle) -> Result<Self> {
+        let model = lock(memory).take(handle)?;
+        Ok(Self {
+            memory,
+            handle,
+            model: Some(model),
+        })
+    }
+
+    fn model(&mut self) -> &mut dyn LoadedModel {
+        self.model.as_deref_mut().expect("held until dropped")
+    }
+}
+
+impl Drop for InUse<'_> {
+    fn drop(&mut self) {
+        if let Some(model) = self.model.take() {
+            lock(self.memory).put_back(self.handle, model);
+        }
     }
 }
 

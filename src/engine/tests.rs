@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::{lock, Preparing};
-use crate::backend::{Backend, BackendSpec, Library, LoadedModel};
+use crate::backend::{Backend, BackendSpec, Library, LoadedModel, SttModel};
 use crate::host::Platform;
 use crate::install::Installed;
 use crate::test_support::{artifact, block_on, FakeCatalog, FakeHost, MemoryHost};
@@ -245,11 +245,24 @@ impl Library for FakeLibrary {
     }
 }
 
+/// A speech-to-text model that says how many samples it heard, and in which language.
 struct FakeModel;
 
 impl LoadedModel for FakeModel {
+    fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
+        Some(self)
+    }
+
     fn memory_mb(&self) -> Option<u32> {
         None
+    }
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl SttModel for FakeModel {
+    async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String> {
+        Ok(format!("{} samples in {language:?}", pcm.len()))
     }
 }
 
@@ -420,4 +433,26 @@ fn a_build_being_prepared_cannot_be_prepared_again_until_that_ends() {
     drop(preparing);
     assert!(lock(&states).is_empty());
     assert!(Preparing::start(&states, "a").is_ok());
+}
+
+#[test]
+fn a_prepared_model_is_used_through_its_handle_while_it_is_in_memory() {
+    let fixture = Fixture::new(served());
+    let handle = fixture.prepare(&selection("a", MODEL_A)).expect("a");
+    let heard = block_on(fixture.engine.transcribe(handle, &[0.0; 3], Some("es")));
+    assert_eq!(heard.as_deref(), Ok("3 samples in Some(\"es\")"));
+    let again = block_on(fixture.engine.transcribe(handle, &[0.0; 2], None));
+    assert_eq!(again.as_deref(), Ok("2 samples in None"), "still there");
+
+    let spoken = block_on(fixture.engine.speak(handle, "hola", "0", None, 1.0));
+    assert_eq!(spoken, Err(Error::new("model-cannot-speak")));
+    assert_eq!(
+        fixture.engine.voices(handle),
+        Err(Error::new("model-cannot-speak"))
+    );
+
+    lock(&fixture.engine.memory).set_idle(Duration::ZERO);
+    fixture.engine.unload_idle();
+    let gone = block_on(fixture.engine.transcribe(handle, &[0.0; 3], None));
+    assert_eq!(gone, Err(Error::new("model-not-loaded")));
 }

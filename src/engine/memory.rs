@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use crate::backend::{Library, LoadedModel};
 use crate::engine::Handle;
+use crate::{Error, Result};
 
 #[cfg(test)]
 mod tests;
@@ -28,11 +29,8 @@ pub(super) struct Memory {
 /// A loaded model. Fields drop in order: the model before its library.
 struct Resident {
     build: String,
-    #[allow(
-        dead_code,
-        reason = "held until unloaded: the engine does not use models yet"
-    )]
-    model: Box<dyn LoadedModel>,
+    /// `None` while it is taken out to be used.
+    model: Option<Box<dyn LoadedModel>>,
     #[allow(
         dead_code,
         reason = "held: it keeps the library open while the model is loaded"
@@ -98,7 +96,7 @@ impl Memory {
             .insert(backend.to_owned(), Arc::downgrade(&library));
         let resident = Resident {
             build: build.to_owned(),
-            model,
+            model: Some(model),
             library,
             used: (self.clock)(),
         };
@@ -106,12 +104,35 @@ impl Memory {
         handle
     }
 
-    /// Unloads every model unused for the idle time, and closes the libraries no model holds any more.
+    /// Takes `handle`'s model out to be used, which counts as using it, until [`Memory::put_back`]: `model-not-loaded`
+    /// if it is not in memory (it was unloaded, or never loaded here), `model-busy` if it is out already.
+    pub(super) fn take(&mut self, handle: Handle) -> Result<Box<dyn LoadedModel>> {
+        let now = (self.clock)();
+        let resident = self
+            .models
+            .get_mut(&handle)
+            .ok_or(Error::new("model-not-loaded"))?;
+        resident.used = now;
+        resident.model.take().ok_or(Error::new("model-busy"))
+    }
+
+    /// Returns `handle`'s model, taken out by [`Memory::take`]: it was in use until now.
+    pub(super) fn put_back(&mut self, handle: Handle, model: Box<dyn LoadedModel>) {
+        let now = (self.clock)();
+        if let Some(resident) = self.models.get_mut(&handle) {
+            resident.used = now;
+            resident.model = Some(model);
+        }
+    }
+
+    /// Unloads every model unused for the idle time, and closes the libraries no model holds any more. A model taken
+    /// out is in use, and stays.
     pub(super) fn unload_idle(&mut self) {
         let now = (self.clock)();
         let idle = self.idle;
-        self.models
-            .retain(|_, resident| now.saturating_sub(resident.used) < idle);
+        self.models.retain(|_, resident| {
+            resident.model.is_none() || now.saturating_sub(resident.used) < idle
+        });
         self.libraries
             .retain(|_, library| library.strong_count() > 0);
     }

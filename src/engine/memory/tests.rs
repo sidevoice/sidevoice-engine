@@ -79,3 +79,25 @@ fn a_model_leaves_memory_once_unused_for_the_idle_time_and_its_library_with_the_
     assert!(memory.library("fake").is_none());
     assert!(closed.upgrade().is_none(), "the library is closed");
 }
+
+#[test]
+fn a_model_taken_out_to_be_used_is_busy_and_stays_until_put_back() {
+    let mut memory = Memory::new(Duration::ZERO);
+    let handle = memory.insert("a", "fake", Arc::new(NoLibrary), Box::new(NoModel));
+    let model = memory.take(handle).map_err(|e| e.code).expect("loaded");
+    assert_eq!(
+        memory.take(handle).map(|_| ()),
+        Err(Error::new("model-busy"))
+    );
+    memory.unload_idle();
+    assert!(memory.is_loaded("a"), "in use, whatever the idle time");
+
+    memory.put_back(handle, model);
+    assert!(memory.take(handle).is_ok(), "back");
+    memory.put_back(handle, Box::new(NoModel));
+    memory.unload_idle();
+    assert_eq!(
+        memory.take(handle).map(|_| ()),
+        Err(Error::new("model-not-loaded"))
+    );
+}

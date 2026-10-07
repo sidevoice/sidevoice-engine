@@ -113,6 +113,8 @@ mod tests;
 
 pub(crate) use library::Library;
 pub(crate) use loaded_model::LoadedModel;
+#[cfg(test)]
+pub(crate) use loaded_model::SttModel;
 pub(crate) use registry::{built_in, find, BackendFactory};
 #[allow(
     unused_imports,
