@@ -68,7 +68,7 @@ fn files_are_pinned_to_the_commit_with_their_size_and_digest_and_memory_is_estim
     );
     // Not in LFS: downloaded from the pinned URL and hashed.
     let config = format!("{pinned}/config.json");
-    assert_eq!(hub.downloads, [config.clone()]);
+    assert_eq!(hub.downloads, std::slice::from_ref(&config));
     assert_eq!(build["files"][1]["sha256"], format!("digest of {config}"));
     // 100 MiB of weights (the config is not one), plus 30%.
     assert_eq!(
