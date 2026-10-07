@@ -11,6 +11,7 @@ use super::c_api::{
     SupertonicModelConfig, TransducerModelConfig, VitsModelConfig, WhisperModelConfig,
 };
 use super::kokoro::espeak_voice;
+use super::supertonic::indexer_named_as_required;
 use super::{model_metadata, primary_language, provider, Kind, SherpaOnnx};
 use crate::backend::Backend;
 use crate::host::Accelerator;
@@ -189,4 +190,10 @@ fn metadata_is_read_past_the_other_fields_of_the_model() {
     assert_eq!(find("speaker_names").as_deref(), Some("af,am_adam"));
     assert_eq!(find("model_type").as_deref(), Some("kokoro"));
     assert_eq!(find("sample_rate"), None);
+}
+
+#[test]
+fn supertonic_takes_an_indexer_named_bin_only_since_the_library_exits_otherwise() {
+    assert!(indexer_named_as_required("/models/x/unicode_indexer.bin"));
+    assert!(!indexer_named_as_required("/models/files/8402ca48e518"));
 }
