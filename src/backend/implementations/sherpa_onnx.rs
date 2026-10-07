@@ -33,6 +33,7 @@ impl Backend for SherpaOnnx {
         _accelerator: Accelerator,
         _files: &Installed,
     ) -> Result<Box<dyn LoadedModel>> {
+        // To come: open the sherpa-onnx C API from `files` with `libloading`, then the model on `accelerator`.
         Err(Error::new("not-implemented"))
     }
 }

@@ -33,6 +33,7 @@ impl Backend for TransformersJs {
         _accelerator: Accelerator,
         _files: &Installed,
     ) -> Result<Box<dyn LoadedModel>> {
+        // To come: import the transformers.js module at run time, then the model from `files` on `accelerator`.
         Err(Error::new("not-implemented"))
     }
 }

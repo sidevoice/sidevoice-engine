@@ -1,6 +1,10 @@
 //! What the machine must meet for a backend (or a build) to run here: each requirement is a check on the host's
 //! capabilities, answering yes or no with a reason. This file is the interface; the common requirements the engine
 //! ships are in requirement/, one file each, and a backend can write its own without changing the contract.
+//!
+//! The engine ships only what hosts report: memory and cores. A check on something they do not report (GPU memory,
+//! an OS version, a driver version) comes with the field in `Capabilities` that the first backend needing it adds;
+//! until then, what only trying can tell is that backend's `probe`.
 
 use crate::host::Capabilities;
 use crate::maybe_send::{MaybeSend, MaybeSync};
