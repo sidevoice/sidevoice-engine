@@ -24,7 +24,7 @@ serde_json = "1.0.151"
 
 # Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The
 # libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,
-# not linked. Specific platforms first, then the general native one. The stub backends link nothing yet.
+# not linked. Specific platforms first, then the general native one.
 
 # The web build (the npm package): the bridge to JavaScript (src/web.rs), and backends whose engine is a JavaScript
 # module.
@@ -38,9 +38,19 @@ wasm-bindgen-futures = "0.4.79"
 
 # Every native build.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# sherpa-onnx's C API, opened at run time from the library the installer downloaded (src/backend/implementations/
+# sherpa_onnx/library.rs): no backend links its engine at build time.
+libloading = "0.9.0"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3.79"
+
+# The sherpa-onnx inference tests (src/backend/implementations/sherpa_onnx/inference_tests.rs) download and unpack
+# their own models: digests, and the tar.bz2 archives upstream publishes (bzip2 0.6 decodes in Rust, no C).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+bzip2 = "0.6.1"
+sha2 = "0.10.9"
+tar = "0.4.46"
 
 [build-dependencies]
 cfg_aliases = "0.2.2"

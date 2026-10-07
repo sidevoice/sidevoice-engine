@@ -73,8 +73,9 @@ accepts.
 
 ## Status
 
-A skeleton: the interfaces, discovery of the backends a build has and their lazy loading, with stub backends. No
-model runs yet.
+The interfaces, discovery of the backends a build has and their lazy loading, and the first real backend:
+sherpa-onnx, natively (Whisper speech to text, Kokoro text to speech). The installer and the catalogue are not
+implemented yet, and MLX and transformers.js are stubs.
 
 ## Layout
 
@@ -109,6 +110,14 @@ platform's backends:
 
 ```sh
 cargo test --locked
+```
+
+The sherpa-onnx backend's tests that run real models download them first (about 250 MB, cached by digest in
+`target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips them; CI runs them on each
+native platform:
+
+```sh
+cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 ```
 
 The wasm32 tests run in Node and need the wasm32 target, Node.js and npm, and the wasm-bindgen CLI at the version of
