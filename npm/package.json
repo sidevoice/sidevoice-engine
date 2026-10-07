@@ -1,0 +1,30 @@
+{
+  "name": "@sidevoice/engine",
+  "version": "0.0.0-stamped-by-cargo-xtask-npm",
+  "description": "Sidevoice engine for the web: local voice models in the browser, as WebAssembly.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/sidevoice_engine.js"
+  },
+  "types": "./dist/sidevoice_engine.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "keywords": [
+    "sidevoice",
+    "voice",
+    "speech",
+    "stt",
+    "tts",
+    "wasm"
+  ],
+  "homepage": "https://github.com/sidevoice/sidevoice-engine#readme",
+  "bugs": {
+    "url": "https://github.com/sidevoice/sidevoice-engine/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sidevoice/sidevoice-engine.git"
+  }
+}
