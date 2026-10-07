@@ -13,8 +13,8 @@ use crate::install::Installed;
 use crate::test_support::{artifact, block_on, FakeCatalog, FakeHost, MemoryHost};
 use crate::{
     async_trait, Accelerator, Artifact, Build, BuildState, BundledCatalog, Cancel, Capabilities,
-    Capability, Engine, Error, Fetcher, Host, ModelFile, Offer, Reason, Rejection, Result, Runs,
-    Selection, Storage,
+    Capability, Engine, Error, Fetcher, Host, ModelFile, Offer, Preferences, Reason, Rejection,
+    Result, Runs, Selection, Storage,
 };
 
 #[cfg(web)]
@@ -455,4 +455,27 @@ fn a_prepared_model_is_used_through_its_handle_while_it_is_in_memory() {
     fixture.engine.unload_idle();
     let gone = block_on(fixture.engine.transcribe(handle, &[0.0; 3], None));
     assert_eq!(gone, Err(Error::new("model-not-loaded")));
+}
+
+#[test]
+fn a_backend_asked_for_is_the_only_one_whose_builds_are_considered() {
+    let engine = Engine::new(Box::new(FakeHost), vec![Box::new(FakeCatalog)]).expect("engine");
+    let on = |backend: &str| {
+        let preferences = Preferences {
+            model: Some("whisper-small".to_owned()),
+            backend: Some(backend.to_owned()),
+            ..Preferences::default()
+        };
+        engine
+            .select(Capability::Stt, &preferences)
+            .map(|selection| selection.build.id)
+    };
+    if cfg!(target_arch = "wasm32") {
+        assert_eq!(on("sherpa-onnx"), None, "not in this build");
+        assert_eq!(on("transformers-js").as_deref(), Some("whisper-small-web"));
+    } else {
+        assert_eq!(on("sherpa-onnx").as_deref(), Some("whisper-small-onnx"));
+        assert_eq!(on("transformers-js"), None, "not in this build");
+    }
+    assert_eq!(on("whisper-cpp"), None, "compiled nowhere");
 }

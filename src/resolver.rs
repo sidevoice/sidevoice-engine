@@ -26,18 +26,21 @@ pub(crate) struct Resolver {
 
 impl Resolver {
     /// Every model that can do `capability`, offered with a build that fits, and every build that cannot run here,
-    /// with why.
+    /// with why. With `backend`, only that backend's builds are considered.
     pub(crate) fn offers(
         &self,
         catalog: &Catalog,
         backends: &[Box<dyn Backend>],
         caps: &Capabilities,
         capability: Capability,
+        backend: Option<&str>,
     ) -> Vec<Offer> {
         let mut out = Vec::new();
         for model in catalog.models(capability) {
             let mut fitting = Vec::new();
-            for build in &model.builds {
+            let builds = model.builds.iter();
+            for build in builds.filter(|build| backend.is_none_or(|wanted| build.backend == wanted))
+            {
                 match backend::find(backends, &build.backend)
                     .map(|backend| self.fit(build, backend, caps))
                 {

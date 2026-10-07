@@ -143,34 +143,37 @@ impl Engine {
             &self.backends,
             &self.host.capabilities(),
             capability,
+            None,
         )
     }
 
-    /// The choice for `capability`: the best offer, or the model asked for. Backend and accelerator preferences are not
-    /// applied yet.
+    /// The choice for `capability`: the best offer, or the model asked for, on the backend asked for (only its builds
+    /// are considered). The accelerator preference is not applied yet.
     #[must_use]
     pub fn select(&self, capability: Capability, preferences: &Preferences) -> Option<Selection> {
-        self.offers(capability)
-            .into_iter()
-            .find_map(|offer| match offer {
-                Offer::Offered {
+        let backend = preferences.backend.as_deref();
+        let caps = self.host.capabilities();
+        let offers =
+            (self.resolver).offers(&self.catalog, &self.backends, &caps, capability, backend);
+        offers.into_iter().find_map(|offer| match offer {
+            Offer::Offered {
+                model,
+                build,
+                accelerator,
+                ..
+            } if preferences
+                .model
+                .as_ref()
+                .is_none_or(|wanted| *wanted == model.id) =>
+            {
+                Some(Selection {
                     model,
                     build,
                     accelerator,
-                    ..
-                } if preferences
-                    .model
-                    .as_ref()
-                    .is_none_or(|wanted| *wanted == model.id) =>
-                {
-                    Some(Selection {
-                        model,
-                        build,
-                        accelerator,
-                    })
-                }
-                _ => None,
-            })
+                })
+            }
+            _ => None,
+        })
     }
 
     /// Where `build` is now: being installed or loaded, failed, loaded, or else whether all its files are stored.

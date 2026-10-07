@@ -96,6 +96,7 @@ fn fit_requiring(
         &[FixedProbeBackend::probing(probe)],
         caps,
         Capability::Stt,
+        None,
     );
     match <[Offer; 1]>::try_from(offers).expect("one offer") {
         [Offer::Offered { accelerator, .. }] => Ok(accelerator),
