@@ -85,9 +85,9 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   capabilities/accelerator.rs), platform (which platform that is)
   catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, a model, with model/build.rs and
                   model/task.rs
-  backend.rs      Backend and BackendSpec: the interface every backend implements; backend/: runtime (its files:
+  backend.rs      Backend and BackendSpec: the contract every backend implements; backend/: runtime (its files:
                   the lookup, and runtime/schema.rs, the shape of backends.json), requirement, registry,
-                  loaded_model (what load returns), implementations/ (one file per backend)
+                  loaded_model (what load returns: SttModel, TtsModel), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
   install.rs      the installer
   engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
@@ -133,6 +133,104 @@ platform fails the build's tests. Digests are never typed by hand: after changin
 cargo xtask pin-backends           # download every file at its pinned version and write its sha256
 cargo xtask pin-backends --check   # what CI runs when backends.json changes
 ```
+
+## How to add a backend
+
+A backend is a record, an optional `probe` and a `load`; the engine does the rest for every backend alike. The
+contract, with what each part must and must not do, is the documentation of `src/backend.rs`. Which models it runs
+is the catalogue's to say (each build names its backend), and what it downloads is data: its entry in
+`backends.json`, read by `src/backend/runtime.rs`. Backends are crate-private: nothing here touches the public API.
+As an example, whisper.cpp:
+
+1. **Its file**, `src/backend/implementations/whisper_cpp.rs`. If its code cannot compile everywhere, the file
+   starts with one `#![cfg(<alias>)]` from `build.rs` (`web`, `native`, `apple_silicon`), with a comment saying why,
+   and does not exist elsewhere. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
+
+   ```rust
+   // whisper.cpp is a native library: there is no web build of it.
+   #![cfg(native)]
+   ```
+
+2. **Its `mod` line** in `src/backend/implementations.rs`: `mod whisper_cpp;`. Nothing else lists backends.
+
+3. **Its record**, a `const` `BackendSpec`, and its registration. The `id` is what catalogue builds and
+   `backends.json` call it, and never changes. Accelerators go best first; requirements hold for any model (a
+   build's memory is the catalogue's). The engine ships `MinMemoryMb` and `MinCores`; a check of its own is a
+   `Requirement` next to its file.
+
+   ```rust
+   struct WhisperCpp;
+
+   const SPEC: BackendSpec = BackendSpec {
+       id: "whisper-cpp",
+       accelerators: &[Accelerator::Cuda, Accelerator::Metal, Accelerator::Cpu],
+       requirements: &[],
+   };
+
+   inventory::submit! { BackendFactory(|| Box::new(WhisperCpp)) }
+   ```
+
+4. **Its `probe`, only if needed.** The host reports what is present; the default keeps the declared accelerators
+   it reports, which is enough for most backends. Override it only when trying is the only way to know whether the
+   backend can use one (here, whether a CUDA driver loads): it narrows the declared accelerators the host reported,
+   best first, quickly, without its library or a model, and answers "no" instead of failing. The engine caches the
+   answer.
+
+5. **Its `load`**: called only for the selected build, once its files are installed. It opens the backend's library
+   at run time (natively, its C API declared in Rust and the library opened with `libloading` from the file its
+   `backends.json` entry names; on the web, its JavaScript module, with a dynamic import), loads the model's files
+   on the accelerator it is given,
+   and returns a `LoadedModel` that transcribes, speaks, or both. It downloads nothing, reads nothing outside
+   `files`, keeps no state, and fails with a stable error code, never a sentence. Speech comes back as one buffer
+   with its sample rate.
+
+   ```rust
+   #[cfg_attr(native, async_trait)]
+   #[cfg_attr(web, async_trait(?Send))]
+   impl Backend for WhisperCpp {
+       fn spec(&self) -> &BackendSpec {
+           &SPEC
+       }
+
+       async fn load(
+           &self,
+           build: &Build,
+           accelerator: Accelerator,
+           files: &Installed,
+       ) -> Result<Box<dyn LoadedModel>> {
+           // Open the library from `files` with libloading, then the model's files on `accelerator`.
+       }
+   }
+   ```
+
+6. **Its entry in `backends.json`**, which `src/backend/runtime.rs` reads; its shape is
+   `src/backend/runtime/schema.rs`, strict (an unknown or a missing key fails the tests), and *Build and test* above
+   says how the platforms and digests work. The entry has its `id`, a name and description, its `upstream` and one
+   `version`, and all six platforms: `null` where it does not run, `[]` where it runs and downloads nothing, or the
+   files, each with the `name` that `load` finds it by in `files`, a `url` that may say `{version}`, and a `sha256`
+   that `cargo xtask pin-backends` writes.
+
+   ```json
+   {
+     "id": "whisper-cpp",
+     "name": "whisper.cpp",
+     "description": "Speech recognition: the shared library.",
+     "upstream": "https://github.com/ggml-org/whisper.cpp",
+     "version": "…",
+     "platforms": {
+       "macos-aarch64": [{ "name": "library", "url": "https://…/v{version}/…-macos-arm64.zip", "sha256": "…" }],
+       "macos-x86_64": [{ "name": "library", "url": "https://…/v{version}/…-macos-x64.zip", "sha256": "…" }],
+       "linux-x86_64": [{ "name": "library", "url": "https://…/v{version}/…-linux-x64.zip", "sha256": "…" }],
+       "linux-aarch64": [{ "name": "library", "url": "https://…/v{version}/…-linux-arm64.zip", "sha256": "…" }],
+       "windows-x86_64": [{ "name": "library", "url": "https://…/v{version}/…-windows-x64.zip", "sha256": "…" }],
+       "web": null
+     }
+   }
+   ```
+
+7. **Its place in the tests**: add its id to the expected lists of `src/backend/tests.rs`, for the platforms where
+   it is compiled in. The tests there also check that it probes on the fake host without loading anything, and that
+   every backend of the build has its `backends.json` entry.
 
 ## Contributing
 

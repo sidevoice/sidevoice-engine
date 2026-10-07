@@ -1,12 +1,81 @@
-//! Backends: what runs models (sherpa-onnx, whisper.cpp, MLX, transformers.js, ...). This file is the interface every
+//! Backends: what runs models (sherpa-onnx, whisper.cpp, MLX, transformers.js, ...). This file is the contract every
 //! backend implements ([`Backend`], with its data in [`BackendSpec`]); the engine does the matching, ranking,
-//! selection and installing for every backend alike (`crate::resolver`, `crate::install`). Which models a backend
-//! runs is the catalogue's to say, and which library files it needs is data too (`backends.json`). Backends belong to
-//! the engine: none of this is public, except a backend's id.
+//! selection and installing for every backend alike (`crate::resolver`, `crate::install`). Backends belong to the
+//! engine: none of this is public, except a backend's id.
 //!
 //! Inside: `runtime` (the library files each backend needs per platform, from `backends.json`), `requirement` (what
-//! the machine must meet, and the common requirements), `registry` (how the backends of this build are found) and
-//! `implementations` (one file per backend).
+//! the machine must meet, and the common requirements), `registry` (how the backends of this build are found),
+//! `loaded_model` (what `load` returns) and `implementations` (one file per backend).
+//!
+//! # The contract
+//!
+//! A backend is its record, an optional `probe` and its `load`. Everything else is somebody else's:
+//!
+//! - which models it runs: each catalogue build names its backend ([`Build::backend`]);
+//! - what it downloads: its entry in `backends.json`, read by `runtime`, with its files per platform, which the
+//!   installer fetches next to the model's files; where the entry says it does not run (`null`), the resolver rejects
+//!   its builds with `no-runtime-for-platform` before asking the backend anything;
+//! - whether a build fits here, which build and accelerator win, and installing them: the resolver and the installer.
+//!
+//! ## `spec`: the record
+//!
+//! A `const` [`BackendSpec`], returned by reference. It must be plain data: no I/O, no allocation, the same answer
+//! every time, callable before anything is installed. Its `id` is stable (catalogue builds and `backends.json` name
+//! the backend by it) and its `accelerators` and `requirements` hold whatever the model: a build's own needs, such as
+//! its memory or the accelerators it accepts, are the catalogue's. A requirement fails with a stable
+//! [`Reason`](crate::Reason) code and its numbers, never with a sentence (AGENTS.md); the engine ships
+//! [`MinMemoryMb`] and [`MinCores`], and a backend that needs another check writes its own [`Requirement`] next to
+//! its file without changing the contract.
+//!
+//! ## `probe`: which accelerators work here
+//!
+//! The host reports what is present; the default keeps the declared accelerators it reports, in the declared order,
+//! and is right for most backends. A backend overrides it only when trying is the only way to know whether it can
+//! use one: a CUDA driver of the right version, Core ML for its operators. An override:
+//!
+//! - narrows: it returns a subset of the declared accelerators the host reported, best first, never one the host
+//!   left out; an empty list means the backend does not run here, and the resolver rejects its builds with
+//!   `no-accelerator`;
+//! - must be quick and must not panic: no downloads, no model, no library of its own (it may not be installed yet);
+//!   it may ask the system (load the CUDA driver, query a device) and answers "no" when that fails;
+//! - is called at most once per backend and resolver: the answer is cached, so it must not depend on the model.
+//!
+//! ## `load`: from installed files to a running model
+//!
+//! Called only for the selected build, after the installer has put the build's files and this backend's
+//! `backends.json` files for this platform in storage. It:
+//!
+//! - opens the backend's library (see *Binding the library*), and finds each file it needs in `files` by its `name`
+//!   in `backends.json` or its key in the catalogue;
+//! - loads the model's files on the `accelerator` it is given, one that `probe` returned; it does not fall back to
+//!   another one by itself (the engine decides that, with a new selection);
+//! - returns a [`LoadedModel`] that is a speech-to-text model, a text-to-speech model, or both, and keeps nothing:
+//!   the engine owns what it returns, and the backend object stays empty and stateless.
+//!
+//! It must not download, fetch or write anything, nor read files that are not in `files`: the engine does not reach
+//! for the network or the file system by itself, and the host only hands over what it installed. It fails with a
+//! stable [`Error`](crate::Error) code, never with a sentence: the codes say what failed (the library did not open,
+//! the model did not load) and are shared by every backend, so a client translates them once; the cause goes to the
+//! logs. Until a backend loads something, the stubs fail with `not-implemented`.
+//!
+//! ## Binding the library
+//!
+//! Nothing heavy is linked into the app, so a backend's engine library is never a build-time dependency:
+//!
+//! - native: the backend declares the library's C API in Rust (hand-written `extern "C"` signatures, or generated
+//!   once by bindgen and checked in) and opens the downloaded library at run time with `libloading`, resolving those
+//!   symbols into a table of function pointers; the first native backend that loads something adds `libloading` to
+//!   the native dependencies. A `-sys` crate that links at build time, or that downloads at build time, is not used;
+//! - web: the backend's engine is a JavaScript module, and the backend imports it at run time (a dynamic `import()`
+//!   through `wasm-bindgen`), so a page that never loads a model never fetches it. Where the module comes from is
+//!   the backend's `backends.json` entry's to say: files the host stored, or `[]` when it comes with the npm
+//!   package; either way it is never compiled into the engine's WebAssembly.
+//!
+//! ## Speech out: a whole buffer
+//!
+//! A text-to-speech model returns the whole utterance as one buffer, with its sample rate. A caller that wants
+//! speech sooner splits the text into sentences and speaks them one by one. Streaming within an utterance, if it is
+//! ever needed, changes the loaded model's interface alone, not `spec`, `probe` or `load`.
 
 use async_trait::async_trait;
 
@@ -37,9 +106,10 @@ pub(crate) use runtime::runtime_files;
 /// A backend's stable id, as catalogue builds name it ([`Build::backend`]): "sherpa-onnx", "whisper-cpp", "mlx", ...
 pub type BackendId = &'static str;
 
-/// What a backend is and needs, as data. Adding a backend is mostly filling this in.
+/// What a backend is and needs, as data: a `const`, no I/O (see *`spec`: the record* above). Adding a backend is
+/// mostly filling this in.
 pub(crate) struct BackendSpec {
-    /// What catalogue builds call it.
+    /// What catalogue builds and `backends.json` call it. Stable: renaming it orphans their entries.
     pub(crate) id: BackendId,
     /// The accelerators it can run on, best first: the default is the first one that works here.
     pub(crate) accelerators: &'static [Accelerator],
@@ -51,12 +121,14 @@ pub(crate) struct BackendSpec {
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 pub(crate) trait Backend: MaybeSend + MaybeSync {
-    /// What it is and needs.
+    /// What it is and needs: its `const` record, the same every time.
     fn spec(&self) -> &BackendSpec;
 
-    /// Which of the declared accelerators work here. By default, the ones the host reports. A backend overrides it
-    /// when only trying can tell (a CUDA driver, a WebGPU adapter, CoreML). The engine caches the answer, and keeps
-    /// only what the host reports: a probe narrows, it never adds an accelerator the host did not see.
+    /// Which of the declared accelerators work here, best first. By default, the ones the host reports. A backend
+    /// overrides it only when trying is the only way to know (a CUDA driver, a WebGPU adapter, Core ML): quickly,
+    /// without its library or a model, answering "no" rather than failing. The engine caches the answer, and keeps
+    /// only what the host reports: a probe narrows, it never adds an accelerator the host did not see (see *`probe`*
+    /// above).
     fn probe(&self, caps: &Capabilities) -> Vec<Accelerator> {
         self.spec()
             .accelerators
@@ -66,8 +138,9 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
             .collect()
     }
 
-    /// Loads an installed build (its model files and this backend's own, each by name in `files`) on one of the
-    /// accelerators `probe` found, and hands back something that transcribes or speaks.
+    /// Loads an installed build on `accelerator`, one that `probe` found: opens this backend's library and the
+    /// model's files, each by name in `files`, and hands back something that transcribes or speaks. It downloads
+    /// nothing, reads nothing outside `files`, keeps nothing, and fails with a stable code (see *`load`* above).
     async fn load(
         &self,
         build: &Build,

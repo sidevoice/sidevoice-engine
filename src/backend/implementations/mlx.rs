@@ -33,6 +33,7 @@ impl Backend for Mlx {
         _accelerator: Accelerator,
         _files: &Installed,
     ) -> Result<Box<dyn LoadedModel>> {
+        // To come: open the MLX library at run time, then the model from `files` on Metal.
         Err(Error::new("not-implemented"))
     }
 }
