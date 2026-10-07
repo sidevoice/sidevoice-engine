@@ -65,6 +65,78 @@
           ]
         }
       ]
+    },
+    {
+      "id": "kokoro-82m-v1.0",
+      "capabilities": [
+        "tts"
+      ],
+      "parameters_m": 82,
+      "languages": [
+        "en-US",
+        "en-GB",
+        "es"
+      ],
+      "license": "Apache-2.0",
+      "builds": [
+        {
+          "id": "kokoro-82m-v1.0/sherpa-onnx-int8",
+          "backend": "sherpa-onnx",
+          "precision": "int8",
+          "requires": {
+            "accelerators": [
+              "cpu"
+            ]
+          },
+          "files": [
+            {
+              "key": "model",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+              "archive_path": "kokoro-int8-multi-lang-v1_0/model.int8.onnx",
+              "sha256": "4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e",
+              "bytes": 132303094,
+              "mutable": true
+            },
+            {
+              "key": "voices",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+              "archive_path": "kokoro-int8-multi-lang-v1_0/voices.bin",
+              "sha256": "4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e",
+              "bytes": 132303094,
+              "mutable": true
+            },
+            {
+              "key": "tokens",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+              "archive_path": "kokoro-int8-multi-lang-v1_0/tokens.txt",
+              "sha256": "4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e",
+              "bytes": 132303094,
+              "mutable": true
+            },
+            {
+              "key": "lexicon",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+              "archive_path": "kokoro-int8-multi-lang-v1_0/lexicon-us-en.txt",
+              "sha256": "4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e",
+              "bytes": 132303094,
+              "mutable": true
+            },
+            {
+              "key": "espeak-ng-data",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+              "archive_path": "kokoro-int8-multi-lang-v1_0/espeak-ng-data",
+              "sha256": "4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e",
+              "bytes": 132303094,
+              "mutable": true
+            }
+          ],
+          "memory": {
+            "mb": 170,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        }
+      ]
     }
   ]
 }
