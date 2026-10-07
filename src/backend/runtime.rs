@@ -114,7 +114,7 @@ impl Platforms {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
-    /// What `load` finds it by in `Installed`.
+    /// Its `Artifact` key: what `load` finds it by in `Installed`.
     name: String,
     /// Where from; `{version}` is the backend's version.
     url: String,
@@ -128,22 +128,17 @@ fn entries() -> &'static [Entry] {
         .backends
 }
 
-/// The library files `backend` needs on `platform`, each with the name `load` finds it by, or `None` when it does not
-/// run there (`null`, or no entry for `backend` at all).
-pub(crate) fn runtime_files(backend: &str, platform: Platform) -> Option<Vec<(String, Artifact)>> {
+/// The library files `backend` needs on `platform`, each keyed by its name (what `load` finds it by in `Installed`),
+/// or `None` when it does not run there (`null`, or no entry for `backend` at all).
+pub(crate) fn runtime_files(backend: &str, platform: Platform) -> Option<Vec<Artifact>> {
     let entry = entries().iter().find(|entry| entry.id == backend)?;
     let files = entry.platforms.get(platform)?;
     let artifact = |file: &File| Artifact {
-        key: format!("backends/{}/{}/{}", entry.id, entry.version, file.name),
+        key: file.name.clone(),
         url: file.url.replace("{version}", &entry.version),
         sha256: file.sha256.clone(),
     };
-    Some(
-        files
-            .iter()
-            .map(|file| (file.name.clone(), artifact(file)))
-            .collect(),
-    )
+    Some(files.iter().map(artifact).collect())
 }
 
 #[cfg(test)]

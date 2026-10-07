@@ -109,3 +109,17 @@ fn null_is_not_running_there_and_an_empty_list_is_running_with_nothing_to_downlo
     );
     assert!(runtime_files("mlx", Platform::LinuxX86_64).is_none());
 }
+
+#[test]
+fn runtime_files_are_artifacts_keyed_by_their_name_at_the_backends_version() {
+    let entry = entries()
+        .iter()
+        .find(|entry| entry.id == "sherpa-onnx")
+        .expect("sherpa-onnx");
+    let files = runtime_files("sherpa-onnx", Platform::LinuxX86_64).expect("linux-x86_64");
+    let keys: Vec<_> = files.iter().map(|artifact| artifact.key.as_str()).collect();
+    assert_eq!(keys, ["library"]);
+    let url = &files[0].url;
+    assert!(!url.contains("{version}"), "{url}");
+    assert!(url.contains(&format!("v{}", entry.version)), "{url}");
+}

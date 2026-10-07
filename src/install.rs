@@ -19,15 +19,15 @@ pub struct Artifact {
     pub sha256: String,
 }
 
-/// A build whose files are in storage: each file's name, and where the host keeps it (a path, an OPFS name, ...).
-/// A model file's name is its key; a backend file's, its name in `backends.json`.
+/// A build whose files are in storage: each artifact's key, and where the host keeps it (a path, an OPFS name, ...).
+/// A backend file's key is its name in `backends.json`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Installed {
     pub(crate) files: BTreeMap<String, String>,
 }
 
 impl Installed {
-    /// Where the host keeps the file called `name`, if it is installed.
+    /// Where the host keeps the file whose key is `name`, if it is installed.
     #[allow(dead_code, reason = "the stub backends load nothing yet")]
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)
@@ -39,10 +39,10 @@ impl Installed {
 pub(crate) struct Installer;
 
 impl Installer {
-    /// Downloads and checks whatever of `files` (each with the name it gets in [`Installed`]) is not in storage yet.
+    /// Downloads and checks whatever of `artifacts` is not in storage yet.
     pub(crate) async fn install(
         &self,
-        _files: &[(String, Artifact)],
+        _artifacts: &[Artifact],
         _host: &dyn Host,
     ) -> Result<Installed> {
         Err(Error::new("not-implemented"))

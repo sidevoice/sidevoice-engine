@@ -173,15 +173,12 @@ impl Engine {
         let runtime = Platform::of(&self.host.capabilities())
             .and_then(|platform| backend::runtime_files(backend.spec().id, platform))
             .ok_or(Error::new("no-runtime-for-platform"))?;
-        // A model file is found by its key; a backend file, by its name in backends.json.
-        let wanted: Vec<_> = selection
-            .build
-            .files
-            .iter()
-            .map(|artifact| (artifact.key.clone(), artifact.clone()))
-            .chain(runtime)
-            .collect();
-        let files = self.installer.install(&wanted, self.host.as_ref()).await?;
+        let mut artifacts = selection.build.files.clone();
+        artifacts.extend(runtime);
+        let files = self
+            .installer
+            .install(&artifacts, self.host.as_ref())
+            .await?;
         let model = backend
             .load(&selection.build, selection.accelerator, &files)
             .await?;
