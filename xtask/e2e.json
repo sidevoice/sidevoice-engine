@@ -1,0 +1,19 @@
+{
+  "max_wer": 0.25,
+  "sentences": {
+    "en": "The weather is lovely today, so we are going for a walk in the park.",
+    "es": "Hoy hace muy buen tiempo, así que vamos a dar un paseo por el parque."
+  },
+  "tts": [
+    { "model": "kokoro-82m-v0.19", "voices": { "en-US": "af_bella" } },
+    { "model": "kokoro-82m-v1.0", "voices": { "en-US": "af_bella", "es": "ef_dora" } },
+    { "model": "piper-en_US-ljspeech-medium", "voices": { "en-US": null } },
+    { "model": "piper-es_ES-carlfm-x_low", "voices": { "es-ES": null } },
+    { "model": "supertonic-3", "voices": { "en": null, "es": null } }
+  ],
+  "stt": {
+    "en": ["whisper-base", "parakeet-tdt-0.6b-v3"],
+    "es": ["whisper-base", "fastconformer-es-large", "parakeet-tdt-0.6b-v3"]
+  },
+  "clips": []
+}

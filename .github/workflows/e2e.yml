@@ -1,0 +1,61 @@
+name: e2e
+
+# The voice loop for real, on each native platform, through the engine's public API (`cargo xtask e2e`, plan in
+# xtask/e2e.json): text spoken by every text-to-speech model and transcribed by the speech-to-text models of its
+# language, and real recorded clips transcribed, in English and Spanish, each transcript held to a word error rate.
+# The table goes to the job's summary, and what each model said is kept as an artifact. On every pull request that
+# touches what the loop runs, whatever its base, so a stacked pull request runs it too.
+on:
+  pull_request:
+    paths:
+      - src/**
+      - catalog/**
+      - backends.json
+      - xtask/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/e2e.yml
+      - .github/actions/setup/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loop:
+    name: Voice loop (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64, runner: ubuntu-24.04 }
+          - { target: linux-aarch64, runner: ubuntu-24.04-arm }
+          - { target: macos-aarch64, runner: macos-14 }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+      # Everything the engine installs is stored by digest, so a cache from before a catalogue change still serves
+      # every file that did not change. Saved even when the loop fails: the downloads are what is slow.
+      - id: models
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/e2e
+          key: e2e-${{ matrix.target }}-${{ hashFiles('catalog/families/*.json', 'backends.json', 'xtask/e2e.json') }}
+          restore-keys: e2e-${{ matrix.target }}-
+      - run: cargo xtask e2e "$RUNNER_TEMP/e2e"
+      - if: always() && steps.models.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/e2e
+          key: ${{ steps.models.outputs.cache-primary-key }}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: speech-${{ matrix.target }}
+          path: ${{ runner.temp }}/e2e/speech
+          if-no-files-found: ignore

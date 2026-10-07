@@ -167,6 +167,17 @@ them; CI runs them on each native platform:
 cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 ```
 
+The whole voice loop runs as an app would run it, through the public API: the bundled catalogue, `select` on
+sherpa-onnx, `prepare`, then `Engine::speak` and `Engine::transcribe`. Each text-to-speech model of the plan
+(`xtask/e2e.json`) says a sentence in English or Spanish, each speech-to-text model of that language transcribes it,
+real recorded clips are transcribed too, and every transcript must stay within the plan's word error rate. It
+downloads about 1.5 GB the first time (kept by digest in the directory given, `target/e2e` by default); the `e2e`
+workflow runs it on Linux x86_64 and arm64 and on macOS arm64, and puts the table in the job's summary:
+
+```sh
+cargo xtask e2e [DIR]
+```
+
 The wasm32 tests run in Node and need the wasm32 target, Node.js and npm, and the wasm-bindgen CLI at the version of
 `wasm-bindgen` in `Cargo.lock` on the `PATH` (`wasm-bindgen` and `wasm-bindgen-test-runner`, e.g.
 `cargo install wasm-bindgen-cli --version <that version>`). The npm package is built and installed as a consumer

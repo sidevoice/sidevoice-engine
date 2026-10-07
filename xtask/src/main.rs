@@ -12,9 +12,13 @@
 //!   (or, with `--check`, checked) (xtask/src/backends.rs).
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
+//! - `e2e [DIR]`: the voice loop for real through the engine's public API: text to speech to text, and recorded clips
+//!   to text, in English and Spanish, each transcript held to a word error rate (xtask/src/e2e.rs, plan in
+//!   xtask/e2e.json).
 
 mod backends;
 mod catalog;
+mod e2e;
 mod npm;
 mod release;
 
@@ -28,7 +32,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check]";
+     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -44,6 +48,8 @@ fn main() -> ExitCode {
         ["pin-backends", "--check"] => backends::pin(true),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
+        ["e2e"] => e2e::run(None),
+        ["e2e", dir] => e2e::run(Some(dir)),
         _ => Err(USAGE.into()),
     };
     if let Err(error) = &result {
