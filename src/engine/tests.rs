@@ -3,7 +3,7 @@
 use crate::test_support::{FakeCatalog, FakeHost};
 use crate::{Engine, Offer, Reason, Rejection, Task};
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
 #[test]

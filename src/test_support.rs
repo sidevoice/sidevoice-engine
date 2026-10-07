@@ -12,14 +12,10 @@ pub(crate) struct FakeHost;
 impl Host for FakeHost {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            runs: if cfg!(target_arch = "wasm32") {
-                Runs::Page
-            } else {
-                Runs::Native
-            },
+            runs: if cfg!(web) { Runs::Page } else { Runs::Native },
             os: std::env::consts::OS.to_owned(),
             arch: std::env::consts::ARCH.to_owned(),
-            accelerators: if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            accelerators: if cfg!(apple_silicon) {
                 vec![Accelerator::Metal, Accelerator::Cpu]
             } else {
                 vec![Accelerator::Cpu, Accelerator::Wasm]

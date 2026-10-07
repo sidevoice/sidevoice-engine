@@ -5,7 +5,7 @@ use super::built_in;
 use crate::host::Host;
 use crate::test_support::FakeHost;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
 #[test]
