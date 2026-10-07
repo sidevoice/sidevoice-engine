@@ -192,8 +192,10 @@ fn wav_16k_mono(wav: &[u8]) -> Vec<f32> {
             b"data" => {
                 assert!(format_ok, "the clip is 16-bit PCM, mono, at 16 kHz");
                 return wav[body..body + len]
-                    .chunks_exact(2)
-                    .map(|sample| f32::from(i16::from_le_bytes([sample[0], sample[1]])) / 32_768.0)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|sample| f32::from(i16::from_le_bytes(*sample)) / 32_768.0)
                     .collect();
             }
             _ => {}
@@ -221,7 +223,15 @@ fn load(files: &Installed) -> Box<dyn LoadedModel> {
         accelerators: Vec::new(),
         files: Vec::new(),
     };
-    ready(SherpaOnnx.load(&build, accelerator(), files)).expect("the model loads")
+    let model = if files.file("encoder").is_some() {
+        "Whisper"
+    } else {
+        "Kokoro"
+    };
+    eprintln!("loading {model} on {:?}", accelerator());
+    let loaded = ready(SherpaOnnx.load(&build, accelerator(), files)).expect("the model loads");
+    eprintln!("loaded {model}");
+    loaded
 }
 
 /// Lower case, letters, digits and single spaces: what is compared of two texts.

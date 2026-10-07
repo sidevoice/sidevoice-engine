@@ -114,9 +114,11 @@ impl TtsModel for Kokoro {
             .position(|name| name == voice)
             .ok_or(Error::new("unknown-voice"))?;
         let text: CString = c_string(text)?;
-        let mut config = GenerationConfig::default();
-        config.sid = i32::try_from(sid).map_err(|_| failed)?;
-        config.speed = speed;
+        let config = GenerationConfig {
+            sid: i32::try_from(sid).map_err(|_| failed)?,
+            speed,
+            ..GenerationConfig::default()
+        };
         let api = &self.api;
         // SAFETY: `text` and `config` outlive the call, which takes no callback; the audio is copied before it is
         // destroyed, once.

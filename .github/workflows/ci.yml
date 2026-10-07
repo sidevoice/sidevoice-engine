@@ -79,7 +79,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/test-models
           key: test-models-${{ matrix.target }}-${{ hashFiles('backends.json', 'src/backend/implementations/sherpa_onnx/inference_tests.json') }}
-      - run: cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
+      - run: cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture --test-threads=1
         env:
           SIDEVOICE_TEST_MODELS: ${{ runner.temp }}/test-models
 
