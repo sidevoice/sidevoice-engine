@@ -90,8 +90,10 @@ cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own
 ```
 
 A backend's files are data, in `backends.json`: one `version` per backend and, per platform, the files to download,
-each with its `url` (which may say `{version}`) and `sha256`. A backend with no entry for a platform is rejected there
-with `no-runtime-for-platform`. Digests are never typed by hand: after changing a version or a file,
+each with its `url` (which may say `{version}`) and `sha256`. Every backend lists all six platforms (`macos-aarch64`,
+`macos-x86_64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `web`): `null` where it does not run, which the
+engine rejects with `no-runtime-for-platform`, and `[]` where it runs and downloads nothing. A missing or unknown
+platform fails the build's tests. Digests are never typed by hand: after changing a version or a file,
 
 ```sh
 cargo xtask pin-backends           # download every file at its pinned version and write its sha256

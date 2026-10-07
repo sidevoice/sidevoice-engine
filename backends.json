@@ -41,7 +41,8 @@
             "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v{version}/sherpa-onnx-v{version}-win-x64-shared-MD-Release-lib.tar.bz2",
             "sha256": "3c43d1efba780d7ae7f5d64cae08803dcecf417109a5f593684e536f3cbd5cf1"
           }
-        ]
+        ],
+        "web": null
       }
     },
     {
@@ -51,7 +52,12 @@
       "upstream": "https://github.com/ml-explore/mlx",
       "version": "0.32.3",
       "platforms": {
-        "macos-aarch64": []
+        "macos-aarch64": [],
+        "macos-x86_64": null,
+        "linux-x86_64": null,
+        "linux-aarch64": null,
+        "windows-x86_64": null,
+        "web": null
       }
     },
     {
@@ -61,6 +67,11 @@
       "upstream": "https://github.com/huggingface/transformers.js",
       "version": "4.3.1",
       "platforms": {
+        "macos-aarch64": null,
+        "macos-x86_64": null,
+        "linux-x86_64": null,
+        "linux-aarch64": null,
+        "windows-x86_64": null,
         "web": []
       }
     }

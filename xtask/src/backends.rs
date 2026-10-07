@@ -51,7 +51,15 @@ fn repin(doc: &mut Value, mut digest: impl FnMut(&str) -> Result<String>) -> Res
         let version = version.ok_or(format!("{id}: no version"))?.to_owned();
         let platforms = backend["platforms"].as_object_mut();
         for (platform, files) in platforms.ok_or(format!("{id}: no platforms"))? {
-            for file in files.as_array_mut().ok_or(format!("{id} {platform}"))? {
+            // `null`: the backend does not run there, so there is nothing to pin. Which keys must be there is the engine's
+            // to check (src/backend/downloads.rs).
+            if files.is_null() {
+                continue;
+            }
+            for file in files
+                .as_array_mut()
+                .ok_or(format!("{id} {platform}: not a list"))?
+            {
                 let name = file["name"].as_str().unwrap_or_default();
                 let what = format!("{id} {platform} {name}");
                 let url = file["url"].as_str().ok_or(format!("{what}: no url"))?;
@@ -82,13 +90,15 @@ mod tests {
                     {"name": "a", "url": "https://x/v{version}/a", "sha256": ""},
                     {"name": "b", "url": "https://x/b", "sha256": "digest of https://x/b"}
                 ],
-                "web": []
+                "web": [],
+                "windows-x86_64": null
             }
         }]});
         let stale = repin(&mut doc, |url| Ok(format!("digest of {url}"))).unwrap();
         assert_eq!(stale, ["lib linux-x86_64 a"]);
         let files = &doc["backends"][0]["platforms"]["linux-x86_64"];
         assert_eq!(files[0]["sha256"], "digest of https://x/v1.2.3/a");
+        assert!(doc["backends"][0]["platforms"]["windows-x86_64"].is_null());
         // Key order is kept: the file is rewritten as it was, digests aside.
         let keys: Vec<_> = doc["backends"][0].as_object().unwrap().keys().collect();
         assert_eq!(keys, ["id", "version", "platforms"]);

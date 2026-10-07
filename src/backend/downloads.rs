@@ -1,12 +1,16 @@
 //! What each backend downloads, per platform: the data file `backends.json` at the repository root, compiled in. No
 //! backend's code says what it fetches. The engine reads the entry for one backend and the platform it runs on, and
-//! only that one; a backend with no entry for this platform cannot run here.
+//! only that one.
+//!
+//! Every backend lists every platform, always the same six keys: `macos-aarch64`, `macos-x86_64`, `linux-x86_64`,
+//! `linux-aarch64`, `windows-x86_64` and `web`. A platform's value is the list of files to download there: `[]` when
+//! the backend runs there and downloads nothing, and `null` when it does not run there (the funnel rejects it with
+//! `no-runtime-for-platform`). A missing or unknown key is a parse error, so neither an omission nor a typo passes.
 //!
 //! Each backend has one `version`, from its `upstream`; each file's `url` may say `{version}`, and its `sha256` is
 //! written by `cargo xtask pin-backends`, never by hand. The types below are the file's schema: anything they do not
 //! name is an error, and the tests parse it on every target.
 
-use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
@@ -16,20 +20,14 @@ use crate::install::Artifact;
 
 const DATA: &str = include_str!("../../backends.json");
 
-/// A platform `backends.json` can have downloads for: an OS and an architecture, or the web build.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+/// A platform `backends.json` has a key for: an OS and an architecture, or the web build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Platform {
-    #[serde(rename = "macos-aarch64")]
     MacosAarch64,
-    #[serde(rename = "macos-x86_64")]
     MacosX86_64,
-    #[serde(rename = "linux-x86_64")]
     LinuxX86_64,
-    #[serde(rename = "linux-aarch64")]
     LinuxAarch64,
-    #[serde(rename = "windows-x86_64")]
     WindowsX86_64,
-    #[serde(rename = "web")]
     Web,
 }
 
@@ -75,7 +73,41 @@ struct Entry {
     #[allow(dead_code, reason = "for people: the engine reads the urls")]
     upstream: String,
     version: String,
-    platforms: BTreeMap<Platform, Vec<File>>,
+    platforms: Platforms,
+}
+
+/// Every platform's files: `null` where the backend does not run, `[]` where it runs and downloads nothing. Every key
+/// is required (`deserialize_with` stops serde from reading a missing one as `null`), and no other is allowed.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Platforms {
+    #[serde(rename = "macos-aarch64", deserialize_with = "Option::deserialize")]
+    macos_aarch64: Option<Vec<File>>,
+    #[serde(rename = "macos-x86_64", deserialize_with = "Option::deserialize")]
+    macos_x86_64: Option<Vec<File>>,
+    #[serde(rename = "linux-x86_64", deserialize_with = "Option::deserialize")]
+    linux_x86_64: Option<Vec<File>>,
+    #[serde(rename = "linux-aarch64", deserialize_with = "Option::deserialize")]
+    linux_aarch64: Option<Vec<File>>,
+    #[serde(rename = "windows-x86_64", deserialize_with = "Option::deserialize")]
+    windows_x86_64: Option<Vec<File>>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    web: Option<Vec<File>>,
+}
+
+impl Platforms {
+    /// The files to download on `platform`, or `None` if the backend does not run there.
+    fn get(&self, platform: Platform) -> Option<&[File]> {
+        match platform {
+            Platform::MacosAarch64 => &self.macos_aarch64,
+            Platform::MacosX86_64 => &self.macos_x86_64,
+            Platform::LinuxX86_64 => &self.linux_x86_64,
+            Platform::LinuxAarch64 => &self.linux_aarch64,
+            Platform::WindowsX86_64 => &self.windows_x86_64,
+            Platform::Web => &self.web,
+        }
+        .as_deref()
+    }
 }
 
 /// One file to download.
@@ -96,11 +128,11 @@ fn entries() -> &'static [Entry] {
         .backends
 }
 
-/// The files `backend` downloads on `platform`, each with the name `load` finds it by, or `None` when its entry has
-/// none for `platform`: it cannot run there.
+/// The files `backend` downloads on `platform`, each with the name `load` finds it by, or `None` when it does not run
+/// there (`null`, or no entry for `backend` at all).
 pub(crate) fn downloads(backend: &str, platform: Platform) -> Option<Vec<(String, Artifact)>> {
     let entry = entries().iter().find(|entry| entry.id == backend)?;
-    let files = entry.platforms.get(&platform)?;
+    let files = entry.platforms.get(platform)?;
     let artifact = |file: &File| Artifact {
         key: format!("backends/{}/{}/{}", entry.id, entry.version, file.name),
         url: file.url.replace("{version}", &entry.version),
@@ -118,11 +150,20 @@ pub(crate) fn downloads(backend: &str, platform: Platform) -> Option<Vec<(String
 mod tests {
     use std::collections::HashSet;
 
-    use super::{entries, Platform};
+    use super::{downloads, entries, Platform, Platforms};
     use crate::host::{Capabilities, Runs};
 
     #[cfg(web)]
     use wasm_bindgen_test::wasm_bindgen_test as test;
+
+    const ALL: [Platform; 6] = [
+        Platform::MacosAarch64,
+        Platform::MacosX86_64,
+        Platform::LinuxX86_64,
+        Platform::LinuxAarch64,
+        Platform::WindowsX86_64,
+        Platform::Web,
+    ];
 
     #[test]
     fn the_data_file_is_well_formed() {
@@ -130,7 +171,9 @@ mod tests {
         for entry in entries() {
             assert!(ids.insert(&entry.id), "{} is there twice", entry.id);
             assert!(!entry.version.is_empty(), "{} has no version", entry.id);
-            for (platform, files) in &entry.platforms {
+            let platforms = ALL.map(|platform| (platform, entry.platforms.get(platform)));
+            for (platform, files) in platforms {
+                let files = files.unwrap_or_default();
                 let mut names = HashSet::new();
                 for file in files {
                     let what = format!("{} {platform:?} {}", entry.id, file.name);
@@ -167,5 +210,50 @@ mod tests {
         );
         assert_eq!(of(Runs::Page, "linux", "x86_64"), Some(Platform::Web));
         assert_eq!(of(Runs::Native, "freebsd", "x86_64"), None);
+    }
+
+    /// A `platforms` object with every key set to `null` but `without`, and `extra` (if any) set to `[]`.
+    fn platforms(without: &str, extra: &str) -> String {
+        let keys = [
+            "macos-aarch64",
+            "macos-x86_64",
+            "linux-x86_64",
+            "linux-aarch64",
+            "windows-x86_64",
+            "web",
+        ];
+        let mut fields: Vec<_> = keys
+            .iter()
+            .filter(|key| **key != without)
+            .map(|key| format!("\"{key}\": null"))
+            .collect();
+        if !extra.is_empty() {
+            fields.push(format!("\"{extra}\": []"));
+        }
+        format!("{{{}}}", fields.join(", "))
+    }
+
+    #[test]
+    fn every_platform_key_is_required_and_no_other_is_allowed() {
+        let parse = |json: &str| serde_json::from_str::<Platforms>(json);
+        assert!(parse(&platforms("", "")).is_ok());
+        let missing = parse(&platforms("web", "")).expect_err("a missing platform");
+        assert!(
+            missing.to_string().contains("missing field `web`"),
+            "{missing}"
+        );
+        let unknown = parse(&platforms("", "freebsd-x86_64")).expect_err("an unknown platform");
+        assert!(unknown.to_string().contains("unknown field"), "{unknown}");
+    }
+
+    #[test]
+    fn null_is_not_running_there_and_an_empty_list_is_running_with_nothing_to_download() {
+        let parsed: Platforms = serde_json::from_str(&platforms("web", "web")).expect("platforms");
+        assert!(parsed.get(Platform::LinuxX86_64).is_none());
+        assert_eq!(parsed.get(Platform::Web).map(<[_]>::len), Some(0));
+        // And in the data file: sherpa-onnx is native only, and the placeholders download nothing where they run.
+        assert!(downloads("sherpa-onnx", Platform::Web).is_none());
+        assert_eq!(downloads("mlx", Platform::MacosAarch64), Some(Vec::new()));
+        assert!(downloads("mlx", Platform::LinuxX86_64).is_none());
     }
 }
