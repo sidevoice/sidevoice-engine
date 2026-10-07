@@ -42,6 +42,35 @@ files; each platform implements its own (the browser, the desktop app). The back
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Engine libraries and models are downloaded when they are needed, never linked into the app.
 
+## What a host must report
+
+`Host::capabilities()` (`Capabilities`, in `src/host/capabilities.rs`) is what the host can see without trying
+anything, gathered once when the host is built:
+
+| Field | What to report | When it cannot tell |
+|---|---|---|
+| `runs` | `Native` in a process, `Page` in the wasm32 build | always known |
+| `os`, `arch` | `std::env::consts::OS` and `ARCH` values; natively they pick the `backends.json` platform, so an unknown pair gets `no-runtime-for-platform`. A page with nothing better: `"web"` and `"wasm32"` | always given |
+| `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
+| `memory_mb` | memory available to models, in MB | `None` |
+| `cores` | CPU cores | `None` |
+
+- **The host reports, the backend confirms.** Whether a backend can actually use an accelerator (a CUDA driver, a
+  granted WebGPU adapter, a Core ML model that loads) is found out by the backend's probe, never by the host. The
+  probe can only narrow what the host reported: an accelerator the host left out is absent.
+- **Unknown passes.** A requirement on memory or cores the host cannot tell is met: the engine does not reject a build
+  on a guess; loading is what finds out. A host that is unsure of a number says `None` rather than guessing low.
+- **The accelerator list is fixed.** `Accelerator` is an enum of the engine (adding one is a change here, since it
+  needs backend code anyway), marked `#[non_exhaustive]`.
+- **A JavaScript host** resolves `capabilities()` to `{ os, arch, accelerators: string[], memoryMb?, cores? }`, the
+  accelerators by their stable ids: `cpu`, `cuda`, `coreml`, `metal`, `webgpu`, `wasm`. It is checked strictly: a
+  missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
+  `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
+
+A catalogue build may also list the accelerators it accepts; none means any its backend runs on. A build is offered
+on the first accelerator in its backend's order of preference that the host reports, the probe confirms and the build
+accepts.
+
 ## Status
 
 A skeleton: the interfaces, discovery of the backends a build has and their lazy loading, with stub backends. No
@@ -55,10 +84,10 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   host.rs         Host, Storage, Fetcher: the platform contract; host/: capabilities (what a host reports),
                   platform (which platform that is)
   catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, models and their builds
-  backend.rs      Backend: the interface every backend implements; backend/: runtime (its files: the lookup, and
-                  runtime/schema.rs, the shape of backends.json), requirement, registry, loaded_model (what load
-                  returns), implementations/ (one file per backend)
-  resolver.rs     the funnel; resolver/offer.rs, what it returns
+  backend.rs      Backend: the interface every backend implements; backend/: spec (a backend as data, and its
+                  id), runtime (its files: the lookup, and runtime/schema.rs, the shape of backends.json),
+                  requirement, registry, loaded_model (what load returns), implementations/ (one file per backend)
+  resolver.rs     the funnel; resolver/: offer (what it returns), rejection and reason (why not)
   install.rs      the installer
   engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
                   lifecycle (a build's state)

@@ -12,7 +12,8 @@ mod min_memory_mb;
 pub(crate) use min_cores::MinCores;
 pub(crate) use min_memory_mb::MinMemoryMb;
 
-/// One condition the machine must meet.
+/// One condition the machine must meet. A value the host cannot tell (`None`) passes: the engine does not reject a
+/// build on a guess.
 pub(crate) trait Requirement: MaybeSend + MaybeSync {
     /// `Ok` if `caps` meet it; otherwise why not, with the numbers.
     fn check(&self, caps: &Capabilities) -> Result<(), Reason>;

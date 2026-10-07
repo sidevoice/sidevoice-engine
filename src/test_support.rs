@@ -59,6 +59,7 @@ impl CatalogSource for FakeCatalog {
             backend: backend.to_owned(),
             format: format.to_owned(),
             memory_mb,
+            accelerators: Vec::new(),
             files: Vec::new(),
         };
         Ok(CatalogFragment {

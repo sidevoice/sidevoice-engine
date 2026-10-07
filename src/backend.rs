@@ -4,9 +4,9 @@
 //! runs is the catalogue's to say, and which library files it needs is data too (`backends.json`). Backends belong to
 //! the engine: none of this is public, except a backend's id.
 //!
-//! Inside: `runtime` (the library files each backend needs per platform, from `backends.json`), `requirement` (what
-//! the machine must meet, and the common requirements), `registry` (how the backends of this build are found) and
-//! `implementations` (one file per backend).
+//! Inside: `spec` (a backend as data, and its id), `runtime` (the library files each backend needs per platform, from
+//! `backends.json`), `requirement` (what the machine must meet, and the common requirements), `registry` (how the
+//! backends of this build are found) and `implementations` (one file per backend).
 
 use async_trait::async_trait;
 
@@ -21,6 +21,7 @@ mod loaded_model;
 mod registry;
 mod requirement;
 mod runtime;
+mod spec;
 #[cfg(test)]
 mod tests;
 
@@ -33,19 +34,8 @@ pub(crate) use registry::{built_in, find, BackendFactory};
 pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
 pub(crate) use runtime::runtime_files;
-
-/// A backend's stable id, as catalogue builds name it ([`Build::backend`]): "sherpa-onnx", "whisper-cpp", "mlx", ...
-pub type BackendId = &'static str;
-
-/// What a backend is and needs, as data. Adding a backend is mostly filling this in.
-pub(crate) struct BackendSpec {
-    /// What catalogue builds call it.
-    pub(crate) id: BackendId,
-    /// The accelerators it can run on, best first: the default is the first one that works here.
-    pub(crate) accelerators: &'static [Accelerator],
-    /// What the machine must meet, whatever the model: each one a check on the capabilities.
-    pub(crate) requirements: &'static [&'static dyn Requirement],
-}
+pub use spec::BackendId;
+pub(crate) use spec::BackendSpec;
 
 /// What runs models: its data ([`BackendSpec`]), which of its accelerators work here, and loading a build.
 #[cfg_attr(native, async_trait)]
@@ -55,7 +45,8 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
     fn spec(&self) -> &BackendSpec;
 
     /// Which of the declared accelerators work here. By default, the ones the host reports. A backend overrides it
-    /// when only trying can tell (a CUDA driver, a WebGPU adapter, CoreML). The engine caches the answer.
+    /// when only trying can tell (a CUDA driver, a WebGPU adapter, CoreML). The engine caches the answer, and keeps
+    /// only what the host reports: a probe narrows, it never adds an accelerator the host did not see.
     fn probe(&self, caps: &Capabilities) -> Vec<Accelerator> {
         self.spec()
             .accelerators
