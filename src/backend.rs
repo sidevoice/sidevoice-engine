@@ -1,11 +1,12 @@
 //! Backends: what runs models (sherpa-onnx, whisper.cpp, MLX, transformers.js, ...). This file is the interface every
 //! backend implements ([`Backend`], with its data in [`BackendSpec`]); the engine does the matching, ranking,
 //! selection and installing for every backend alike (`crate::resolver`, `crate::install`). Which models a backend
-//! runs is the catalogue's to say, and which files it downloads is data too. Backends belong to the engine: none of
-//! this is public, except a backend's id.
+//! runs is the catalogue's to say, and which library files it needs is data too (`backends.json`). Backends belong to
+//! the engine: none of this is public, except a backend's id.
 //!
-//! Inside: `requirement` (what the machine must meet, and the common requirements), `registry` (how the backends of
-//! this build are found) and `implementations` (one file per backend).
+//! Inside: `runtime` (the library files each backend needs per platform, from `backends.json`), `requirement` (what
+//! the machine must meet, and the common requirements), `registry` (how the backends of this build are found) and
+//! `implementations` (one file per backend).
 
 use async_trait::async_trait;
 
@@ -19,6 +20,7 @@ mod implementations;
 mod loaded_model;
 mod registry;
 mod requirement;
+mod runtime;
 #[cfg(test)]
 mod tests;
 
@@ -30,6 +32,7 @@ pub(crate) use registry::{built_in, find, BackendFactory};
 )]
 pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
+pub(crate) use runtime::runtime_files;
 
 /// A backend's stable id, as catalogue builds name it ([`Build::backend`]): "sherpa-onnx", "whisper-cpp", "mlx", ...
 pub type BackendId = &'static str;
@@ -62,7 +65,7 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
             .collect()
     }
 
-    /// Loads an installed build (its model files and this backend's library, by name in `files`) on one of the
+    /// Loads an installed build (its model files and this backend's own, each by name in `files`) on one of the
     /// accelerators `probe` found, and hands back something that transcribes or speaks.
     async fn load(
         &self,

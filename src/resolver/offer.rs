@@ -36,7 +36,8 @@ pub enum Offer {
 pub enum Rejection {
     /// 1. The build's backend is not compiled into this build of the engine.
     BackendNotInThisBuild,
-    /// 2. None of the backend's accelerators works here.
+    /// 2. The backend cannot run here: it has nothing to download for this platform (`no-runtime-for-platform`), or none
+    ///    of its accelerators works here (`no-accelerator`).
     BackendUnavailable(Reason),
     /// 3. The machine does not meet a requirement of the build or of its backend (memory, cores, ...).
     DoesNotFit(Reason),

@@ -4,8 +4,9 @@ version = "0.0.0"
 edition = "2021"
 rust-version = "1.98"
 publish = false
-description = "Build tooling for the engine: the npm package, the release assets and publishing."
+description = "Build tooling for the engine: the npm package, the release assets, publishing and the backends' digests."
 
 [dependencies]
-serde_json = "1"
+# preserve_order: `pin-backends` rewrites backends.json with its keys where they were.
+serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

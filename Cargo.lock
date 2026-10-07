@@ -258,6 +258,8 @@ dependencies = [
  "cfg_aliases",
  "inventory",
  "js-sys",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

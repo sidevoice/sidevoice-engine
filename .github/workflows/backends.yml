@@ -1,0 +1,28 @@
+name: backends
+
+# Every pull request that touches backends.json: each file of each backend is downloaded at its pinned version and must
+# match its digest (`cargo xtask pin-backends --check`); to fix it, run `cargo xtask pin-backends` and push the result.
+# Separate from ci.yml so that other pull requests download nothing.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - backends.json
+      - xtask/**
+      - .github/workflows/backends.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backends-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pinned:
+    name: Backends pinned
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+      - run: cargo xtask pin-backends --check

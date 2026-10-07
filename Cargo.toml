@@ -18,6 +18,9 @@ crate-type = ["rlib", "cdylib"]
 async-trait = "=0.1.92"
 # Backends register themselves (src/backend/registry.rs). linkme does not compile to wasm32; inventory does.
 inventory = "0.3.24"
+# backends.json (src/backend/runtime.rs), compiled in and read once.
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 
 # Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The
 # libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,

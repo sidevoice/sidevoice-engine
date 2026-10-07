@@ -1,7 +1,7 @@
 //! The funnel over a fake host and catalogue: what fits is offered, and every other build comes back with why not.
 
 use crate::test_support::{FakeCatalog, FakeHost};
-use crate::{Engine, Offer, Reason, Rejection, Task};
+use crate::{Capabilities, Engine, Fetcher, Host, Offer, Reason, Rejection, Runs, Storage, Task};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -58,4 +58,48 @@ fn a_native_engine_and_its_futures_can_cross_threads() {
         .select(Task::Stt, &crate::Preferences::default())
         .expect("a selection");
     sent(engine.prepare(&selection));
+}
+
+/// A native host on a platform backends.json has no entry for.
+struct Elsewhere;
+
+impl Host for Elsewhere {
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            runs: Runs::Native,
+            os: "plan9".to_owned(),
+            ..FakeHost.capabilities()
+        }
+    }
+
+    fn storage(&self) -> &dyn Storage {
+        &FakeHost
+    }
+
+    fn fetcher(&self) -> &dyn Fetcher {
+        &FakeHost
+    }
+}
+
+#[test]
+fn a_platform_with_no_runtime_rejects_every_build_of_this_engine_in_the_funnel() {
+    let engine = Engine::new(Box::new(Elsewhere), vec![Box::new(FakeCatalog)]).expect("engine");
+    let offers = engine.offers(Task::Stt);
+    assert!(!offers.is_empty());
+    for offer in offers {
+        let Offer::Rejected { build, why, .. } = offer else {
+            panic!("nothing runs on plan9: {offer:?}");
+        };
+        if engine.backends().contains(&build.backend.as_str()) {
+            let no_runtime = Reason::new("no-runtime-for-platform");
+            assert_eq!(
+                why,
+                Rejection::BackendUnavailable(no_runtime),
+                "{}",
+                build.id
+            );
+        } else {
+            assert_eq!(why, Rejection::BackendNotInThisBuild, "{}", build.id);
+        }
+    }
 }

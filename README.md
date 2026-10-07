@@ -52,16 +52,20 @@ model runs yet.
 ```
 src/            the crate sidevoice-engine, one package per concept (`x.rs` is the package, `x/` its parts):
   lib.rs          the front door: declares the packages, exports the public API
-  host.rs         Host, Storage, Fetcher: the platform contract; host/capabilities.rs, what a host reports
+  host.rs         Host, Storage, Fetcher: the platform contract; host/: capabilities (what a host reports),
+                  platform (which platform that is)
   catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, models and their builds
-  backend.rs      Backend: the interface every backend implements; backend/: requirement, registry,
-                  loaded_model (what load returns), implementations/ (one file per backend)
+  backend.rs      Backend: the interface every backend implements; backend/: runtime (its files: the lookup, and
+                  runtime/schema.rs, the shape of backends.json), requirement, registry, loaded_model (what load
+                  returns), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns
   install.rs      the installer
-  engine.rs       Engine: puts it together; engine/lifecycle.rs, a build's state
+  engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
+                  lifecycle (a build's state)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
                   the JavaScript host (JsHost) as the engine sees it
   maybe_send.rs   Send/Sync in native builds only
+backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own
@@ -86,6 +90,17 @@ cargo test --locked --target wasm32-unknown-unknown --lib
 cargo xtask npm        # target/npm/sidevoice-engine-X.Y.Z.tgz
 cargo xtask npm-smoke
 cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own tests
+```
+
+A backend's files are data, in `backends.json`: one `version` per backend and, per platform, the files to download,
+each with its `url` (which may say `{version}`) and `sha256`. Every backend lists all six platforms (`macos-aarch64`,
+`macos-x86_64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `web`): `null` where it does not run, which the
+engine rejects with `no-runtime-for-platform`, and `[]` where it runs and downloads nothing. A missing or unknown
+platform fails the build's tests. Digests are never typed by hand: after changing a version or a file,
+
+```sh
+cargo xtask pin-backends           # download every file at its pinned version and write its sha256
+cargo xtask pin-backends --check   # what CI runs when backends.json changes
 ```
 
 ## Contributing
