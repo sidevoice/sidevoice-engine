@@ -66,9 +66,10 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           wasm: true
-      # The build tooling's own tests, then what it runs (xtask/).
+      # The build tooling's own tests (xtask/), then the engine's tests compiled to wasm32 and run in Node by
+      # wasm-bindgen-test-runner (the runner in .cargo/config.toml; doctests cannot run on wasm32).
       - run: cargo test --locked --manifest-path xtask/Cargo.toml
-      - run: cargo xtask test-wasm
+      - run: cargo test --locked --target wasm32-unknown-unknown --lib
       # The npm package, installed into a temporary directory as a consumer installs it: in Node it must load and
       # keep the backends the web build registers (xtask/src/npm.rs).
       - run: cargo xtask npm

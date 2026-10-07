@@ -1,11 +1,11 @@
 name: release
 
 # Merging is publishing. Every push to main replaces the `nightly` pre-release; release-please.yml calls this with
-# the vX.Y.Z tag it created. The wasm32 tests, then `cargo xtask npm` (the npm package `@sidevoice/engine`, packed)
-# and `cargo xtask npm-smoke` (installed as a consumer installs it and run in Node). Then `cargo xtask manifest`
-# (SHA256SUMS), one attestation over the assets, and `cargo xtask publish` (attach, read back, verify, publish); for a
-# vX.Y.Z release, `cargo xtask npm-publish` then puts it on npm. The native tests are ci.yml's, on every PR.
-# RELEASING.md.
+# the vX.Y.Z tag it created. The build tooling's tests and the wasm32 tests, then `cargo xtask npm` (the npm package
+# `@sidevoice/engine`, packed) and `cargo xtask npm-smoke` (installed as a consumer installs it and run in Node). Then
+# `cargo xtask manifest` (SHA256SUMS), one attestation over the assets, and `cargo xtask publish` (attach, read back,
+# verify, publish); for a vX.Y.Z release, `cargo xtask npm-publish` then puts it on npm. The native tests are
+# ci.yml's, on every PR. RELEASING.md.
 on:
   push:
     branches: [main]
@@ -39,7 +39,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           wasm: true
-      - run: cargo xtask test-wasm
+      - run: cargo test --locked --manifest-path xtask/Cargo.toml
+      - run: cargo test --locked --target wasm32-unknown-unknown --lib
       - run: cargo xtask npm
       - run: cargo xtask npm-smoke
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -95,7 +96,8 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
       - uses: ./.github/actions/setup
-      # Trusted publishing needs Node.js 22.14 or later; no registry-url, so no .npmrc and no token.
+      # Node.js 24 brings npm 11, which trusted publishing needs (11.5.1 or later; `cargo xtask npm-publish` checks it).
+      # No registry-url, so no .npmrc and no token.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"

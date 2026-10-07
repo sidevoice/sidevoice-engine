@@ -63,15 +63,16 @@ You need the Rust toolchain pinned in the repository.
 cargo test --locked
 ```
 
-The wasm32 tests run in Node (Node.js and npm on the `PATH`) and need the wasm32 target. The pinned wasm-bindgen CLI
-they need comes by itself: one of the version in `Cargo.lock` on the `PATH` is used, otherwise `cargo xtask`
-downloads it, checks its digest and keeps it in `target/tools/`. The npm package is built and installed as a
-consumer would, then run in Node, by the next two:
+The wasm32 tests run in Node and need the wasm32 target, Node.js and npm, and the wasm-bindgen CLI at the version of
+`wasm-bindgen` in `Cargo.lock` on the `PATH` (`wasm-bindgen` and `wasm-bindgen-test-runner`, e.g.
+`cargo install wasm-bindgen-cli --version <that version>`). The npm package is built and installed as a consumer
+would, then run in Node, by the two `cargo xtask` commands:
 
 ```sh
-cargo xtask test-wasm
+cargo test --locked --target wasm32-unknown-unknown --lib
 cargo xtask npm        # target/npm/sidevoice-engine-X.Y.Z.tgz
 cargo xtask npm-smoke
+cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own tests
 ```
 
 ## Contributing

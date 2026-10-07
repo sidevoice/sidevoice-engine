@@ -19,23 +19,24 @@ The engine reaches its consumers in two ways:
 | Squash-merge into `main` | reviewer | The PR title becomes the commit. `release` runs: the wasm32 tests, the npm package built and smoke-tested; then it attests the assets, attaches them to the **`nightly`** pre-release, reads them back, verifies them and publishes it. Never on npm. release-please opens or updates the **release PR** ("chore(main): release X.Y.Z"). |
 | Merge the release PR | a maintainer | **This is the release.** release-please tags `vX.Y.Z` and creates a draft GitHub Release whose notes are that version's changelog; `release` runs from the tag, attaches and verifies the assets, and publishes the Release; then it publishes `@sidevoice/engine@X.Y.Z` to npm. |
 
-Everything besides the GitHub steps is code in `xtask/` (`cargo xtask test-wasm | npm | npm-smoke | manifest |
-publish | npm-publish`, each described at the top of `xtask/src/main.rs`), so it runs the same on a laptop:
+Everything besides the GitHub steps is either plain `cargo` or code in `xtask/` (`cargo xtask npm | npm-smoke |
+manifest | publish | npm-publish`, each described at the top of `xtask/src/main.rs`: thin calls to `cargo`,
+`wasm-bindgen`, `npm`, `node` and `gh`), so it runs the same on a laptop:
 
-- `cargo xtask test-wasm` runs the engine's tests compiled to wasm32 in Node.
-- `cargo xtask npm` builds the crate for wasm32 in release mode, runs `wasm-bindgen --target web` on it,
-  writes the `package.json` (version: the crate's), a README and the licence, and packs the package into
-  `target/npm/sidevoice-engine-X.Y.Z.tgz`.
-- `cargo xtask npm-smoke` installs that tarball into a temporary directory with `npm install`, as a consumer does,
-  and in Node imports `@sidevoice/engine`, loads its wasm from `node_modules` and creates a `WebEngine` on a
-  plain-object host: it must have exactly the web build's backends (`transformers-js`), which proves the packaged
-  build kept the backends it registers.
+- `cargo test --locked --target wasm32-unknown-unknown --lib` runs the engine's tests compiled to wasm32 in Node:
+  `.cargo/config.toml` makes `wasm-bindgen-test-runner` the runner for that target.
+- `cargo xtask npm` builds the crate for wasm32 in release mode, runs `wasm-bindgen --target web` on it into
+  `dist/`, adds the checked-in `npm/package.json` (its version stamped from the crate's), `npm/README.md` and the
+  licence, and packs the package with `npm pack` into `target/npm/sidevoice-engine-X.Y.Z.tgz`.
+- `cargo xtask npm-smoke` installs that tarball into a scratch project (`target/npm smoke/`) with `npm install`,
+  as a consumer does, and in Node imports `@sidevoice/engine`, loads its wasm from `node_modules` and creates a
+  `WebEngine` on a plain-object host: it must have exactly the web build's backends (`transformers-js`), which
+  proves the packaged build kept the backends it registers.
 
-Both wasm commands use the wasm-bindgen CLI at the version of the `wasm-bindgen` crate in `Cargo.lock`, pinned with
-the digest of each host's release asset in `xtask/src/wasm_bindgen.rs`: one of that version on the `PATH` is used,
-otherwise it is downloaded, checked and kept in `target/tools/`. npm steps run the npm CLI pinned in
-`xtask/src/npm.rs` (`NPM_VERSION`), installed into `target/npm-cli` with a configuration of its own: no `.npmrc`,
-no token from the environment.
+The wasm32 tests and `cargo xtask npm` need the wasm-bindgen CLI (`wasm-bindgen`, `wasm-bindgen-test-runner`) on the
+`PATH`, at the version of the `wasm-bindgen` crate in `Cargo.lock`. In CI, `.github/actions/setup` installs it with
+`taiki-e/install-action`, which checks the release binary against the SHA-256 it pins; bump that version with the
+crate's. npm is the one on the `PATH`; publishing needs 11.5.1 or later (the release workflow sets up Node.js 24).
 
 A native consumer pins a release by its tag:
 
@@ -75,12 +76,14 @@ Only the release workflow publishes, by npm's **trusted publishing** (OIDC) with
 The job `publish-npm` ("Publish to npm") in `release.yml` runs after the GitHub Release is published, for versioned
 releases only, as one step, `cargo xtask npm-publish vX.Y.Z`:
 
-1. It downloads the Release's tarball, `SHA256SUMS` and attestation and checks the tarball against both, and that it
-   is `@sidevoice/engine` at that version: npm gets the bytes GitHub Releases has, nothing rebuilt.
-2. It publishes that tarball with the pinned npm CLI (`npm publish --access public --provenance --tag latest|next`).
-   A version already published with the same bytes is skipped, so a re-run carries on; with other bytes it fails:
-   **npm versions are immutable** (a published version can never be replaced, only deprecated), so a bad release is
-   fixed by the next version.
+1. It downloads the Release's assets and checks `sidevoice-engine-X.Y.Z.tgz` against `SHA256SUMS` and the
+   attestation (`gh attestation verify`, signer `release.yml` on `main`, GitHub-hosted runner): npm gets the bytes
+   GitHub Releases has, nothing rebuilt.
+2. It publishes that tarball with `npm publish --access public --provenance --tag latest|next` (npm 11.5.1 or later;
+   it fails clearly with an older one). A version already published with the same bytes (compared with what
+   `npm pack @sidevoice/engine@X.Y.Z` fetches from the registry) is skipped, so a re-run carries on; with other
+   bytes it fails: **npm versions are immutable** (a published version can never be replaced, only deprecated), so a
+   bad release is fixed by the next version.
 
 ### Before the first versioned release
 
@@ -99,8 +102,8 @@ fails and nothing reaches npm (the GitHub Release is published regardless):
 3. **No tokens.** In the package's access settings, require 2FA and disallow tokens: only trusted publishing
    remains.
 
-Every workflow on the way grants `id-token: write`, and the job sets up Node.js 24 (trusted publishing needs 22.14 or
-later).
+Every workflow on the way grants `id-token: write`, and the job sets up Node.js 24, which brings npm 11: trusted
+publishing needs 11.5.1 or later, and `cargo xtask npm-publish` checks it.
 
 ## Which version comes next
 
