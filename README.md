@@ -93,8 +93,8 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
                   lifecycle (a build's state)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
-                  the JavaScript host (JsHost) as the engine sees it, and web/host/capabilities.rs, reading what
-                  it reports
+                  the JavaScript host (JsHost) as the engine sees it; web/host/: capabilities (reading what it
+                  reports), storage (WebStorage), fetcher (WebFetcher)
   maybe_send.rs   Send/Sync in native builds only
 backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
 build.rs        the three cfg aliases: web, native, apple_silicon
