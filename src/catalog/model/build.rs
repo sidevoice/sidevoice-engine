@@ -105,13 +105,13 @@ pub struct ModelFile {
 }
 
 impl ModelFile {
-    /// What the installer downloads for it. Its `archive_path` is not part of that yet: unpacking is the installer's to
-    /// add (sidevoice-engine#6).
+    /// What the installer downloads for it: the file, or the member of the archive at `url`.
     pub(crate) fn artifact(&self) -> Artifact {
         Artifact {
             key: self.key.clone(),
             url: self.url.clone(),
             sha256: self.sha256.clone(),
+            archive_path: self.archive_path.clone(),
         }
     }
 }

@@ -21,6 +21,11 @@ inventory = "0.3.24"
 # backends.json (src/backend/runtime.rs), compiled in and read once.
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# Each downloaded file is checked against its digest as it arrives (src/install.rs), on every target.
+sha2 = { version = "0.11.0", default-features = false }
+# Archives (src/install/archive.rs): bzip2 in pure Rust (its default backend, libbz2-rs-sys), so it builds for wasm32
+# too; the tar format is read by the installer itself, fed as bytes arrive.
+bzip2 = "=0.6.1"
 
 # Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The
 # libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,
@@ -36,8 +41,13 @@ wasm-bindgen-futures = "0.4.79"
 # macOS on Apple silicon, on top of everything native: MLX.
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 
-# Every native build.
+# Every native build: the built-in NativeHost (src/host/native.rs). sysinfo reads the machine's memory. The HTTP client is blocking and runs on a thread
+# of its own per download, whose chunks reach the async side through a channel: no async runtime is imposed on the
+# app. TLS is rustls with its default provider and the webpki roots, so nothing links the system's OpenSSL.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-channel = "2.5.0"
+sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3.79"

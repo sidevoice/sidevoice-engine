@@ -3,9 +3,7 @@
 
 use async_trait::async_trait;
 
-use crate::backend::LoadedModel;
-use crate::backend::{Backend, BackendFactory, BackendSpec, MinMemoryMb};
-use crate::catalog::Build;
+use crate::backend::{Backend, BackendFactory, BackendSpec, Library, MinMemoryMb};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
@@ -27,13 +25,8 @@ impl Backend for Mlx {
         &SPEC
     }
 
-    async fn load(
-        &self,
-        _build: &Build,
-        _accelerator: Accelerator,
-        _files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
-        // To come: open the MLX library at run time, then the model from `files` on Metal.
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
+        // To come: open the MLX library at run time; its `Library` loads the model from `files` on Metal.
         Err(Error::new("not-implemented"))
     }
 }
