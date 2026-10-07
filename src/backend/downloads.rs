@@ -2,9 +2,9 @@
 //! backend's code says what it fetches. The engine reads the entry for one backend and the platform it runs on, and
 //! only that one; a backend with no entry for this platform cannot run here.
 //!
-//! Each backend has one `version`, which Renovate watches on its `upstream`'s GitHub releases; each file's `url` may
-//! say `{version}`, and its `sha256` is written by `cargo xtask pin-backends`, never by hand. The types below are the
-//! file's schema: anything they do not name is an error, and the tests parse it on every target.
+//! Each backend has one `version`, from its `upstream`; each file's `url` may say `{version}`, and its `sha256` is
+//! written by `cargo xtask pin-backends`, never by hand. The types below are the file's schema: anything they do not
+//! name is an error, and the tests parse it on every target.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -72,10 +72,7 @@ struct Entry {
         reason = "for people: the engine reads ids, versions and files"
     )]
     description: String,
-    #[allow(
-        dead_code,
-        reason = "for Renovate and pin-backends: the engine reads the urls"
-    )]
+    #[allow(dead_code, reason = "for people: the engine reads the urls")]
     upstream: String,
     version: String,
     platforms: BTreeMap<Platform, Vec<File>>,

@@ -1,6 +1,6 @@
-//! `backends.json`'s digests. Renovate bumps a backend's `version` but cannot know the new files' digests:
-//! `pin-backends` downloads every file of every backend at its pinned version (`curl`) and writes its `sha256`;
-//! `pin-backends --check` downloads them too and fails if any digest is not the file's. Nobody types a digest.
+//! `backends.json`'s digests, which nobody types. After a backend's `version` or a file changes, `pin-backends`
+//! downloads every file of every backend at its pinned version (`curl`) and writes its `sha256`; `pin-backends --check`
+//! downloads them too and fails if any digest is not the file's.
 
 use std::env;
 

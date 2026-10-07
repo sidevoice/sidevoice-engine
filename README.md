@@ -62,8 +62,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
                   the JavaScript host (JsHost) as the engine sees it
   maybe_send.rs   Send/Sync in native builds only
-backends.json   what each backend downloads per platform, compiled in: versions watched by Renovate
-                (.github/renovate.json), digests written by `cargo xtask pin-backends`
+backends.json   what each backend downloads per platform, compiled in; digests written by `cargo xtask pin-backends`
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own
@@ -92,8 +91,7 @@ cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own
 
 A backend's files are data, in `backends.json`: one `version` per backend and, per platform, the files to download,
 each with its `url` (which may say `{version}`) and `sha256`. A backend with no entry for a platform is rejected there
-with `no-runtime-for-platform`. Renovate opens a pull request when an upstream ships a new version; digests are
-never typed by hand:
+with `no-runtime-for-platform`. Digests are never typed by hand: after changing a version or a file,
 
 ```sh
 cargo xtask pin-backends           # download every file at its pinned version and write its sha256

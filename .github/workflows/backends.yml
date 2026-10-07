@@ -1,9 +1,8 @@
 name: backends
 
-# Every pull request that touches backends.json (Renovate's version bumps among them): each file of each backend is
-# downloaded at its pinned version and must match its digest (`cargo xtask pin-backends --check`). Renovate cannot
-# recalculate digests: on its pull request, run `cargo xtask pin-backends` and push the result. Separate from ci.yml
-# so that other pull requests download nothing.
+# Every pull request that touches backends.json: each file of each backend is downloaded at its pinned version and must
+# match its digest (`cargo xtask pin-backends --check`); to fix it, run `cargo xtask pin-backends` and push the result.
+# Separate from ci.yml so that other pull requests download nothing.
 on:
   pull_request:
     branches: [main]
