@@ -8,7 +8,7 @@
 //! Here: the contract ([`Backend`], [`BackendSpec`]), the requirements ([`Requirement`]), how backends are found
 //! (`registry`), and one file per backend. A backend file whose library cannot compile everywhere starts with one
 //! `#![cfg(<alias>)]` (aliases in build.rs) and is empty elsewhere. These are stubs: they describe themselves and load
-//! nothing yet; `mlx.rs` shows a `probe` of its own.
+//! nothing yet.
 
 use async_trait::async_trait;
 

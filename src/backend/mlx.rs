@@ -3,10 +3,7 @@
 
 use async_trait::async_trait;
 
-use crate::{
-    Accelerator, Backend, BackendFactory, BackendSpec, Build, Capabilities, LoadedModel,
-    MinMemoryMb,
-};
+use crate::{Accelerator, Backend, BackendFactory, BackendSpec, Build, LoadedModel, MinMemoryMb};
 use crate::{Error, Installed, Result};
 
 pub(crate) struct Mlx;
@@ -24,11 +21,6 @@ inventory::submit! { BackendFactory(|| Box::new(Mlx)) }
 impl Backend for Mlx {
     fn spec(&self) -> &BackendSpec {
         &SPEC
-    }
-
-    fn probe(&self, _caps: &Capabilities) -> Vec<Accelerator> {
-        // A stub: Apple silicon always has Metal.
-        vec![Accelerator::Metal]
     }
 
     async fn load(

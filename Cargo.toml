@@ -9,7 +9,7 @@ description = "Sidevoice engine: the local-model catalogue, resolver, selector a
 
 [dependencies]
 async-trait = "0.1.89"
-# Backends register themselves (src/registry.rs). linkme does not compile to wasm32; inventory does.
+# Backends register themselves (src/backend/registry.rs). linkme does not compile to wasm32; inventory does.
 inventory = "0.3.24"
 
 # Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The

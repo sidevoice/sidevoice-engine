@@ -87,7 +87,11 @@ impl Host for FakeHost {
             },
             os: std::env::consts::OS.to_owned(),
             arch: std::env::consts::ARCH.to_owned(),
-            accelerators: vec![Accelerator::Cpu, Accelerator::Wasm],
+            accelerators: if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                vec![Accelerator::Metal, Accelerator::Cpu]
+            } else {
+                vec![Accelerator::Cpu, Accelerator::Wasm]
+            },
             memory_mb: Some(8_192),
             cores: Some(8),
         }
