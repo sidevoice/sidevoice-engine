@@ -1,9 +1,12 @@
 //! The catalogue of local models: the merge of every source's fragment. A model has several builds, one per backend
 //! and format (whisper-small: ONNX for sherpa-onnx and transformers.js, GGUF for whisper.cpp, MLX for Apple).
 
-use crate::install::Artifact;
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
+
+mod model;
+
+pub use model::{Build, Model, Task};
 
 /// Where catalogue entries come from: the catalogue bundled in the engine, a remote one pinned by digest, the
 /// user's own models.
@@ -21,43 +24,6 @@ pub trait CatalogSource: MaybeSend + MaybeSync {
 pub struct CatalogFragment {
     /// Its models, in the source's order.
     pub models: Vec<Model>,
-}
-
-/// What a model is for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Task {
-    /// Speech to text.
-    Stt,
-    /// Text to speech.
-    Tts,
-}
-
-/// A model, with every build of it the catalogue knows.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Model {
-    /// Its stable id: "whisper-small", "kokoro", ...
-    pub id: String,
-    /// The model family a backend knows how to run: "whisper", "kokoro", "piper", ...
-    pub family: String,
-    /// What it is for.
-    pub task: Task,
-    /// Best first: the ranking step keeps the first build that fits.
-    pub builds: Vec<Build>,
-}
-
-/// One way to run a model: a backend, a format, what it needs, and the model's files.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Build {
-    /// Its stable id: "whisper-small-onnx", ...
-    pub id: String,
-    /// The id of the backend that runs it ([`Engine::backends`](crate::Engine::backends)).
-    pub backend: String,
-    /// The format of its files: "onnx", "gguf", "mlx", ...
-    pub format: String,
-    /// The memory it needs to run, in MB.
-    pub memory_mb: u32,
-    /// The model's files.
-    pub files: Vec<Artifact>,
 }
 
 /// The merged catalogue.

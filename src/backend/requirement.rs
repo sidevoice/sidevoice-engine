@@ -4,7 +4,7 @@
 
 use crate::host::Capabilities;
 use crate::maybe_send::{MaybeSend, MaybeSync};
-use crate::offer::Reason;
+use crate::resolver::Reason;
 
 mod min_cores;
 mod min_memory_mb;

@@ -3,11 +3,11 @@
 
 use async_trait::async_trait;
 
+use crate::backend::LoadedModel;
 use crate::backend::{Backend, BackendFactory, BackendSpec};
 use crate::catalog::Build;
 use crate::host::Accelerator;
 use crate::install::Installed;
-use crate::model::LoadedModel;
 use crate::{Error, Result};
 
 struct TransformersJs;

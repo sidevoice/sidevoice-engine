@@ -4,15 +4,14 @@
 use std::fmt;
 use std::sync::{Mutex, PoisonError};
 
-use crate::backend::{self, Backend, BackendId};
+use crate::backend::{self, Backend, BackendId, LoadedModel};
 use crate::catalog::{Build, Catalog, CatalogSource, Model, Problem, Task};
 use crate::host::{Accelerator, Host};
 use crate::install::Installer;
-use crate::model::LoadedModel;
-use crate::offer::Offer;
-use crate::resolver::Resolver;
+use crate::resolver::{Offer, Resolver};
 use crate::{Error, Result};
 
+mod lifecycle;
 #[cfg(test)]
 mod tests;
 

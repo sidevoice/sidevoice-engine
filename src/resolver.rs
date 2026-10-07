@@ -9,7 +9,10 @@ use std::sync::{Mutex, PoisonError};
 use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
 use crate::catalog::{Build, Catalog, Model, Task};
 use crate::host::{Accelerator, Capabilities};
-use crate::offer::{Offer, Reason, Rejection};
+
+mod offer;
+
+pub use offer::{Offer, Reason, Rejection};
 
 /// Offers per task, remembering each backend's probe.
 #[derive(Debug, Default)]

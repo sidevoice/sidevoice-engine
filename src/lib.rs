@@ -16,10 +16,7 @@ mod catalog;
 mod engine;
 mod host;
 mod install;
-mod lifecycle;
 mod maybe_send;
-mod model;
-mod offer;
 mod resolver;
 #[cfg(test)]
 mod test_support;
@@ -30,7 +27,7 @@ pub use engine::{ConfigError, Engine, Handle, Preferences, Selection};
 pub use host::{Accelerator, Capabilities, Fetcher, Host, Runs, Storage};
 pub use install::Artifact;
 pub use maybe_send::{MaybeSend, MaybeSync};
-pub use offer::{Offer, Reason, Rejection};
+pub use resolver::{Offer, Reason, Rejection};
 
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,6 +1,6 @@
 use super::Requirement;
 use crate::host::Capabilities;
-use crate::offer::Reason;
+use crate::resolver::Reason;
 
 /// At least this many CPU cores. Unknown cores pass.
 #[allow(dead_code, reason = "a common requirement no backend declares yet")]

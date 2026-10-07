@@ -13,15 +13,16 @@ use crate::catalog::Build;
 use crate::host::{Accelerator, Capabilities};
 use crate::install::Installed;
 use crate::maybe_send::{MaybeSend, MaybeSync};
-use crate::model::LoadedModel;
 use crate::Result;
 
 mod implementations;
+mod loaded;
 mod registry;
 mod requirement;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use loaded::LoadedModel;
 pub(crate) use registry::{built_in, find, BackendFactory};
 #[allow(
     unused_imports,

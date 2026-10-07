@@ -50,16 +50,16 @@ model runs yet.
 ## Layout
 
 ```
-src/            the crate sidevoice-engine, one small file per piece:
-  host.rs         Host: the platform contract (capabilities, storage, downloads)
-  maybe_send.rs   MaybeSend, MaybeSync: Send and Sync in a native build, nothing on the web
-  backend.rs      Backend: the interface every backend implements; backend/: requirement.rs (+ requirement/),
-                  registry.rs, implementations.rs (+ implementations/: one file per backend)
-  model.rs        LoadedModel, Transcriber, Synthesizer: what a backend's load returns
-  catalog.rs      CatalogSource, Model, Build: the models and their builds
-  resolver.rs     the funnel; offer.rs, what it returns
-  install.rs      the installer; lifecycle.rs, a build's state
-  engine.rs       Engine: puts it together
+src/            the crate sidevoice-engine, one package per concept (`x.rs` is the package, `x/` its parts):
+  lib.rs          the front door: declares the packages, exports the public API
+  host.rs         Host, Storage, Fetcher: the platform contract; host/capabilities.rs, what a host reports
+  catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, models and their builds
+  backend.rs      Backend: the interface every backend implements; backend/: requirement, registry,
+                  loaded (what load returns), implementations/ (one file per backend)
+  resolver.rs     the funnel; resolver/offer.rs, what it returns
+  install.rs      the installer
+  engine.rs       Engine: puts it together; engine/lifecycle.rs, a build's state
+  maybe_send.rs   Send/Sync in native builds only
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own

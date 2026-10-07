@@ -1,6 +1,6 @@
 use super::Requirement;
 use crate::host::Capabilities;
-use crate::offer::Reason;
+use crate::resolver::Reason;
 
 /// At least this much memory, in MB. Unknown memory passes.
 pub(crate) struct MinMemoryMb(pub(crate) u32);
