@@ -1,5 +1,9 @@
-<!-- npm shows this file on the package page. Images by absolute URL: npm serves no file of the repository. -->
-<img alt="Sidevoice — Give your coding agent a voice. Keep the conversation." src="https://raw.githubusercontent.com/sidevoice/sidevoice-engine/main/.github/assets/readme-header.svg" width="750" />
+<!-- npm shows this file on the package page. Images by absolute URL: npm serves no file of the repository. The
+     light/dark pair as in the repository's README; where the page ignores <picture>, the light one shows. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/sidevoice/sidevoice-engine/main/.github/assets/readme-header-on-dark.svg" />
+  <img alt="Sidevoice — Give your coding agent a voice. Keep the conversation." src="https://raw.githubusercontent.com/sidevoice/sidevoice-engine/main/.github/assets/readme-header.svg" width="750" />
+</picture>
 
 # @sidevoice/engine
 
