@@ -113,8 +113,9 @@ let handle = engine.prepare(&selection, &|progress: Progress| report(progress), 
 
 ## Status
 
-The installer, the lifecycle and the native host work; the backends are stubs that open no library yet, so no model
-runs yet, and the browser's host is not bridged yet.
+The catalogue, the installer, the lifecycle and the native host work, and so does the first real backend:
+sherpa-onnx, natively (Whisper speech to text, Kokoro text to speech). MLX and transformers.js are stubs, and the
+browser's host is not bridged yet.
 
 ## Layout
 
@@ -155,7 +156,15 @@ through `NativeHost` is ignored unless asked for, and CI asks:
 
 ```sh
 cargo test --locked
-cargo test --locked -- --include-ignored   # with the network: what CI runs
+cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests   # with the network, as CI
+```
+
+The sherpa-onnx backend's tests that run real models install them first, through the installer and `NativeHost`
+(about 250 MB, kept by digest in `target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips
+them; CI runs them on each native platform:
+
+```sh
+cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 ```
 
 The wasm32 tests run in Node and need the wasm32 target, Node.js and npm, and the wasm-bindgen CLI at the version of

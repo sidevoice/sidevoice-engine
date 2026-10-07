@@ -63,7 +63,18 @@
 //! for the network or the file system by itself, and the host only hands over what it installed. It fails with a
 //! stable [`Error`](crate::Error) code, never with a sentence: the codes say what failed (the library did not open,
 //! the model did not load) and are shared by every backend, so a client translates them once; the cause goes to the
-//! logs. Until a backend loads something, the stubs fail to `open` with `not-implemented`.
+//! logs. The codes, with the engine's English text for each:
+//!
+//! - `file-not-installed`: a file the model needs is not installed.
+//! - `library-open-failed`: the backend's library could not be opened.
+//! - `model-load-failed`: the model's files could not be loaded.
+//! - `unsupported-model`: this backend cannot run this model's files.
+//! - `unsupported-accelerator`: this backend cannot run on this accelerator.
+//! - `not-implemented`: this backend cannot load models yet (the stubs, which fail to `open` with it).
+//!
+//! What a loaded model fails with is shared the same way: `transcription-failed` (the speech could not be
+//! transcribed), `speech-failed` (the text could not be spoken), `unknown-voice` (the model has no such voice) and
+//! `invalid-text` (the text has a character the backend cannot take).
 //!
 //! ## Binding the library
 //!

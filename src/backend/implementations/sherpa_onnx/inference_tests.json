@@ -1,0 +1,34 @@
+{
+  "whisper": [
+    {
+      "key": "encoder",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-encoder.int8.onnx",
+      "sha256": "0ce578b827c94a961aacb8fa14b02f096504b337e5c94be37c36238cbe3e8bc6"
+    },
+    {
+      "key": "decoder",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-decoder.int8.onnx",
+      "sha256": "06c0e6ff6348d427e51839219d1c886c18cfdf411e629e33f5e1679bff9c1527"
+    },
+    {
+      "key": "tokens",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-tokens.txt",
+      "sha256": "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930"
+    }
+  ],
+  "clip": {
+    "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/test_wavs/0.wav",
+    "sha256": "6bc58a4efdf20daac252b6b1502632601a71efe0308f6757dc1eda34891a7e4f",
+    "text": "after early nightfall the yellow lamps would light up here and there the squalid quarter of the brothels"
+  },
+  "kokoro": {
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2",
+    "sha256": "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
+    "files": {
+      "model": "kokoro-int8-en-v0_19/model.int8.onnx",
+      "voices": "kokoro-int8-en-v0_19/voices.bin",
+      "tokens": "kokoro-int8-en-v0_19/tokens.txt",
+      "espeak-ng-data": "kokoro-int8-en-v0_19/espeak-ng-data"
+    }
+  }
+}

@@ -10,7 +10,7 @@ use crate::Result;
 /// loaded model can do, not the backend: one backend can load models of both kinds.
 #[allow(
     dead_code,
-    reason = "no backend loads a model yet, and the engine does not use one yet"
+    reason = "the engine does not use a loaded model yet: only the tests do"
 )]
 pub(crate) trait LoadedModel: MaybeSend {
     /// The model as speech to text, if it is one.
@@ -28,7 +28,10 @@ pub(crate) trait LoadedModel: MaybeSend {
 /// A speech-to-text model: one whole turn at a time.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-#[allow(dead_code, reason = "no backend loads a model yet")]
+#[allow(
+    dead_code,
+    reason = "the engine does not use a loaded model yet: only the tests do"
+)]
 pub(crate) trait SttModel {
     /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it.
     async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String>;
@@ -38,7 +41,10 @@ pub(crate) trait SttModel {
 /// *Speech out* in `backend.rs`).
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-#[allow(dead_code, reason = "no backend loads a model yet")]
+#[allow(
+    dead_code,
+    reason = "the engine does not use a loaded model yet: only the tests do"
+)]
 pub(crate) trait TtsModel {
     /// The voices it speaks with.
     fn voices(&self) -> Vec<String>;
