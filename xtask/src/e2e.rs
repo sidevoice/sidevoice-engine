@@ -274,7 +274,7 @@ fn fetch(clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
 /// Prints the table, writes it to `$GITHUB_STEP_SUMMARY` when set, and fails if any row failed or is above `max_wer`.
 fn report(rows: &[Row], max_wer: f64) -> Result<()> {
     let mut table =
-        format!("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
+        String::from("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
     let mut bad = 0;
     for row in rows {
         let (got, wer, ok) = match &row.heard {
