@@ -52,7 +52,8 @@ model runs yet.
 ```
 src/            the crate sidevoice-engine, one small file per piece:
   host.rs         Host: the platform contract (capabilities, storage, downloads)
-  backend.rs      Backend: the backend contract, and backend/: requirements, registry, one file per backend
+  backend.rs      the backends' index; backend/: contract.rs (the interface), requirement.rs (+ requirement/),
+                  registry.rs, implementations.rs (+ implementations/: one file per backend)
   model.rs        LoadedModel, Transcriber, Synthesizer: what a backend's load returns
   catalog.rs      CatalogSource, Model, Build: the models and their builds
   resolver.rs     the funnel; offer.rs, what it returns
