@@ -55,7 +55,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   host.rs         Host, Storage, Fetcher: the platform contract; host/capabilities.rs, what a host reports
   catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, models and their builds
   backend.rs      Backend: the interface every backend implements; backend/: requirement, registry,
-                  loaded (what load returns), implementations/ (one file per backend)
+                  loaded_model (what load returns), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns
   install.rs      the installer
   engine.rs       Engine: puts it together; engine/lifecycle.rs, a build's state

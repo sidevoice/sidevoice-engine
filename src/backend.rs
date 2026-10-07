@@ -16,13 +16,13 @@ use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
 
 mod implementations;
-mod loaded;
+mod loaded_model;
 mod registry;
 mod requirement;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use loaded::LoadedModel;
+pub(crate) use loaded_model::LoadedModel;
 pub(crate) use registry::{built_in, find, BackendFactory};
 #[allow(
     unused_imports,
