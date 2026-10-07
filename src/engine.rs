@@ -3,12 +3,14 @@
 
 use std::sync::Mutex;
 
-use crate::backend::{Backend, BackendId, LoadedModel};
+use crate::backend::built_in;
+use crate::backend::{Backend, BackendId};
 use crate::catalog::{Build, Catalog, CatalogSource, Model, Problem, Task};
 use crate::host::{Accelerator, Host};
 use crate::install::Installer;
-use crate::registry::built_in;
-use crate::resolver::{Offer, Resolver};
+use crate::model::LoadedModel;
+use crate::offer::Offer;
+use crate::resolver::Resolver;
 use crate::{Error, Result};
 
 pub struct Engine {

@@ -4,14 +4,28 @@
 //! catalogue's to say (each build names its backend), and which files it downloads is data too, not code. What only
 //! the backend can do is check its accelerators for real (`probe`, when the default is not enough) and load a model
 //! (`load`).
+//!
+//! Here: the contract ([`Backend`], [`BackendSpec`]), the requirements ([`Requirement`]), how backends are found
+//! (`registry`), and one file per backend. A backend file whose library cannot compile everywhere starts with one
+//! `#![cfg(<alias>)]` (aliases in build.rs) and is empty elsewhere. These are stubs: they describe themselves and load
+//! nothing yet; `mlx.rs` shows a `probe` of its own.
 
 use async_trait::async_trait;
 
 use crate::catalog::Build;
 use crate::host::{Accelerator, Capabilities};
 use crate::install::Installed;
-use crate::resolver::Reason;
+use crate::model::LoadedModel;
 use crate::Result;
+
+mod mlx;
+mod registry;
+mod requirement;
+mod sherpa_onnx;
+mod transformers_js;
+
+pub use registry::{built_in, BackendFactory};
+pub use requirement::{MinCores, MinMemoryMb, Requirement};
 
 /// A backend's stable id, as catalogue builds name it: "sherpa-onnx", "whisper-cpp", "mlx", ...
 pub type BackendId = &'static str;
@@ -23,36 +37,6 @@ pub struct BackendSpec {
     pub accelerators: &'static [Accelerator],
     /// What the machine must meet, whatever the model: each one a check on the capabilities.
     pub requirements: &'static [&'static dyn Requirement],
-}
-
-/// One condition the machine must meet. The engine has the common ones ([`MinMemoryMb`], [`MinCores`]); a backend can
-/// write its own without changing the contract.
-pub trait Requirement: Send + Sync {
-    fn check(&self, caps: &Capabilities) -> Result<(), Reason>;
-}
-
-/// At least this much memory, in MB. Unknown memory passes.
-pub struct MinMemoryMb(pub u32);
-
-impl Requirement for MinMemoryMb {
-    fn check(&self, caps: &Capabilities) -> Result<(), Reason> {
-        match caps.memory_mb {
-            Some(has) if has < self.0 => Err(Reason::numbers("memory", self.0, has)),
-            _ => Ok(()),
-        }
-    }
-}
-
-/// At least this many CPU cores. Unknown cores pass.
-pub struct MinCores(pub u32);
-
-impl Requirement for MinCores {
-    fn check(&self, caps: &Capabilities) -> Result<(), Reason> {
-        match caps.cores {
-            Some(has) if has < self.0 => Err(Reason::numbers("cores", self.0, has)),
-            _ => Ok(()),
-        }
-    }
 }
 
 #[cfg_attr(native, async_trait)]
@@ -79,32 +63,4 @@ pub trait Backend: Send + Sync {
         accelerator: Accelerator,
         files: &Installed,
     ) -> Result<Box<dyn LoadedModel>>;
-}
-
-/// A model in memory. Transcribing and speaking are capabilities of the loaded model, not of the backend: one
-/// backend can load models of both kinds.
-pub trait LoadedModel: Send {
-    fn as_transcriber(&mut self) -> Option<&mut dyn Transcriber> {
-        None
-    }
-    fn as_synthesizer(&mut self) -> Option<&mut dyn Synthesizer> {
-        None
-    }
-    fn memory_mb(&self) -> Option<u32>;
-}
-
-/// Speech to text, one whole turn at a time.
-#[cfg_attr(native, async_trait)]
-#[cfg_attr(web, async_trait(?Send))]
-pub trait Transcriber {
-    /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it.
-    async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String>;
-}
-
-/// Text to speech.
-#[cfg_attr(native, async_trait)]
-#[cfg_attr(web, async_trait(?Send))]
-pub trait Synthesizer {
-    fn voices(&self) -> Vec<String>;
-    async fn speak(&mut self, text: &str, voice: &str, speed: f32) -> Result<Vec<f32>>;
 }

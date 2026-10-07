@@ -50,9 +50,14 @@ model runs yet.
 ## Layout
 
 ```
-src/            the crate sidevoice-engine: the traits (Host, Backend, CatalogSource), data types, Engine, the
-                catalogue and the backend registry
-src/backends/   one file per backend, each with its #![cfg] when its library cannot compile everywhere
+src/            the crate sidevoice-engine, one small file per piece:
+  host.rs         Host: the platform contract (capabilities, storage, downloads)
+  backend.rs      Backend: the backend contract, and backend/: requirements, registry, one file per backend
+  model.rs        LoadedModel, Transcriber, Synthesizer: what a backend's load returns
+  catalog.rs      CatalogSource, Model, Build: the models and their builds
+  resolver.rs     the funnel; offer.rs, what it returns
+  install.rs      the installer; lifecycle.rs, a build's state
+  engine.rs       Engine: puts it together
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own

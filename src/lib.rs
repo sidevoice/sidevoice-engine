@@ -8,26 +8,27 @@
 pub use async_trait::async_trait;
 
 mod backend;
-mod backends;
 mod catalog;
 mod engine;
 mod host;
 mod install;
-mod registry;
+mod lifecycle;
+mod model;
+mod offer;
 mod resolver;
 #[cfg(test)]
 mod tests;
 
 pub use backend::{
-    Backend, BackendId, BackendSpec, LoadedModel, MinCores, MinMemoryMb, Requirement, Synthesizer,
-    Transcriber,
+    built_in, Backend, BackendFactory, BackendId, BackendSpec, MinCores, MinMemoryMb, Requirement,
 };
 pub use catalog::{Build, Catalog, CatalogFragment, CatalogSource, Family, Model, Problem, Task};
 pub use engine::{ConfigError, Engine, Handle, Preferences, Selection};
 pub use host::{Accelerator, Capabilities, Fetcher, Host, Runs, Storage};
-pub use install::{Artifact, BuildState, Installed, Installer};
-pub use registry::{built_in, BackendFactory};
-pub use resolver::{Offer, Reason, Rejection};
+pub use install::{Artifact, Installed, Installer};
+pub use lifecycle::BuildState;
+pub use model::{LoadedModel, Synthesizer, Transcriber};
+pub use offer::{Offer, Reason, Rejection};
 
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it.
 #[derive(Debug, Clone, PartialEq, Eq)]
