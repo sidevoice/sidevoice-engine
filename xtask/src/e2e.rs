@@ -7,8 +7,8 @@
 //! transcribes it; then each real recorded clip (downloaded once into `DIR/clips`, checked against its sha256) is
 //! transcribed by the same models. Every transcript is printed and compared with what was said by its normalised word
 //! error rate (`e2e/wer.rs`); the run fails if any is above the plan's `max_wer` (or a voice's own, given with its
-//! `why`), or if anything fails to install, load, speak or transcribe. The table also goes to `$GITHUB_STEP_SUMMARY` when it is set, and what each model said is kept
-//! as a WAV in `DIR/speech`, to be listened to.
+//! `why`), or if anything fails to install, load, speak or transcribe. The table also goes to `$GITHUB_STEP_SUMMARY`
+//! when it is set, and what each model said is kept as a WAV in `DIR/speech`, to be listened to.
 //!
 //! DIR is `target/e2e` unless given. It downloads about 1.5 GB the first time; nothing the second.
 
