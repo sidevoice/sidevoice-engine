@@ -32,11 +32,9 @@ pub use catalog::{Build, CatalogFragment, CatalogSource, Model, Problem, Task};
 pub use engine::{
     BuildState, ConfigError, Engine, Handle, Preferences, Selection, DEFAULT_IDLE_UNLOAD,
 };
+pub use host::{Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter};
 #[cfg(native)]
-pub use host::NativeHost;
-pub use host::{
-    Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter, TreeWriter,
-};
+pub use host::{NativeHost, TreeWriter};
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
 pub use resolver::{Offer, Reason, Rejection};

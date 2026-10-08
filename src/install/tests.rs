@@ -1,10 +1,13 @@
 //! The installer over a host with storage in memory: a fresh install, what is already stored, files shared by two
-//! keys, a digest that does not match, a failed download, cancelling, and artifacts refused before downloading.
+//! keys, a digest that does not match, a failed download, cancelling, artifacts refused before downloading,
+//! and archives: unpacked once in a native build, refused on the web.
 
 use std::sync::Mutex;
 
-use super::{Artifact, Cancel, Installed, Installer, Progress};
-use crate::test_support::{artifact, block_on, bzip2, member, sha256, tar, MemoryHost, TarEntry};
+use super::{member_path, Artifact, Cancel, Installed, Installer, Progress};
+use crate::test_support::{artifact, block_on, member, sha256, MemoryHost};
+#[cfg(native)]
+use crate::test_support::{bzip2, tar, TarEntry};
 use crate::Result;
 
 #[cfg(web)]
@@ -187,6 +190,7 @@ fn malformed_digests_and_conflicting_keys_are_refused_before_downloading() {
     assert_eq!(host.fetches(), 0);
 }
 
+#[cfg(native)]
 /// Kokoro's shape: one archive holding a model file and a data directory, each wanted under its own key.
 fn kokoro() -> Vec<u8> {
     bzip2(&tar(&[
@@ -197,8 +201,10 @@ fn kokoro() -> Vec<u8> {
     ]))
 }
 
+#[cfg(native)]
 const KOKORO: &str = "https://models/kokoro.tar.bz2";
 
+#[cfg(native)]
 fn kokoro_artifacts(archive: &[u8]) -> Vec<Artifact> {
     vec![
         member("model", KOKORO, archive, "kokoro/model.onnx"),
@@ -207,6 +213,7 @@ fn kokoro_artifacts(archive: &[u8]) -> Vec<Artifact> {
 }
 
 #[test]
+#[cfg(native)]
 fn an_archive_is_downloaded_and_unpacked_once_and_each_key_finds_its_member() {
     let archive = kokoro();
     let host = MemoryHost::serving(&[(KOKORO, &archive)]);
@@ -238,6 +245,7 @@ fn an_archive_is_downloaded_and_unpacked_once_and_each_key_finds_its_member() {
 }
 
 #[test]
+#[cfg(native)]
 fn an_archive_wanted_whole_too_is_kept() {
     let archive = kokoro();
     let host = MemoryHost::serving(&[(KOKORO, &archive)]);
@@ -254,6 +262,7 @@ fn an_archive_wanted_whole_too_is_kept() {
 }
 
 #[test]
+#[cfg(native)]
 fn a_member_the_archive_does_not_hold_fails_the_install() {
     let archive = kokoro();
     let host = MemoryHost::serving(&[(KOKORO, &archive)]);
@@ -267,6 +276,7 @@ fn a_member_the_archive_does_not_hold_fails_the_install() {
 }
 
 #[test]
+#[cfg(native)]
 fn an_archive_that_does_not_match_its_digest_is_never_unpacked() {
     let archive = kokoro();
     let host = MemoryHost::serving(&[(KOKORO, &bzip2(b"something else"))]);
@@ -280,6 +290,7 @@ fn an_archive_that_does_not_match_its_digest_is_never_unpacked() {
 }
 
 #[test]
+#[cfg(native)]
 fn bad_archive_paths_and_keys_naming_two_members_are_refused_before_downloading() {
     let archive = kokoro();
     let host = MemoryHost::serving(&[(KOKORO, &archive)]);
@@ -299,4 +310,35 @@ fn bad_archive_paths_and_keys_naming_two_members_are_refused_before_downloading(
         "artifact-key-conflict"
     );
     assert_eq!(host.fetches(), 0);
+}
+
+#[test]
+#[cfg(web)]
+fn archives_are_refused_on_the_web_before_downloading() {
+    const ARCHIVE: &[u8] = b"an archive";
+    let host = MemoryHost::serving(&[("https://models/archive.tar.bz2", ARCHIVE)]);
+    let artifacts = [member(
+        "model",
+        "https://models/archive.tar.bz2",
+        ARCHIVE,
+        "kokoro/model.onnx",
+    )];
+    let (installed, _) = install(&host, &artifacts, &Cancel::new());
+    assert_eq!(installed.expect_err("refused").code, "archive-unsupported");
+    assert_eq!(host.fetches(), 0);
+}
+
+#[test]
+fn a_member_path_is_relative_plain_and_normalised() {
+    assert_eq!(
+        member_path("./lib//libfake.so"),
+        Some("lib/libfake.so".to_owned())
+    );
+    assert_eq!(
+        member_path("espeak-ng-data/"),
+        Some("espeak-ng-data".to_owned())
+    );
+    for path in ["", ".", "/", "/lib", "..", "a/../b", "a\\b", "c:", "a\nb"] {
+        assert_eq!(member_path(path), None, "{path:?}");
+    }
 }

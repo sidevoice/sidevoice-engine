@@ -5,16 +5,16 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::pin::pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::task::{Context, Poll};
 
 use sha2::Digest;
 
+#[cfg(native)]
+use crate::TreeWriter;
 use crate::{
     async_trait, Accelerator, Artifact, Build, Capabilities, CatalogFragment, CatalogSource,
-    Download, Error, Fetcher, Host, Model, Result, Runs, Storage, StorageWriter, Task, TreeWriter,
+    Download, Error, Fetcher, Host, Model, Result, Runs, Storage, StorageWriter, Task,
 };
 
 pub(crate) struct FakeHost;
@@ -59,16 +59,22 @@ impl Storage for FakeHost {
         unreachable!("offers never store")
     }
 
-    async fn create_tree(&self, _name: &str) -> Result<Box<dyn TreeWriter>> {
-        unreachable!("offers never store")
-    }
-
     async fn read(&self, _name: &str) -> Result<Box<dyn Download>> {
         unreachable!("offers never read")
     }
 
     async fn remove(&self, _name: &str) -> Result<()> {
         unreachable!("offers never remove")
+    }
+
+    #[cfg(native)]
+    fn open(&self, _name: &str) -> Result<Box<dyn std::io::Read + Send>> {
+        unreachable!("offers never read")
+    }
+
+    #[cfg(native)]
+    fn create_tree(&self, _name: &str) -> Result<Box<dyn TreeWriter>> {
+        unreachable!("offers never store")
     }
 }
 
@@ -164,15 +170,6 @@ impl Storage for MemoryHost {
         }))
     }
 
-    async fn create_tree(&self, name: &str) -> Result<Box<dyn TreeWriter>> {
-        Ok(Box::new(MemoryTreeWriter {
-            name: name.to_owned(),
-            paths: MemoryTree::new(),
-            current: None,
-            trees: Arc::clone(&self.trees),
-        }))
-    }
-
     async fn read(&self, name: &str) -> Result<Box<dyn Download>> {
         let bytes = lock(&self.stored).get(name).cloned();
         Ok(Box::new(MemoryDownload(
@@ -185,8 +182,27 @@ impl Storage for MemoryHost {
         lock(&self.trees).remove(name);
         Ok(())
     }
+
+    #[cfg(native)]
+    fn open(&self, name: &str) -> Result<Box<dyn std::io::Read + Send>> {
+        let bytes = lock(&self.stored).get(name).cloned();
+        Ok(Box::new(MemoryReader(std::io::Cursor::new(
+            bytes.ok_or(Error::new("storage-failed"))?,
+        ))))
+    }
+
+    #[cfg(native)]
+    fn create_tree(&self, name: &str) -> Result<Box<dyn TreeWriter>> {
+        Ok(Box::new(MemoryTreeWriter {
+            name: name.to_owned(),
+            paths: MemoryTree::new(),
+            current: None,
+            trees: Arc::clone(&self.trees),
+        }))
+    }
 }
 
+#[cfg(native)]
 struct MemoryTreeWriter {
     name: String,
     paths: MemoryTree,
@@ -194,22 +210,21 @@ struct MemoryTreeWriter {
     trees: Arc<Mutex<BTreeMap<String, MemoryTree>>>,
 }
 
-#[cfg_attr(native, async_trait)]
-#[cfg_attr(web, async_trait(?Send))]
+#[cfg(native)]
 impl TreeWriter for MemoryTreeWriter {
-    async fn directory(&mut self, path: &str) -> Result<()> {
+    fn directory(&mut self, path: &str) -> Result<()> {
         self.current = None;
         self.paths.insert(path.to_owned(), None);
         Ok(())
     }
 
-    async fn file(&mut self, path: &str) -> Result<()> {
+    fn file(&mut self, path: &str) -> Result<()> {
         self.current = Some(path.to_owned());
         self.paths.insert(path.to_owned(), Some(Vec::new()));
         Ok(())
     }
 
-    async fn write(&mut self, bytes: &[u8]) -> Result<()> {
+    fn write(&mut self, bytes: &[u8]) -> Result<()> {
         let path = self.current.as_ref().ok_or(Error::new("storage-failed"))?;
         if let Some(Some(file)) = self.paths.get_mut(path) {
             file.extend_from_slice(bytes);
@@ -217,7 +232,7 @@ impl TreeWriter for MemoryTreeWriter {
         Ok(())
     }
 
-    async fn commit(self: Box<Self>) -> Result<String> {
+    fn commit(self: Box<Self>) -> Result<String> {
         let location = format!("memory:{}", self.name);
         lock(&self.trees).insert(self.name, self.paths);
         Ok(location)
@@ -278,6 +293,18 @@ impl Download for MemoryDownload {
     }
 }
 
+/// A stored file read synchronously, [`MemoryDownload::PART`] bytes at a time at most.
+#[cfg(native)]
+struct MemoryReader(std::io::Cursor<Vec<u8>>);
+
+#[cfg(native)]
+impl std::io::Read for MemoryReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let part = buf.len().min(MemoryDownload::PART);
+        self.0.read(&mut buf[..part])
+    }
+}
+
 /// An artifact keyed `key`, at `url`, whose content is `bytes`.
 pub(crate) fn artifact(key: &str, url: &str, bytes: &[u8]) -> Artifact {
     Artifact {
@@ -297,6 +324,7 @@ pub(crate) fn member(key: &str, url: &str, archive: &[u8], path: &str) -> Artifa
 }
 
 /// One entry of a tar built by [`tar`].
+#[cfg(native)]
 pub(crate) enum TarEntry<'a> {
     Directory(&'a str),
     File(&'a str, &'a [u8]),
@@ -306,9 +334,12 @@ pub(crate) enum TarEntry<'a> {
     PaxNamed(&'a str, &'a [u8]),
     /// A symbolic link to the second path.
     Symlink(&'a str, &'a str),
+    /// An entry of another kind (a hard link, a device, a FIFO), by its type flag.
+    Special(&'a str, u8),
 }
 
 /// A tar of `entries` (ustar headers), ended by two empty blocks.
+#[cfg(native)]
 pub(crate) fn tar(entries: &[TarEntry<'_>]) -> Vec<u8> {
     fn header(path: &str, size: usize, kind: u8, link: &str) -> Vec<u8> {
         let mut header = vec![0; 512];
@@ -358,6 +389,7 @@ pub(crate) fn tar(entries: &[TarEntry<'_>]) -> Vec<u8> {
                 content(&mut out, bytes);
             }
             TarEntry::Symlink(path, target) => out.extend(header(path, 0, b'2', target)),
+            TarEntry::Special(path, kind) => out.extend(header(path, 0, *kind, "")),
         }
     }
     out.extend([0; 1024]);
@@ -365,6 +397,7 @@ pub(crate) fn tar(entries: &[TarEntry<'_>]) -> Vec<u8> {
 }
 
 /// `bytes`, bzip2-compressed.
+#[cfg(native)]
 pub(crate) fn bzip2(bytes: &[u8]) -> Vec<u8> {
     use std::io::Write;
     let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());
@@ -380,29 +413,27 @@ pub(crate) fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Runs `future` to its end on this thread, parking it while the future waits.
+/// Runs `future` to its end on the tests' Tokio runtime, one for every test as an app has one: the native engine's
+/// futures expect it, and a client's pooled connections outlive a single call.
 #[cfg(native)]
 pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
-    struct Unpark(std::thread::Thread);
-    impl std::task::Wake for Unpark {
-        fn wake(self: Arc<Self>) {
-            self.0.unpark();
-        }
-    }
-    let mut future = pin!(future);
-    let waker = std::task::Waker::from(Arc::new(Unpark(std::thread::current())));
-    let mut context = Context::from_waker(&waker);
-    loop {
-        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
-        }
-        std::thread::park();
-    }
+    static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("a Tokio runtime")
+        })
+        .block_on(future)
 }
 
 /// Runs `future`, which must not wait: on the web a test cannot block, and the fakes never wait.
 #[cfg(web)]
 pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
+    use std::pin::pin;
+    use std::task::{Context, Poll};
+
     let mut context = Context::from_waker(std::task::Waker::noop());
     match pin!(future).poll(&mut context) {
         Poll::Ready(output) => output,
