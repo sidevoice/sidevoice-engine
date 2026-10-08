@@ -107,3 +107,13 @@ jobs:
       # keep the backends the web build registers (xtask/src/npm.rs).
       - run: cargo xtask npm
       - run: cargo xtask npm-smoke
+      # The package this pull request builds, to try its engine before it merges (the playground does): one artifact
+      # per head commit, `engine-npm-<head sha>`, kept 7 days. Built, as every job here, from GitHub's merge of that
+      # head into the base. RELEASING.md, "A pull request's package".
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: engine-npm-${{ github.event.pull_request.head.sha || github.sha }}
+          path: target/npm/*.tgz
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true

@@ -35,7 +35,9 @@ device is one more provider.
 One Rust repository, one version. Native consumers (the desktop app, later the core as a provider for its own
 machine) depend on the crate at a release's git tag and compile it themselves. The web gets a WebAssembly build,
 published on npm as `@sidevoice/engine` for every release; every push to `main` also publishes a `nightly`
-pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)).
+pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)). To try a pull request's engine before it
+merges, its CI keeps the npm package it built for 7 days, as the Actions artifact `engine-npm-<head sha>`
+([`RELEASING.md`](RELEASING.md#a-pull-requests-package)).
 
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
 files. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
