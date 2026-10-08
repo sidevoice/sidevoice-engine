@@ -10,6 +10,14 @@ const log = (...parts) => {
   console.log(line);
   return post("/log", line);
 };
+// The engine says why something failed in the console (its errors carry only a code): pass it on.
+for (const level of ["warn", "error"]) {
+  const original = console[level].bind(console);
+  console[level] = (...parts) => {
+    original(...parts);
+    post("/log", `console.${level}: ${parts.map((part) => (part instanceof Error ? part.stack ?? String(part) : typeof part === "string" ? part : JSON.stringify(part) ?? String(part))).join(" ")}`);
+  };
+}
 addEventListener("error", (event) => log("page error:", String(event.message)));
 addEventListener("unhandledrejection", (event) => log("unhandled rejection:", String(event.reason?.code ?? event.reason)));
 
