@@ -33,10 +33,12 @@ pub struct Build {
 #[serde(deny_unknown_fields)]
 pub struct Requires {
     /// The only accelerators it can run on, when its backend runs on more than it can take (Kokoro on sherpa-onnx: Core
-    /// ML aborts the process, so the CPU only). Empty, any its backend runs on.
+    /// ML aborts the process, so the CPU only; transformers.js's fp16 builds, its WebGPU variant: WebGPU only). Empty,
+    /// any its backend runs on.
     #[serde(default)]
     pub accelerators: Vec<Accelerator>,
-    /// WebGPU features the adapter must have, as WebGPU names them: "shader-f16", ...
+    /// WebGPU features the adapter must have, as WebGPU names them: "shader-f16", .... Not checked yet: hosts do not
+    /// report the adapter's features, so a build that needs them also requires the WebGPU accelerator.
     #[serde(default)]
     pub webgpu_features: Vec<String>,
     /// On WebAssembly, the most memory it may take, in MB: a cap declared for the build, not measured from the page.

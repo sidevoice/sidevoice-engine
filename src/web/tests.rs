@@ -17,14 +17,14 @@ async fn a_web_engine_on_a_js_host_has_the_web_backends_and_the_bundled_catalogu
         .expect("engine");
     assert_eq!(engine.backends(), ["transformers-js"]);
     // Each bundled Whisper model is offered once, on transformers.js, and every other build comes back with why not.
-    // Large-v3 too, through its fp16 build: that build declares only WebGPU features, which the resolver does not check
-    // yet, and no accelerator, so WebAssembly takes it (its q8 build is over its cap, `wasm-memory`).
+    // All but large-v3: its q8 build is over its WebAssembly cap (`wasm-memory`), and its fp16 build runs on WebGPU only,
+    // which this host does not report.
     let offered = engine
         .offers("stt")
         .expect("offers")
         .iter()
         .filter(|entry| Reflect::get(entry, &"offered".into()).ok() == Some(JsValue::TRUE))
         .count();
-    assert_eq!(offered, 5);
+    assert_eq!(offered, 4);
     assert!(engine.offers("llm").is_err());
 }
