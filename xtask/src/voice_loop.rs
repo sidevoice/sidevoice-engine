@@ -1,6 +1,7 @@
-//! What both voice loops share (`cargo xtask e2e`, natively, and `cargo xtask web-e2e`, in a browser): the real
-//! recorded clips of `xtask/e2e.json`, downloaded once and checked against their digests, and the table of
-//! comparisons, each transcript held to a word error rate (`wer.rs`).
+//! What the web voice loop (`cargo xtask web-e2e`) takes from the native one (`tests/voice_loop.rs`, the engine's
+//! integration test): the real recorded clips of its plan, `tests/voice_loop.json`, downloaded once and checked
+//! against their digests, and the table of comparisons, each transcript held to a word error rate (`wer.rs`, the same
+//! measure as `tests/voice_loop/wer.rs`: xtask is a package of its own, so it keeps its copy).
 
 use std::path::Path;
 use std::{env, fs};

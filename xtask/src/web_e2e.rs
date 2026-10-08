@@ -2,13 +2,13 @@
 //! it: the package built and installed into `DIR/site` as a consumer installs it (with transformers.js and eSpeak NG,
 //! its dependencies), and a page (`xtask/web-e2e/page.mjs`) that installs, cancels, loads and uninstalls through
 //! `WebEngine`, so the files go through the engine's own OPFS storage and `fetch` downloads, then transcribes the native
-//! loop's recorded clips (`xtask/e2e.json`) with the plan's speech-to-text build and what each text-to-speech build says
+//! loop's recorded clips (`tests/voice_loop.json`) with the plan's speech-to-text build and what each text-to-speech build says
 //! in its language's sentence. `xtask/web-e2e/run.mjs` serves the page and drives Chrome.
 //!
 //! What it runs is data, `xtask/web-e2e.json`: the accelerators the page reports, the speech-to-text build, and each
 //! text-to-speech build with its voice and language. Every check the page makes must pass, and every transcript must
 //! stay within the plan's word error rate (or a voice's own, with its `why`), judged as the native loop judges
-//! (`voice_loop.rs`). Chrome is `CHROME`, else `google-chrome` on the `PATH`. DIR is `target/web-e2e` unless given;
+//! (`voice_loop.rs`, `wer.rs`). Chrome is `CHROME`, else `google-chrome` on the `PATH`. DIR is `target/web-e2e` unless given;
 //! the clips are kept there by digest, and what each model said in `DIR/speech`, to be listened to. The models
 //! download every run, into the browser profile's OPFS, which is thrown away.
 
@@ -68,7 +68,7 @@ struct Speaker {
     why: Option<String>,
 }
 
-/// What the web loop takes from the native one's plan (`xtask/e2e.json`): its sentences and its recorded clips.
+/// What the web loop takes from the native one's plan (`tests/voice_loop.json`): its sentences and its recorded clips.
 #[derive(Debug, Deserialize)]
 struct Shared {
     sentences: BTreeMap<String, String>,
@@ -127,7 +127,10 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             speaker.build
         ));
     }
-    let shared: Shared = parse(&read(&repo().join("xtask/e2e.json"))?, "xtask/e2e.json")?;
+    let shared: Shared = parse(
+        &read(&repo().join("tests/voice_loop.json"))?,
+        "tests/voice_loop.json",
+    )?;
     let dir = dir.map_or_else(|| repo().join("target/web-e2e"), PathBuf::from);
     let (site, clips, speech) = (dir.join("site"), dir.join("clips"), dir.join("speech"));
     empty_dir(&site)?;

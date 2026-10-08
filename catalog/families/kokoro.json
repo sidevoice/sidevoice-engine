@@ -148,6 +148,9 @@
           "backend": "transformers-js",
           "precision": "fp16",
           "requires": {
+            "accelerators": [
+              "webgpu"
+            ],
             "webgpu_features": [
               "shader-f16"
             ]
@@ -812,6 +815,9 @@
           "backend": "transformers-js",
           "precision": "fp16",
           "requires": {
+            "accelerators": [
+              "webgpu"
+            ],
             "webgpu_features": [
               "shader-f16"
             ]

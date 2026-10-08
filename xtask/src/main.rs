@@ -12,9 +12,8 @@
 //!   (or, with `--check`, checked) (xtask/src/backends.rs).
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
-//! - `e2e [DIR]`: the voice loop for real through the engine's public API: text to speech to text, and recorded clips
-//!   to text, in English and Spanish, each transcript held to a word error rate (xtask/src/e2e.rs, plan in
-//!   xtask/e2e.json; the default `e2e` feature, which builds the engine).
+//! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
+//!   DIR and its table appended to the job's summary (xtask/src/e2e.rs).
 //! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
 //!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
 //! - `sherpa-libs [DIR | --linked | --pin | --check]`: sherpa-onnx's prebuilt static libraries for this machine, checked
@@ -26,7 +25,6 @@
 
 mod backends;
 mod catalog;
-#[cfg(feature = "e2e")]
 mod e2e;
 mod link_size;
 mod npm;
@@ -65,9 +63,7 @@ fn main() -> ExitCode {
         ["pin-backends", "--check"] => backends::pin(true),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
-        #[cfg(feature = "e2e")]
         ["e2e"] => e2e::run(None),
-        #[cfg(feature = "e2e")]
         ["e2e", dir] => e2e::run(Some(dir)),
         ["link-size"] => link_size::measure(),
         ["sherpa-libs"] => sherpa_libs::fetch(None),

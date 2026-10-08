@@ -62,8 +62,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/setup
       # --include-ignored: the tests that need the network (a real download through NativeHost) run here too; the ones
-      # that run real models have a job of their own, below.
-      - run: cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests
+      # that run real models have jobs of their own: test-inference below, and the voice loop (e2e.yml).
+      - run: cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests --skip the_voice_loop
       - run: cargo xtask sherpa-libs --linked
 
   # Real models through the sherpa-onnx backend: Whisper transcribes, Kokoro speaks, and Whisper hears Kokoro back
@@ -107,6 +107,16 @@ jobs:
       # keep the backends the web build registers (xtask/src/npm.rs).
       - run: cargo xtask npm
       - run: cargo xtask npm-smoke
+      # The package this pull request builds, to try its engine before it merges (the playground does): one artifact
+      # per head commit, `engine-npm-<head sha>`, kept 7 days. Built, as every job here, from GitHub's merge of that
+      # head into the base. RELEASING.md, "A pull request's package".
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: engine-npm-${{ github.event.pull_request.head.sha || github.sha }}
+          path: target/npm/*.tgz
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
 
   # The wasm32 tests again, in a headless Chrome, with those that need a page (OPFS, an HTTP server) that Node skips
   # (`cargo xtask test-browser`). Chrome and ChromeDriver are pinned to one Chrome for Testing version.
