@@ -145,7 +145,31 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
 
     let stt = offered(Capability::Stt);
     let models: Vec<_> = stt.iter().map(|(model, _)| model.as_str()).collect();
-    assert_eq!(models, ["whisper-base", "whisper-small", "whisper-tiny"]);
+    if cfg!(target_arch = "wasm32") {
+        // Large-v3's q8 build takes more than wasm32's 2 GiB, and its fp16 one needs WebGPU, which the fake host has not.
+        assert_eq!(
+            models,
+            [
+                "whisper-base",
+                "whisper-large-v3-turbo",
+                "whisper-small",
+                "whisper-tiny"
+            ]
+        );
+    } else {
+        assert_eq!(
+            models,
+            [
+                "canary-180m-flash",
+                "qwen3-asr-0.6b",
+                "whisper-base",
+                "whisper-large-v3",
+                "whisper-large-v3-turbo",
+                "whisper-small",
+                "whisper-tiny"
+            ]
+        );
+    }
     for (model, backend) in &stt {
         assert!(backends.contains(&backend.as_str()), "{model} on {backend}");
     }

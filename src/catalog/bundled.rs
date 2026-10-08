@@ -8,7 +8,12 @@ use crate::{Error, Result};
 
 /// Every bundled family: the name of its file, and the file.
 const FAMILIES: &[(&str, &str)] = &[
+    ("canary", include_str!("../../catalog/families/canary.json")),
     ("kokoro", include_str!("../../catalog/families/kokoro.json")),
+    (
+        "qwen3-asr",
+        include_str!("../../catalog/families/qwen3-asr.json"),
+    ),
     (
         "whisper",
         include_str!("../../catalog/families/whisper.json"),
