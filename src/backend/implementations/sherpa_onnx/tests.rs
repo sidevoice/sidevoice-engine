@@ -4,7 +4,7 @@
 
 use std::io::{BufReader, Cursor};
 
-use super::{model_metadata, provider, text, Kind, SherpaOnnx};
+use super::{model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
 use crate::backend::{Backend, LoadedModel};
 use crate::catalog::Build;
 use crate::host::Accelerator;
@@ -13,7 +13,12 @@ use crate::test_support::ready;
 use crate::Result;
 
 #[test]
-fn it_runs_on_core_ml_and_the_cpu_only() {
+fn it_declares_the_cpu_alone_since_the_linked_libraries_have_no_core_ml() {
+    assert_eq!(SPEC.accelerators, [Accelerator::Cpu]);
+}
+
+#[test]
+fn the_providers_it_names_are_the_cpu_and_core_ml() {
     assert_eq!(provider(Accelerator::Cpu), Ok("cpu"));
     assert_eq!(provider(Accelerator::CoreMl), Ok("coreml"));
     for other in [

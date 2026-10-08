@@ -20,12 +20,15 @@
 //!
 //! # Accelerators
 //!
-//! Core ML on macOS (ONNX Runtime's Core ML execution provider, which runs on the CPU whatever it cannot place) and
-//! the CPU everywhere. CUDA needs sherpa-onnx's CUDA builds, which the crate does not link.
+//! The CPU only, in this phase. The static libraries the crate links are built without ONNX Runtime's Core ML
+//! execution provider: asked for it, sherpa-onnx logs "Fallback to cpu" and runs on the CPU. So the backend declares
+//! the CPU alone rather than claim Core ML. The shared libraries it downloaded before did run Whisper on Core ML;
+//! Core ML comes back with them (sidevoice-engine#33). CUDA needs sherpa-onnx's CUDA builds, which are not linked
+//! either.
 //!
-//! Kokoro runs on the CPU only: creating its TTS on Core ML throws a C++ exception that the C API does not catch,
-//! and an exception that reaches Rust aborts the process. `load` refuses it with `unsupported-accelerator` before
-//! creating it, and Kokoro's catalogue builds should accept the CPU only.
+//! Kokoro must stay off Core ML whatever the libraries: creating its TTS on Core ML throws a C++ exception that the
+//! C API does not catch, and an exception that reaches Rust aborts the process. `load` refuses it with
+//! `unsupported-accelerator` before creating it, and Kokoro's catalogue builds accept the CPU only.
 
 use async_trait::async_trait;
 
@@ -51,7 +54,8 @@ struct SherpaOnnx;
 
 const SPEC: BackendSpec = BackendSpec {
     id: "sherpa-onnx",
-    accelerators: &[Accelerator::CoreMl, Accelerator::Cpu],
+    // Core ML is not in the linked libraries (see *Accelerators*).
+    accelerators: &[Accelerator::Cpu],
     requirements: &[],
 };
 

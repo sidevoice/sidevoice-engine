@@ -8,7 +8,7 @@
 //!
 //! Until the installer exists (it is the engine's, and generic), they stand in for it: each model file is downloaded with
 //! `curl`, checked against its digest, kept in a cache by digest (`target/test-models/`, or `SIDEVOICE_TEST_MODELS`),
-//! and the archives are unpacked there. Core ML is what macOS runs them on; the CPU elsewhere.
+//! and the archives are unpacked there. They run on the CPU, the one accelerator the linked libraries have.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -192,14 +192,10 @@ fn wav_16k_mono(wav: &[u8]) -> Vec<f32> {
     panic!("the clip has no data");
 }
 
-/// What the app would pick: Core ML on macOS for Whisper, and the CPU for everything else (Kokoro runs on the CPU
-/// only, see *Accelerators* in `sherpa_onnx.rs`).
-fn accelerator(files: &Installed) -> Accelerator {
-    if std::env::consts::OS == "macos" && files.file("encoder").is_some() {
-        Accelerator::CoreMl
-    } else {
-        Accelerator::Cpu
-    }
+/// What the app would pick: the CPU, the one accelerator the linked libraries have (see *Accelerators* in
+/// `sherpa_onnx.rs`).
+fn accelerator(_files: &Installed) -> Accelerator {
+    Accelerator::Cpu
 }
 
 fn load(files: &Installed) -> Box<dyn LoadedModel> {
