@@ -207,9 +207,11 @@ impl Backend for FakeBackend {
     }
 
     async fn open(&self, files: &Installed) -> Result<Box<dyn Library>> {
-        assert_eq!(
-            files.file("library"),
-            Some(format!("memory:{}", crate::test_support::sha256(LIBRARY)).as_str())
+        // In the build's folder, under the name its URL gives it.
+        let library = files.file("library").expect("the library");
+        assert!(
+            library.starts_with("memory:models/") && library.ends_with("/library"),
+            "{library}"
         );
         self.opened.fetch_add(1, Ordering::Relaxed);
         self.open.fetch_add(1, Ordering::Relaxed);

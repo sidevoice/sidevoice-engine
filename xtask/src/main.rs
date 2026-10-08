@@ -14,12 +14,15 @@
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
 //! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
 //!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
+//! - `sherpa-libs [DIR | --linked | --pin | --check]`: sherpa-onnx's prebuilt static libraries for this machine, checked
+//!   against `xtask/sherpa-onnx-libs.json` and unpacked for `SHERPA_ONNX_LIB_DIR` (xtask/src/sherpa_libs.rs).
 
 mod backends;
 mod catalog;
 mod link_size;
 mod npm;
 mod release;
+mod sherpa_libs;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -31,7 +34,8 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check] | link-size";
+     | pin-backends [--check] | pin-catalog [--check] | link-size \
+     | sherpa-libs [DIR | --linked | --pin | --check]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -48,6 +52,11 @@ fn main() -> ExitCode {
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
         ["link-size"] => link_size::measure(),
+        ["sherpa-libs"] => sherpa_libs::fetch(None),
+        ["sherpa-libs", "--linked"] => sherpa_libs::linked(),
+        ["sherpa-libs", "--pin"] => sherpa_libs::pin(false),
+        ["sherpa-libs", "--check"] => sherpa_libs::pin(true),
+        ["sherpa-libs", dir] => sherpa_libs::fetch(Some(dir)),
         _ => Err(USAGE.into()),
     };
     if let Err(error) = &result {
