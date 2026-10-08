@@ -122,6 +122,7 @@ impl MemoryHost {
     }
 
     /// The tree stored as `name`.
+    #[cfg(native)]
     pub(crate) fn tree(&self, name: &str) -> Option<MemoryTree> {
         lock(&self.trees).get(name).cloned()
     }
