@@ -31,6 +31,8 @@ pub struct Build {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum Precision {
+    /// 32-bit floating point, as the weights are stored (some MLX exports, whatever their repository is called).
+    Fp32,
     /// 16-bit floating point.
     Fp16,
     /// 8-bit integers (ONNX dynamic quantisation, as sherpa-onnx exports it).
