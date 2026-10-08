@@ -206,7 +206,10 @@ fn a_models_languages_are_written_from_its_source_with_whispers_javanese_as_bcp_
     let mut hub = FakeHub::default();
     let stale = repin(&mut doc, &mut hub).unwrap();
     assert_eq!(stale[0], "m languages");
-    assert_eq!(doc["models"][0]["languages"], json!(["en", "es", "jv", "yue"]));
+    assert_eq!(
+        doc["models"][0]["languages"],
+        json!(["en", "es", "jv", "yue"])
+    );
     assert!(hub.downloads.contains(&source.to_owned()));
     assert!(whisper_languages("no table").is_err());
 

@@ -1,8 +1,5 @@
-//! The audio the loop moves between models: WAV files read and written, and samples brought to the 16 kHz the
-//! speech-to-text models take.
-
-/// The rate every speech-to-text model takes.
-pub(super) const STT_RATE: u32 = 16_000;
+//! The audio the loop reads and keeps: WAV files read (the clips) and written (what each model said). Bringing audio
+//! to a model's rate is the engine's.
 
 /// The samples of a WAV file (PCM of 16 bits, or IEEE floats of 32), its channels mixed down to one, and their rate.
 pub(super) fn read_wav(wav: &[u8]) -> Result<(Vec<f32>, u32), String> {
@@ -83,22 +80,4 @@ pub(super) fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
         out.extend_from_slice(&pcm.to_le_bytes());
     }
     out
-}
-
-/// `samples` at `from` Hz, linearly resampled to [`STT_RATE`]: enough for the models to hear speech.
-pub(super) fn to_stt_rate(samples: &[f32], from: u32) -> Vec<f32> {
-    if from == STT_RATE || samples.is_empty() {
-        return samples.to_vec();
-    }
-    let step = f64::from(from) / f64::from(STT_RATE);
-    let len = (samples.len() as f64 / step) as usize;
-    (0..len)
-        .map(|i| {
-            let at = i as f64 * step;
-            let (index, frac) = (at as usize, at.fract() as f32);
-            let here = samples[index.min(samples.len() - 1)];
-            let next = samples.get(index + 1).copied().unwrap_or(here);
-            here + (next - here) * frac
-        })
-        .collect()
 }

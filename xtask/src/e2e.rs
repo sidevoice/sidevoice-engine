@@ -1,10 +1,10 @@
 //! `cargo xtask e2e [DIR]`: the voice loop for real, through the engine's public API, as an app would run it: the
-//! bundled catalogue, `select` (on sherpa-onnx), `prepare` (the installer and `NativeHost`, keeping everything in
-//! `DIR/engine`), then `speak` and `transcribe`.
+//! bundled catalogue, `Engine::models` (each model's sherpa-onnx build), `Engine::load` (installing through
+//! `NativeHost`, keeping everything in `DIR/engine`), then the loaded model's `speak` and `transcribe`.
 //!
 //! What it runs is data, `xtask/e2e.json`: each text-to-speech model says its language's sentence with the voice the
-//! plan names, the speech is brought to 16 kHz and each speech-to-text model the plan pairs with that language
-//! transcribes it; then each real recorded clip (downloaded once into `DIR/clips`, checked against its sha256) is
+//! plan names, and each speech-to-text model the plan pairs with that language transcribes it, at the speech's own
+//! rate (the engine resamples it); then each real recorded clip (downloaded once into `DIR/clips`, checked against its sha256) is
 //! transcribed by the same models. Every transcript is printed and compared with what was said by its normalised word
 //! error rate (`e2e/wer.rs`); the run fails if any is above the plan's `max_wer` (or a voice's own, given with its
 //! `why`), or if anything fails to install, load, speak or transcribe. The table also goes to `$GITHUB_STEP_SUMMARY`
@@ -18,13 +18,10 @@ use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
-use std::time::Duration;
 use std::{env, fs};
 
 use serde::Deserialize;
-use sidevoice_engine::{
-    BundledCatalog, Cancel, Capability, Engine, Handle, NativeHost, Preferences, Progress,
-};
+use sidevoice_engine::{BundledCatalog, Cancel, Engine, LoadedModel, NativeHost, Progress};
 
 use crate::{read, repo, run_in, sha256, write, Result};
 
@@ -100,22 +97,24 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
     }
     let host = NativeHost::new(dir.join("engine")).map_err(|e| format!("NativeHost: {e}"))?;
     let engine = Engine::new(Box::new(host), vec![Box::new(BundledCatalog)])
-        .map_err(|e| format!("the engine: {e:?}"))?
-        // The loop uses each model on and off for longer than an app's idle time.
-        .with_idle_unload(Duration::from_secs(24 * 60 * 60));
+        .map_err(|e| format!("the engine: {e:?}"))?;
 
     let mut rows = Vec::new();
-    let mut listeners: BTreeMap<String, Handle> = BTreeMap::new();
+    let mut listeners: BTreeMap<String, LoadedModel> = BTreeMap::new();
     for model in plan.stt.values().flatten() {
         if !listeners.contains_key(model) {
-            listeners.insert(model.clone(), prepare(&engine, Capability::Stt, model)?);
+            listeners.insert(model.clone(), load(&engine, model)?);
         }
     }
     for speaker in &plan.tts {
-        let handle = prepare(&engine, Capability::Tts, &speaker.model)?;
-        let voices = engine
-            .voices(handle)
-            .map_err(|e| format!("{}: {e}", speaker.model))?;
+        let loaded = load(&engine, &speaker.model)?;
+        let tts = loaded
+            .as_tts()
+            .ok_or(format!("{}: not a text-to-speech model", speaker.model))?;
+        let voices: Vec<String> = block_on(tts.voices())
+            .into_iter()
+            .map(|voice| voice.id)
+            .collect();
         for (tag, voice) in &speaker.voices {
             let language = primary(tag);
             let said = plan
@@ -128,7 +127,7 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
                 .unwrap_or_default();
             let what = format!("{} ({voice}, {tag})", speaker.model);
             println!("{what} says {said:?}");
-            let speech = block_on(engine.speak(handle, said, &voice, Some(tag), 1.0));
+            let speech = block_on(tts.speak(said, &voice, Some(tag), None));
             let speech = match speech {
                 Ok(speech) => speech,
                 Err(error) => {
@@ -146,11 +145,11 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
                 &dir.join("speech").join(name),
                 &audio::wav(&speech.samples, speech.sample_rate),
             )?;
-            let pcm = audio::to_stt_rate(&speech.samples, speech.sample_rate);
+            let audio = (&speech.samples[..], speech.sample_rate);
             for listener in plan.stt.get(&language).into_iter().flatten() {
                 rows.push(Row {
                     max_wer: speaker.max_wer,
-                    ..hear(&engine, &listeners, listener, &what, &language, said, &pcm)
+                    ..hear(&listeners, listener, &what, &language, said, audio)
                 });
             }
         }
@@ -158,21 +157,20 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
     for clip in &plan.clips {
         let (samples, rate) = audio::read_wav(&fetch(&dir.join("clips"), clip)?)
             .map_err(|e| format!("{}: {e}", clip.url))?;
-        let pcm = audio::to_stt_rate(&samples, rate);
         let what = format!("clip {}", clip.url.rsplit('/').next().unwrap_or_default());
         println!(
             "{what} ({}, {}): {:?}",
             clip.source, clip.license, clip.text
         );
         for listener in plan.stt.get(&clip.language).into_iter().flatten() {
+            let audio = (&samples[..], rate);
             rows.push(hear(
-                &engine,
                 &listeners,
                 listener,
                 &what,
                 &clip.language,
                 &clip.text,
-                &pcm,
+                audio,
             ));
         }
     }
@@ -202,50 +200,49 @@ fn plan(json: &str) -> Result<Plan> {
     Ok(plan)
 }
 
-/// `model` selected on [`BACKEND`] and prepared: installed if it is not, and loaded.
-fn prepare(engine: &Engine, capability: Capability, model: &str) -> Result<Handle> {
-    let preferences = Preferences {
-        model: Some(model.to_owned()),
-        backend: Some(BACKEND.to_owned()),
-        ..Preferences::default()
-    };
-    let Some(selection) = engine.select(capability, &preferences) else {
-        let why: Vec<String> = engine
-            .offers(capability)
-            .into_iter()
-            .map(|offer| format!("{offer:?}"))
-            .filter(|offer| offer.contains(model))
-            .collect();
-        return Err(format!("{model}: not offered on {BACKEND} here: {why:?}"));
-    };
-    println!(
-        "preparing {} on {:?}",
-        selection.build.id, selection.accelerator
-    );
+/// `model`'s build on [`BACKEND`], loaded: installed first if it is not.
+fn load(engine: &Engine, model: &str) -> Result<LoadedModel> {
+    let models = block_on(engine.models()).map_err(|e| format!("the models: {e}"))?;
+    let entry = models
+        .iter()
+        .find(|entry| entry.id == model)
+        .ok_or(format!("{model}: not in the catalogue"))?;
+    let build = entry
+        .builds
+        .iter()
+        .find(|build| build.backend == BACKEND)
+        .ok_or(format!("{model}: no {BACKEND} build"))?;
+    if !build.available {
+        return Err(format!(
+            "{}: does not run here: {:?}",
+            build.id, build.reasons
+        ));
+    }
+    println!("loading {} on {:?}", build.id, build.accelerator);
     let progress = |progress: Progress| {
         if progress.received == 0 && progress.done < progress.files {
             println!("  file {} of {}", progress.done + 1, progress.files);
         }
     };
-    block_on(engine.prepare(&selection, &progress, &Cancel::new()))
-        .map_err(|e| format!("{}: {e}", selection.build.id))
+    block_on(engine.load(model, Some(&build.id), &progress, &Cancel::new()))
+        .map_err(|e| format!("{}: {e}", build.id))
 }
 
-/// What `listener` hears in `pcm`, told the language.
+/// What `listener` hears in `audio` (its samples and their rate), told the language.
 fn hear(
-    engine: &Engine,
-    listeners: &BTreeMap<String, Handle>,
+    listeners: &BTreeMap<String, LoadedModel>,
     listener: &str,
     speaker: &str,
     language: &str,
     said: &str,
-    pcm: &[f32],
+    (samples, rate): (&[f32], u32),
 ) -> Row {
     let heard = listeners
         .get(listener)
-        .ok_or(format!("{listener}: not prepared"))
-        .and_then(|handle| {
-            block_on(engine.transcribe(*handle, pcm, Some(language))).map_err(|e| e.code.to_owned())
+        .and_then(LoadedModel::as_stt)
+        .ok_or(format!("{listener}: not loaded as speech to text"))
+        .and_then(|stt| {
+            block_on(stt.transcribe(samples, rate, Some(language))).map_err(|e| e.code.to_owned())
         });
     match &heard {
         Ok(text) => println!("  {listener} heard {text:?}"),

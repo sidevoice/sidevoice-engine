@@ -75,18 +75,36 @@ A build is offered on the first accelerator in its backend's order of preference
 confirms and the build allows: which accelerators a build runs on is its backend's to know, unless the build cannot
 take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
 
-## Installing, and what stays in memory
+## Using a model, and what stays in memory
 
 A native app builds its host on a directory of its own and hands it to the engine:
 
 ```rust
 let host = NativeHost::new(app_data_dir.join("engine"))?;
-let engine = Engine::new(Box::new(host), sources)?;
-let selection = engine.select(Capability::Stt, &Preferences::default()).expect("something fits");
+let engine = Engine::new(Box::new(host), vec![Box::new(BundledCatalog)])?;
+let models = engine.models().await?; // every model, its builds ranked, installed or not, the recommended build
 let cancel = Cancel::new(); // `cancel.cancel()` from anywhere stops the install
-let handle = engine.prepare(&selection, &|progress: Progress| report(progress), &cancel).await?;
+let whisper = engine.load("whisper-small", None, &|progress: Progress| report(progress), &cancel).await?;
+let text = whisper.as_stt().expect("speech to text").transcribe(&samples, 48_000, Some("es")).await?;
+let kokoro = engine.load("kokoro-82m-v1.0", None, &|_| {}, &cancel).await?;
+let tts = kokoro.as_tts().expect("text to speech");
+let voices = tts.voices().await; // Voice { id, languages, gender? }
+let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { samples, sample_rate }
 ```
 
+- **`Engine::models`** lists every model of the catalogue with its catalogue data, whether it is installed, every
+  build ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
+  it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
+  recommends. `Engine::install` and `Engine::uninstall` take a model id (and, to install, a build id or `None`);
+  uninstalling keeps any file another model also uses, and refuses a model that is loaded (`model-in-use`).
+- **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
+  recommended one) and returns a `LoadedModel`: `as_stt()` and `as_tts()` are what it can do. Speech to text takes
+  audio at any rate (the engine resamples it); text to speech returns `Audio` at the model's own rate. A model's
+  voices are `Voice { id, languages, gender? }`, as the catalogue declares them where their source does.
+- **Memory follows the `LoadedModel`s.** Loading a build that is already in memory returns it again; calls on one
+  model wait for one another; the model is unloaded when the last `LoadedModel` of its build is dropped, and a
+  backend's library is opened with the first of its models and closed after the last one. The engine keeps only weak
+  references: no clock, no idle unloading.
 - **`NativeHost`** (`src/host/native.rs`) takes one parameter, the data directory, which it creates. It reports `os`
   and `arch` from `std::env::consts`, `cores` from `available_parallelism`, the machine's memory (or its cgroup's
   limit) from `sysinfo`, and `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver is
@@ -106,12 +124,6 @@ let handle = engine.prepare(&selection, &|progress: Progress| report(progress), 
   the number of entries.
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
-- **A build's state** is `Engine::state(&build)`: `Absent → Installing → Installed → Loading → Ready`, or `Failed`
-  with its code (`digest-mismatch`, `download-failed`, `storage-failed`, ...).
-- **Memory follows use.** A model unused for 10 minutes (`DEFAULT_IDLE_UNLOAD`, or `Engine::with_idle_unload`) is
-  unloaded, and its build is `Installed` again. A backend's library is opened with the first of its models and closed
-  after the last one is unloaded. The engine has no timer of its own: it unloads idle models on each `prepare` and
-  when the app calls `Engine::unload_idle`, which it should do on a schedule (once a minute is plenty).
 
 ## Status
 
@@ -136,10 +148,12 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   library (what open returns, which loads models), loaded_model (what load returns: SttModel,
                   TtsModel), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
-  install.rs      the installer (Artifact); install/: progress (Progress, ProgressSink), cancel (Cancel),
-                  digest (SHA-256)
-  engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
-                  lifecycle (BuildState), memory (what is loaded, and unloading what goes unused)
+  install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
+                  download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
+                  ProgressSink), cancel (Cancel), digest (SHA-256)
+  engine.rs       Engine: models, install, uninstall, load; engine/: model (Model, ModelBuild: what models lists),
+                  loaded (LoadedModel, Stt, Tts), audio (Audio, resampling), memory (weak references: one library
+                  per backend, one model per build), error (ConfigError)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
                   the JavaScript host (JsHost) as the engine sees it; web/host/: capabilities (reading what it
                   reports), storage (WebStorage), fetcher (WebFetcher)
@@ -174,8 +188,8 @@ them; CI runs them on each native platform:
 cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 ```
 
-The whole voice loop runs as an app would run it, through the public API: the bundled catalogue, `select` on
-sherpa-onnx, `prepare`, then `Engine::speak` and `Engine::transcribe`. Each text-to-speech model of the plan
+The whole voice loop runs as an app would run it, through the public API: the bundled catalogue, `Engine::models`
+(each model's sherpa-onnx build), `Engine::load`, then the loaded model's `speak` and `transcribe`. Each text-to-speech model of the plan
 (`xtask/e2e.json`) says a sentence in English or Spanish, each speech-to-text model of that language transcribes it,
 real recorded clips are transcribed too, and every transcript must stay within the plan's word error rate. It
 downloads about 1.5 GB the first time (kept by digest in the directory given, `target/e2e` by default); the `e2e`

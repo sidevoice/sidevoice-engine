@@ -1,9 +1,9 @@
 //! The loop's arithmetic and its plan, without running a model: word error rates, WAV files, resampling, and that the
 //! plan names models the bundled catalogue has on sherpa-onnx.
 
-use sidevoice_engine::{BundledCatalog, CatalogSource, Model};
+use sidevoice_engine::{BundledCatalog, CatalogSource, ModelEntry};
 
-use super::audio::{read_wav, to_stt_rate, wav, STT_RATE};
+use super::audio::{read_wav, wav};
 use super::wer::{normalised, wer};
 use super::{plan, primary, BACKEND};
 use crate::{read, repo};
@@ -26,14 +26,12 @@ fn the_word_error_rate_counts_the_fewest_edits_over_the_words_said() {
 }
 
 #[test]
-fn a_wav_written_reads_back_and_resamples_to_16_khz() {
+fn a_wav_written_reads_back() {
     let samples: Vec<f32> = (0..2_400).map(|i| (i as f32 / 10.0).sin() * 0.5).collect();
     let (read, rate) = read_wav(&wav(&samples, 24_000)).expect("a WAV");
     assert_eq!(rate, 24_000);
     assert_eq!(read.len(), samples.len());
     assert!(read.iter().zip(&samples).all(|(a, b)| (a - b).abs() < 1e-3));
-    assert_eq!(to_stt_rate(&read, 24_000).len(), 1_600);
-    assert_eq!(to_stt_rate(&read, STT_RATE).len(), read.len());
     assert!(read_wav(b"RIFF....WAVE").is_err());
 }
 
@@ -42,7 +40,7 @@ fn the_plan_names_bundled_models_on_sherpa_onnx_and_has_a_sentence_for_each_lang
     let plan = plan(&String::from_utf8(read(&repo().join("xtask/e2e.json")).unwrap()).unwrap())
         .expect("e2e.json");
     let catalogue = BundledCatalog.load().expect("the bundled catalogue");
-    let models: Vec<&Model> = catalogue
+    let models: Vec<&ModelEntry> = catalogue
         .families
         .iter()
         .flat_map(|family| &family.models)
