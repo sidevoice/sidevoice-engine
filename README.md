@@ -95,19 +95,28 @@ let handle = engine.prepare(&selection, &|progress: Progress| report(progress), 
   installed. It downloads over HTTPS with `reqwest` and rustls, the HTTP client sidevoice-core and the desktop app
   use, streaming each body as it arrives.
 - **The installer does not know what a file is.** A build's model files (catalogue) and its backend's files
-  (`backends.json`) are one list of artifacts. Each is stored under its SHA-256 (content-addressed), checked as it
-  arrives, and only stored whole once it matches; `key` is only the name the backend finds it by. A file already
-  stored is not downloaded again, whichever build or version asks for it. Files stay on disk when their models leave
-  memory.
+  (`backends.json`) are one list of artifacts, checked as each arrives and only stored whole once it matches its
+  SHA-256; `key` is only the name the backend finds it by.
+- **Storage is laid out as Hugging Face's hub cache.** Each file is a blob, `blobs/<sha256>`, stored once whichever
+  builds or versions use it, so it is never downloaded twice. Each build has its folder, `models/<build id>/`, where
+  every file sits under its original name (the last segment of its URL, or its path inside its archive), so a
+  backend whose engine expects a model directory, or looks at names and extensions, finds what it expects; `load`
+  gets those paths. Natively a folder's files are hard links to the blobs (no privilege needed, and on one volume,
+  since everything is under the data directory); where the file system refuses a link, the file is copied, which
+  costs the space twice and works the same. The browser's OPFS has no links: there the folder will hold a copy of
+  each file, and the host will keep which folders use each blob. A build is installed when its folder is stored,
+  which happens only once every file is in it; its files stay when its model leaves memory. Uninstalling
+  (`Installer::uninstall`) removes the folder, then each of its blobs no other folder links (natively, a blob whose
+  link count is back to 1; where the platform does not tell the count, Windows in stable Rust, blobs are kept).
 - **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
   `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
   one archive (Kokoro: `kokoro.model` and `kokoro.data_dir`, espeak-ng's data, from one tarball). Each distinct
-  archive is downloaded once, checked against its digest, and only then unpacked, once, into a tree stored under its
-  digest; the archive itself is then removed. Unpacking takes directories and
-  regular files only (no links of any kind), refuses any path that leaves the tree, and bounds the total size and
-  the number of entries. The tar format is read by the `tar` crate, from storage, on a blocking thread. Archives
-  come only with native-only builds (sherpa-onnx's release assets): the web build refuses them before downloading,
-  with `archive-unsupported`.
+  archive is downloaded once, checked against its digest, and only then unpacked, once, into a blob tree,
+  `blobs/<sha256>-unpacked`, whose members are linked into the build's folder at their paths; the archive itself is
+  then removed. Unpacking takes directories and regular files only (no links of any kind), refuses any path that
+  leaves the tree, and bounds the total size and the number of entries. The tar format is read by the `tar` crate,
+  from storage, on a blocking thread. Archives come only with native-only builds (sherpa-onnx's release assets): the
+  web build refuses them before downloading, with `archive-unsupported`.
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
 - **A build's state** is `Engine::state(&build)`: `Absent → Installing → Installed → Loading → Ready`, or `Failed`
@@ -130,9 +139,9 @@ bridged yet.
 src/            the crate sidevoice-engine, one package per concept (`x.rs` is the package, `x/` its parts):
   lib.rs          the front door: declares the packages, exports the public API
   host.rs         Host: the platform contract; host/: capabilities (what a host reports, and
-                  capabilities/accelerator.rs), platform (which platform that is), storage (Storage, StorageWriter),
-                  fetcher (Fetcher, Download), native (NativeHost, native builds only: native/directory.rs, its
-                  storage, and native/http.rs, its downloads)
+                  capabilities/accelerator.rs), platform (which platform that is), storage (Storage, StorageWriter,
+                  FolderWriter: blobs and build folders), fetcher (Fetcher, Download), native (NativeHost, native
+                  builds only: native/directory.rs, its storage, and native/http.rs, its downloads)
   catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
                   and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements; backend/: runtime (its files:

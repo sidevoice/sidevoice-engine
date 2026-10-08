@@ -36,7 +36,9 @@ pub use catalog::{
 pub use engine::{
     BuildState, ConfigError, Engine, Handle, Preferences, Selection, DEFAULT_IDLE_UNLOAD,
 };
-pub use host::{Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter};
+pub use host::{
+    Accelerator, Capabilities, Download, Fetcher, FolderWriter, Host, Runs, Storage, StorageWriter,
+};
 #[cfg(native)]
 pub use host::{NativeHost, TreeWriter};
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
