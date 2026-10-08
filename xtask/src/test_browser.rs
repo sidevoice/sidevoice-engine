@@ -29,6 +29,8 @@ pub(crate) fn run() -> Result<()> {
     if let Ok(chrome) = env::var("CHROME") {
         options["binary"] = chrome.into();
     }
+    // A fresh checkout has no target directory yet.
+    std::fs::create_dir_all(&target).map_err(|e| format!("{}: {e}", target.display()))?;
     let webdriver = target.join("webdriver.json");
     let capabilities = json!({ "goog:chromeOptions": options });
     write(&webdriver, format!("{capabilities:#}\n").as_bytes())?;
