@@ -19,7 +19,7 @@ pub use fetcher::{Download, Fetcher};
 pub use native::NativeHost;
 #[cfg(native)]
 pub use storage::TreeWriter;
-pub use storage::{Storage, StorageWriter};
+pub use storage::{FolderWriter, Storage, StorageWriter};
 
 /// The facts, storage and downloads of the place the engine runs in. Without a host there is no engine: an app passes
 /// the built-in one for its build ([`NativeHost`] natively) or its own.

@@ -39,8 +39,9 @@ pub enum Rejection {
     /// 2. The backend cannot run here: none of its accelerators works here (`no-accelerator`).
     BackendUnavailable(Reason),
     /// 3. The build does not fit here: none of the accelerators that work here is one its `requires` allows
-    ///    (`build-accelerator`), or the machine does not meet a requirement of the build or of its backend (`memory`,
-    ///    `cores`, ...).
+    ///    (`build-accelerator`), in a page it needs more memory than WebAssembly hands it (`wasm-memory`, with the
+    ///    build's memory and its `requires.wasm_max_mb`), or the machine does not meet a requirement of the build or of
+    ///    its backend (`memory`, `cores`, ...).
     DoesNotFit(Reason),
 }
 

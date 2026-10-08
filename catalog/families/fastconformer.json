@@ -20,7 +20,7 @@
           "precision": "int8",
           "files": [
             {
-              "key": "encoder",
+              "key": "transducer.encoder",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8.tar.bz2",
               "archive_path": "sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8/encoder.int8.onnx",
               "sha256": "d6d29ffd560c366da1b177b71e79d8733a9a9910dd1ace282d9bfae94e056210",
@@ -28,7 +28,7 @@
               "mutable": true
             },
             {
-              "key": "decoder",
+              "key": "transducer.decoder",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8.tar.bz2",
               "archive_path": "sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8/decoder.int8.onnx",
               "sha256": "d6d29ffd560c366da1b177b71e79d8733a9a9910dd1ace282d9bfae94e056210",
@@ -36,7 +36,7 @@
               "mutable": true
             },
             {
-              "key": "joiner",
+              "key": "transducer.joiner",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8.tar.bz2",
               "archive_path": "sherpa-onnx-nemo-fast-conformer-transducer-es-1424-int8/joiner.int8.onnx",
               "sha256": "d6d29ffd560c366da1b177b71e79d8733a9a9910dd1ace282d9bfae94e056210",
