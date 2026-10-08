@@ -1,12 +1,12 @@
 {
   "whisper": [
     {
-      "key": "encoder",
+      "key": "whisper.encoder",
       "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-encoder.int8.onnx",
       "sha256": "0ce578b827c94a961aacb8fa14b02f096504b337e5c94be37c36238cbe3e8bc6"
     },
     {
-      "key": "decoder",
+      "key": "whisper.decoder",
       "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-decoder.int8.onnx",
       "sha256": "06c0e6ff6348d427e51839219d1c886c18cfdf411e629e33f5e1679bff9c1527"
     },
@@ -25,10 +25,57 @@
     "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2",
     "sha256": "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
     "files": {
-      "model": "kokoro-int8-en-v0_19/model.int8.onnx",
-      "voices": "kokoro-int8-en-v0_19/voices.bin",
-      "tokens": "kokoro-int8-en-v0_19/tokens.txt",
-      "espeak-ng-data": "kokoro-int8-en-v0_19/espeak-ng-data"
+      "kokoro.model": "kokoro-int8-en-v0_19/model.int8.onnx",
+      "kokoro.voices": "kokoro-int8-en-v0_19/voices.bin",
+      "kokoro.tokens": "kokoro-int8-en-v0_19/tokens.txt",
+      "kokoro.data_dir": "kokoro-int8-en-v0_19/espeak-ng-data"
     }
-  }
+  },
+  "max_wer": 0.25,
+  "clips": {
+    "en": {
+      "url": "https://huggingface.co/datasets/hf-internal-testing/dummy-audio-samples/resolve/798f2c7208aacc481351b60b8a39605d8bdae7c2/librispeech_mr_quilter.wav",
+      "sha256": "799f78ed4beb4de7ceae3a809262d4ce242394342ccd1d58cef7d49dbc2def46",
+      "text": "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+      "source": "LibriSpeech dev-clean 1272-128104-0000 (byte-identical to row 0 of hf-internal-testing/librispeech_asr_dummy)",
+      "license": "CC-BY-4.0"
+    },
+    "es": {
+      "url": "https://huggingface.co/datasets/hf-internal-testing/dummy-audio-samples/resolve/798f2c7208aacc481351b60b8a39605d8bdae7c2/fleur_es_sample.wav",
+      "sha256": "04bf4876d16ba5a867f093ba5b34e93f4b82fc8250e78cce90932950d5035132",
+      "text": "Esto parece tener sentido, ya que en la Tierra no se percibe su movimiento, ¿cierto?",
+      "source": "FLEURS es_419 test 7285658688146080595.wav, sentence 1770 (google/fleurs @ 70bb2e84, data/es_419/test.tsv)",
+      "license": "CC-BY-4.0"
+    }
+  },
+  "transcribe": [
+    {
+      "build": "whisper-large-v3/sherpa-onnx-int8",
+      "clips": [
+        "en",
+        "es"
+      ]
+    },
+    {
+      "build": "whisper-large-v3-turbo/sherpa-onnx-int8",
+      "clips": [
+        "en",
+        "es"
+      ]
+    },
+    {
+      "build": "canary-180m-flash/sherpa-onnx-int8",
+      "clips": [
+        "en"
+      ],
+      "note": "Spanish needs canary.src_lang, a per-call parameter the engine does not pass yet (sidevoice-engine#46): with none, Canary reads every clip as English."
+    },
+    {
+      "build": "qwen3-asr-0.6b/sherpa-onnx-int8",
+      "clips": [
+        "en",
+        "es"
+      ]
+    }
+  ]
 }

@@ -20,7 +20,7 @@
           "precision": "int8",
           "files": [
             {
-              "key": "model",
+              "key": "vits.model",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-carlfm-x_low-int8.tar.bz2",
               "archive_path": "vits-piper-es_ES-carlfm-x_low-int8/es_ES-carlfm-x_low.onnx",
               "sha256": "fe5b74e55254e2a568a4e4d73fcfcc02580c7957fc337777adf46e5fdfe10218",
@@ -28,7 +28,7 @@
               "mutable": true
             },
             {
-              "key": "tokens",
+              "key": "vits.tokens",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-carlfm-x_low-int8.tar.bz2",
               "archive_path": "vits-piper-es_ES-carlfm-x_low-int8/tokens.txt",
               "sha256": "fe5b74e55254e2a568a4e4d73fcfcc02580c7957fc337777adf46e5fdfe10218",
@@ -36,7 +36,7 @@
               "mutable": true
             },
             {
-              "key": "espeak-ng-data",
+              "key": "vits.data_dir",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-carlfm-x_low-int8.tar.bz2",
               "archive_path": "vits-piper-es_ES-carlfm-x_low-int8/espeak-ng-data",
               "sha256": "fe5b74e55254e2a568a4e4d73fcfcc02580c7957fc337777adf46e5fdfe10218",
@@ -78,7 +78,7 @@
           "precision": "int8",
           "files": [
             {
-              "key": "model",
+              "key": "vits.model",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2",
               "archive_path": "vits-piper-en_US-ljspeech-medium-int8/en_US-ljspeech-medium.onnx",
               "sha256": "24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b",
@@ -86,7 +86,7 @@
               "mutable": true
             },
             {
-              "key": "tokens",
+              "key": "vits.tokens",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2",
               "archive_path": "vits-piper-en_US-ljspeech-medium-int8/tokens.txt",
               "sha256": "24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b",
@@ -94,7 +94,7 @@
               "mutable": true
             },
             {
-              "key": "espeak-ng-data",
+              "key": "vits.data_dir",
               "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2",
               "archive_path": "vits-piper-en_US-ljspeech-medium-int8/espeak-ng-data",
               "sha256": "24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b",

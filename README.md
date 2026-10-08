@@ -99,7 +99,8 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
   build ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
   recommends. `Engine::install` and `Engine::uninstall` take a model id (and, to install, a build id or `None`);
-  uninstalling keeps any file another model also uses, and refuses a model that is loaded (`model-in-use`).
+  uninstalling removes each of the model's build folders, keeps any file another build's folder links, and refuses a
+  model that is loaded (`model-in-use`).
 - **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
   recommended one) and returns a `LoadedModel`: `as_stt()` and `as_tts()` are what it can do. Speech to text takes
   audio at any rate (the engine resamples it); text to speech returns `Audio` at the model's own rate. A model's
@@ -113,20 +114,29 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
   limit) from `sysinfo`, and `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver is
   installed. It downloads over HTTPS with `reqwest` and rustls, the HTTP client sidevoice-core and the desktop app
   use, streaming each body as it arrives.
-- **The installer does not know what a file is.** A build's files (catalogue) are one list of artifacts. Each is
-  stored under its SHA-256 (content-addressed), checked as it
-  arrives, and only stored whole once it matches; `key` is only the name the backend finds it by. A file already
-  stored is not downloaded again, whichever build or version asks for it. Files stay on disk when their models leave
-  memory.
+- **The installer does not know what a file is.** A build's files (catalogue) are one list of artifacts, checked as each
+  arrives and only stored whole once it matches its SHA-256; `key` is only the name the backend finds it by.
+- **Storage is laid out as Hugging Face's hub cache.** Each file is a blob, `blobs/<sha256>`, stored once whichever
+  builds or versions use it, so it is never downloaded twice. Each build has its folder, `models/<build id>/`, where
+  every file sits under its original name: its path in its Hugging Face repository (`onnx/model_q8.onnx`, as the
+  hub's own snapshot folders keep it), a release asset's name, or its path inside its archive. So a backend whose
+  engine expects a model directory, or looks at names, extensions and subfolders, finds what it expects; `load`
+  gets those paths. Natively a folder's files are hard links to the blobs (no privilege needed, and on one volume,
+  since everything is under the data directory); where the file system refuses a link, the file is copied, which
+  costs the space twice and works the same. The browser's OPFS has no links: there the folder will hold a copy of
+  each file, and the host will keep which folders use each blob. A build is installed when its folder is stored,
+  which happens only once every file is in it; its files stay when its model leaves memory. Uninstalling
+  (`Engine::uninstall`) removes the folder, then each of its blobs no other folder links (natively, a blob whose
+  link count is back to 1; where the platform does not tell the count, Windows in stable Rust, blobs are kept).
 - **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
   `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
-  one archive (Kokoro: `model` and `espeak-ng-data` from one tarball; sherpa-onnx: `library`, the `lib/` directory
-  of its tarball). Each distinct archive is downloaded once, checked against its digest, and only then unpacked,
-  once, into a tree stored under its digest; the archive itself is then removed. Unpacking takes directories and
-  regular files only (no links of any kind), refuses any path that leaves the tree, and bounds the total size and
-  the number of entries. The tar format is read by the `tar` crate, from storage, on a blocking thread. Archives
-  come only with native-only builds (sherpa-onnx's release assets): the web build refuses them before downloading,
-  with `archive-unsupported`.
+  one archive (Kokoro: `kokoro.model` and `kokoro.data_dir`, espeak-ng's data, from one tarball). Each distinct
+  archive is downloaded once, checked against its digest, and only then unpacked, once, into a blob tree,
+  `blobs/<sha256>-unpacked`, whose members are linked into the build's folder at their paths; the archive itself is
+  then removed. Unpacking takes directories and regular files only (no links of any kind), refuses any path that
+  leaves the tree, and bounds the total size and the number of entries. The tar format is read by the `tar` crate,
+  from storage, on a blocking thread. Archives come only with native-only builds (sherpa-onnx's release assets): the
+  web build refuses them before downloading, with `archive-unsupported`.
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
 
@@ -147,7 +157,7 @@ MLX and transformers.js are stubs, and the browser's host is not bridged yet.
 src/            the crate sidevoice-engine, one package per concept (`x.rs` is the package, `x/` its parts):
   lib.rs          the front door: declares the packages, exports the public API
   host.rs         Host: the platform contract; host/: capabilities (what a host reports, and
-                  capabilities/accelerator.rs), storage (Storage, StorageWriter),
+                  capabilities/accelerator.rs), storage (Storage, StorageWriter, FolderWriter: blobs and build folders),
                   fetcher (Fetcher, Download), native (NativeHost, native builds only: native/directory.rs, its
                   storage, and native/http.rs, its downloads)
   catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
@@ -176,29 +186,49 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 ## Build and test
 
 You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C compiler for the native build (rustls'
-crypto). A native build compiles whisper.cpp and ggml from the sources `whisper-rs-sys` bundles, so it needs CMake, a
-C++ compiler and libclang (for `bindgen`, which writes the bindings), and links them statically; whisper.cpp tunes
-ggml for the building machine's CPU unless `GGML_NATIVE=OFF` is set in the build's environment, which an app that
-ships its binary to other machines should set. On Linux x86_64, sherpa-onnx's static libraries use libstdc++'s old
-string ABI, so whisper.cpp must be compiled with it too, or the two copies of `std::regex`'s internals the linker merges
-disagree and ONNX Runtime aborts (`free(): invalid pointer`): this repository's `.cargo/config.toml` sets
-`CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"`, and an app that links both backends there needs
-the same in its own. It links sherpa-onnx statically too: the `sherpa-onnx-sys` build script downloads its
-prebuilt static libraries for the target from sherpa-onnx's GitHub release (about 22 MB on Linux and macOS, kept in
-`target/sherpa-onnx-prebuilt/`; `SHERPA_ONNX_ARCHIVE_DIR` points it at archives you already have), and they need the
-C++ standard library the platform's C++ toolchain provides (libstdc++ on Linux). `--no-default-features` leaves both
-backends out; `--no-default-features --features sherpa-onnx` (or `whisper-cpp`) keeps one. The native tests build and
-check this platform's backends; the one that downloads a real file through `NativeHost` is ignored unless asked for,
-and CI asks:
+crypto, `ring`). A native build links two backends' engines statically, and `--no-default-features` leaves both out;
+`--no-default-features --features sherpa-onnx` (or `whisper-cpp`) keeps one.
+
+- **whisper.cpp** is compiled, with ggml, from the sources `whisper-rs-sys` bundles, so the build needs CMake, a C++
+  compiler and libclang (for `bindgen`, which writes the bindings). whisper.cpp tunes ggml for the building machine's
+  CPU unless `GGML_NATIVE=OFF` is set in the build's environment, which an app that ships its binary to other machines
+  should set.
+- **sherpa-onnx** comes as prebuilt static libraries, which need the C++ standard library the platform's C++ toolchain
+  provides (libstdc++ on Linux). On Linux x86_64 they use libstdc++'s old string ABI, so whisper.cpp must be compiled
+  with it too, or the two copies of `std::regex`'s internals the linker merges disagree and ONNX Runtime aborts
+  (`free(): invalid pointer`): this repository's `.cargo/config.toml` sets
+  `CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"`, and an app that links both backends there needs
+  the same in its own.
+
+Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
+script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in
+`xtask/sherpa-onnx-libs.json`, unpacks its `lib/` into `~/.cache/sidevoice-engine/sherpa-onnx/` (or the directory
+given) and prints that directory; `SHERPA_ONNX_LIB_DIR` makes the build link it and download nothing. CI does exactly
+this (`.github/actions/setup`), so the build cache never holds the libraries. Without `SHERPA_ONNX_LIB_DIR`, the build
+script downloads them itself, unchecked, into `target/sherpa-onnx-prebuilt/`.
+
+The same command keeps the sherpa-onnx config fields a build's files may fill
+(`src/backend/implementations/sherpa_onnx/config/fields.rs`): generated from the source of the crate version
+Cargo.lock pins, every field that takes a file, by its path (`whisper.encoder`, `kokoro.data_dir`). Never edited by
+hand; after bumping the crate, `--pin` writes it again, and `--check` fails until it is.
+
+```sh
+export SHERPA_ONNX_LIB_DIR="$(cargo xtask sherpa-libs)"
+cargo xtask sherpa-libs --pin     # after changing the crate's version: the archives' digests (GitHub's) and the config fields
+cargo xtask sherpa-libs --check   # what link-size.yml runs when the dependencies, the pins or the fields change
+```
+
+The native tests build and check this platform's backends; the one that downloads a real file through `NativeHost` is
+ignored unless asked for, and CI asks:
 
 ```sh
 cargo test --locked
 cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests   # with the network, as CI
 ```
 
-The sherpa-onnx backend's tests that run real models install the models first, through the installer and `NativeHost`
-(about 150 MB, kept by digest in `target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips
-them; CI runs them on each native platform:
+The sherpa-onnx backend's tests that run real models download them first (about 250 MB, cached by digest in
+`target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips them; CI runs them on each
+native platform:
 
 ```sh
 cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
@@ -234,8 +264,9 @@ model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and 
 `backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
 `requires` (hard constraints only, and optional: the only `accelerators` it
 can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `source` of the figure, `estimated`,
-`declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by, a `url`,
-its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
+`declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by (for
+sherpa-onnx, the path of the config field that receives it: `whisper.encoder`, `tokens`, `kokoro.data_dir`, ...,
+checked by the backend's tests), a `url`, its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
 keys that name parts of one archive repeat its url, digest and size (it is downloaded and unpacked once). A url is
 pinned to a revision (a Hugging Face commit); a GitHub release asset cannot be, so it is marked `mutable` and only its
 digest pins it. A model lists every build that exists for it, for every backend the engine knows (`KNOWN`,
