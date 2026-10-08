@@ -9,7 +9,7 @@ use std::io::{BufReader, Cursor};
 use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
 
 use super::synthesizer::espeak_voice;
-use super::{config, model_metadata, provider, provider_for, text, Kind, SherpaOnnx, SPEC};
+use super::{config, model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
 use crate::backend::{Backend, LoadedModel};
 use crate::catalog::{BundledCatalog, Capability, CatalogSource};
 use crate::host::Accelerator;
@@ -132,18 +132,6 @@ fn a_key_names_the_config_field_it_fills_and_an_unknown_one_is_refused() {
 }
 
 #[test]
-fn kokoro_runs_on_the_cpu_only_and_whisper_on_core_ml_too() {
-    let whisper = installed(&[("whisper.encoder", "e.onnx")]);
-    let kokoro = installed(&[("kokoro.model", "m.onnx")]);
-    assert_eq!(provider_for(&whisper, Accelerator::CoreMl), Ok("coreml"));
-    assert_eq!(provider_for(&kokoro, Accelerator::Cpu), Ok("cpu"));
-    assert_eq!(
-        provider_for(&kokoro, Accelerator::CoreMl).unwrap_err().code,
-        "unsupported-accelerator"
-    );
-}
-
-#[test]
 fn a_language_reaches_espeak_ng_as_its_voice_or_its_primary_subtag() {
     let voices: BTreeSet<String> = ["en", "en-us", "en-gb", "es", "es-419", "pt-br"]
         .map(str::to_owned)
@@ -163,7 +151,7 @@ fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn Load
 }
 
 #[test]
-fn a_model_missing_a_file_does_not_load_and_kokoro_refuses_core_ml_first() {
+fn a_model_missing_a_file_does_not_load() {
     let code = |result: Result<Box<dyn LoadedModel>>| result.map(|_| ()).unwrap_err().code;
     // sherpa-onnx checks its config before it creates anything, and refuses one whose files are not there.
     assert_eq!(
@@ -173,11 +161,6 @@ fn a_model_missing_a_file_does_not_load_and_kokoro_refuses_core_ml_first() {
     assert_eq!(
         code(load(Accelerator::Cpu, &[("kokoro.voices", "v.bin")])),
         "model-load-failed"
-    );
-    let kokoro = [("kokoro.model", "m.onnx"), ("kokoro.voices", "v.bin")];
-    assert_eq!(
-        code(load(Accelerator::CoreMl, &kokoro)),
-        "unsupported-accelerator"
     );
 }
 

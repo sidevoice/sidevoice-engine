@@ -15,3 +15,5 @@ serde = { version = "1", features = ["derive"] }
 # bzip2 tool.
 bzip2 = "=0.6.1"
 tar = { version = "0.4.46", default-features = false }
+# `sherpa-libs --pin` reads the pinned sherpa-onnx crate's config structs to generate the fields a build's files fill.
+syn = { version = "2", default-features = false, features = ["full", "parsing"] }
