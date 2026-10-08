@@ -96,8 +96,8 @@ impl Resolver {
         else {
             return Err(Rejection::DoesNotFit(Reason::new("build-accelerator")));
         };
-        // In a page the build runs in WebAssembly, which cannot hand it more than its cap (`requires.wasm_max_mb`): a build
-        // that needs more does not fit there, whatever the machine has.
+        // In a page the build runs in WebAssembly, under the cap its catalogue entry declares (`requires.wasm_max_mb`, not
+        // measured from the page): a build that needs more does not fit there, whatever the machine has.
         if let (Runs::Page, Some(cap)) = (caps.runs, build.requires.wasm_max_mb) {
             if build.memory.mb > cap {
                 return Err(Rejection::DoesNotFit(Reason::with_numbers(
