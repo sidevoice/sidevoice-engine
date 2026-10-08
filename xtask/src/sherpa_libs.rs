@@ -14,7 +14,8 @@
 //! - `sherpa-libs --linked`: every build of `sherpa-onnx-sys` under the target directory linked from
 //!   `$SHERPA_ONNX_LIB_DIR`, and nothing downloaded into `target/sherpa-onnx-prebuilt` (CI's proof).
 //! - `sherpa-libs --pin` / `--check`: the file written (or checked) from the version Cargo.toml pins and the
-//!   digests GitHub publishes for the release's assets.
+//!   digests GitHub publishes for the release's assets; and the config fields the engine fills from a build's files,
+//!   generated from that version's source (`sherpa_fields.rs`).
 //!
 //! The archive names are the static ones of `sherpa-onnx-sys`'s build script (`archive_name`), for the version
 //! pinned; the archive holds `<name without .tar.bz2>/lib`, as the script expects.
@@ -26,7 +27,7 @@ use std::{env, io};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{metadata, read, repo, run_in, sha256, write, Result};
+use crate::{metadata, read, repo, run_in, sha256, sherpa_fields, write, Result};
 
 /// The pinned archives, relative to the repository.
 const PINS: &str = "xtask/sherpa-onnx-libs.json";
@@ -194,17 +195,35 @@ pub(crate) fn pin(check: bool) -> Result<()> {
         archives.insert(platform, Archive { name, sha256 });
     }
     let pinned = Pins { version, archives };
+    let (fields, crate_version) = sherpa_fields::generate()?;
+    if crate_version != pinned.version {
+        return Err(format!(
+            "Cargo.toml pins sherpa-onnx {}, Cargo.lock has {crate_version}: run cargo update -p sherpa-onnx",
+            pinned.version
+        ));
+    }
+    let fields_path = repo().join(sherpa_fields::FIELDS);
     if check {
         if pins()? != pinned {
             return Err(format!(
                 "{PINS} is not what --pin writes: run cargo xtask sherpa-libs --pin"
             ));
         }
+        if read(&fields_path).ok().as_deref() != Some(fields.as_bytes()) {
+            return Err(format!(
+                "{} is not what --pin writes from sherpa-onnx {crate_version}: run cargo xtask sherpa-libs --pin",
+                sherpa_fields::FIELDS
+            ));
+        }
         return Ok(());
     }
     let mut text = serde_json::to_string_pretty(&pinned).map_err(|e| e.to_string())?;
     text.push('\n');
-    write(&repo().join(PINS), text.as_bytes())
+    write(&repo().join(PINS), text.as_bytes())?;
+    if let Some(dir) = fields_path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    write(&fields_path, fields.as_bytes())
 }
 
 fn pins() -> Result<Pins> {

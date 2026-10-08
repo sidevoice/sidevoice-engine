@@ -178,10 +178,15 @@ given) and prints that directory; `SHERPA_ONNX_LIB_DIR` makes the build link it 
 this (`.github/actions/setup`), so the build cache never holds the libraries. Without `SHERPA_ONNX_LIB_DIR`, the build
 script downloads them itself, unchecked, into `target/sherpa-onnx-prebuilt/`.
 
+The same command keeps the sherpa-onnx config fields a build's files may fill
+(`src/backend/implementations/sherpa_onnx/config/fields.rs`): generated from the source of the crate version
+Cargo.lock pins, every field that takes a file, by its path (`whisper.encoder`, `kokoro.data_dir`). Never edited by
+hand; after bumping the crate, `--pin` writes it again, and `--check` fails until it is.
+
 ```sh
 export SHERPA_ONNX_LIB_DIR="$(cargo xtask sherpa-libs)"
-cargo xtask sherpa-libs --pin     # after changing the crate's version: write the archives' digests from GitHub's
-cargo xtask sherpa-libs --check   # what link-size.yml runs when the dependencies or the pins change
+cargo xtask sherpa-libs --pin     # after changing the crate's version: the archives' digests (GitHub's) and the config fields
+cargo xtask sherpa-libs --check   # what link-size.yml runs when the dependencies, the pins or the fields change
 ```
 
 The native tests build and check this platform's backends; the one that downloads a real file through `NativeHost` is
