@@ -1,0 +1,36 @@
+name: spike-mlx-python
+
+# Spike for #36, not for merge: an MLX backend through a separate Python process running mlx-audio, measured on a
+# GitHub-hosted Apple-silicon runner. The logic is in spikes/mlx-python/spike.py; this only gives it a machine.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - spikes/mlx-python/**
+      - .github/workflows/spike-mlx-python.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-mlx-python-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: Measure (macos-14)
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # The system Python (3.9) only orchestrates; what is measured is the standalone Python the script downloads.
+      - run: /usr/bin/python3 spikes/mlx-python/spike.py --out "$RUNNER_TEMP/spike"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: spike-mlx-python
+          path: |
+            ${{ runner.temp }}/spike/results.json
+            ${{ runner.temp }}/spike/results.md
+            ${{ runner.temp }}/spike/audio/
+          if-no-files-found: warn

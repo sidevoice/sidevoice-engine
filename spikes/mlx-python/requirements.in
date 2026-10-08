@@ -1,0 +1,15 @@
+# What the runner needs, top level. requirements.txt is the resolved, hash-pinned lock for macOS 14+ on Apple silicon:
+#   MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements.in --python-version 3.12 \
+#     --python-platform aarch64-apple-darwin --generate-hashes --no-header -o requirements.txt
+mlx==0.32.3
+mlx-audio[stt]==0.5.8
+# Kokoro's G2P: mlx-audio imports misaki but does not declare it. misaki[en] would also bring
+# spacy-curated-transformers and with it torch, used only by the transformer G2P (trf=True) that mlx-audio leaves
+# off, so the English extra is listed here by hand without it.
+misaki==0.9.4
+espeakng-loader==0.2.4
+num2words==0.5.14
+phonemizer-fork==3.3.2
+spacy==3.8.16
+# spaCy's English model, which misaki otherwise installs with pip on first use.
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
