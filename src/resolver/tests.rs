@@ -207,6 +207,49 @@ fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
         .all(|accelerator| *accelerator == Accelerator::Cpu));
 }
 
+/// transformers.js's fp16 builds are its WebGPU variant: the bundled catalogue's require WebGPU, so a page that only
+/// has WebAssembly is never offered one, and one that has WebGPU runs them there.
+#[test]
+fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
+    let source = crate::BundledCatalog;
+    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let fp16_accelerators = |accelerators: &[Accelerator]| -> Vec<Accelerator> {
+        let backend = || -> Box<dyn Backend> {
+            Box::new(PageBackend(BackendSpec {
+                id: "transformers-js",
+                accelerators: &[Accelerator::WebGpu, Accelerator::Wasm],
+                requirements: &[],
+            }))
+        };
+        let caps = Capabilities {
+            runs: Runs::Page,
+            os: "web".to_owned(),
+            arch: "wasm32".to_owned(),
+            accelerators: accelerators.to_vec(),
+            memory_mb: Some(16_384),
+            cores: Some(8),
+        };
+        [Capability::Stt, Capability::Tts]
+            .into_iter()
+            .flat_map(|capability| {
+                Resolver::default().offers(&catalog, &[backend()], &caps, capability)
+            })
+            .filter_map(|offer| match offer {
+                Offer::Offered {
+                    build, accelerator, ..
+                } if build.precision == "fp16" => Some(accelerator),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(fp16_accelerators(&[Accelerator::Wasm]), []);
+    let on_webgpu = fp16_accelerators(&[Accelerator::Wasm, Accelerator::WebGpu]);
+    assert!(!on_webgpu.is_empty(), "an fp16 build on WebGPU");
+    assert!(on_webgpu
+        .iter()
+        .all(|accelerator| *accelerator == Accelerator::WebGpu));
+}
+
 /// A backend of the page, running on WebAssembly, with no requirement of its own.
 struct PageBackend(BackendSpec);
 
