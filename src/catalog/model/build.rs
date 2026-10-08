@@ -39,7 +39,8 @@ pub struct Requires {
     /// WebGPU features the adapter must have, as WebGPU names them: "shader-f16", ...
     #[serde(default)]
     pub webgpu_features: Vec<String>,
-    /// On WebAssembly, the most memory it may take, in MB: wasm32 cannot hand out more than about 2 GiB at once.
+    /// On WebAssembly, the most memory it may take, in MB: wasm32 cannot hand out more than about 2 GiB at once. In a page,
+    /// a build whose `memory` is more is rejected (`wasm-memory`).
     pub wasm_max_mb: Option<u32>,
 }
 

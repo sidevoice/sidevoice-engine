@@ -16,14 +16,15 @@ async fn a_web_engine_on_a_js_host_has_the_web_backends_and_the_bundled_catalogu
         .await
         .expect("engine");
     assert_eq!(engine.backends(), ["transformers-js"]);
-    // Each bundled Whisper model (tiny, base, small, large-v3 and its turbo) is offered once, on transformers.js; every
-    // other build comes back with why not.
+    // Each bundled Whisper model but large-v3 (tiny, base, small and large-v3-turbo) is offered once, on transformers.js;
+    // every other build comes back with why not: large-v3's q8 needs more than WebAssembly hands it (`wasm-memory`), its
+    // fp16 needs WebGPU.
     let offered = engine
         .offers("stt")
         .expect("offers")
         .iter()
         .filter(|entry| Reflect::get(entry, &"offered".into()).ok() == Some(JsValue::TRUE))
         .count();
-    assert_eq!(offered, 5);
+    assert_eq!(offered, 4);
     assert!(engine.offers("llm").is_err());
 }
