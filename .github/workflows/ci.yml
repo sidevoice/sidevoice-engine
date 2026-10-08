@@ -149,13 +149,15 @@ jobs:
           echo "whisper defs: $(wc -l < /tmp/wn), sherpa defs: $(wc -l < /tmp/sn)"
           comm -12 /tmp/wn /tmp/sn > /tmp/both
           echo "shared: $(wc -l < /tmp/both)"
-          grep -Fwf /tmp/both /tmp/wsyms | grep -v ' [WVu]$' | head -80 | c++filt
-          echo "--- strong in both (non-weak in whisper):"
-          grep -v ' [WVu]$' /tmp/wsyms | cut -d' ' -f1 | sort -u | comm -12 - /tmp/sn | head -80 | c++filt
+          while read -r name; do
+            echo "$(echo "$name" | c++filt) | whisper: $(grep "^$name " /tmp/wsyms | cut -d' ' -f2 | tr '\n' ' ')| sherpa: $(grep "^$name " /tmp/ssyms | cut -d' ' -f2 | tr '\n' ' ')"
+          done < /tmp/both
+          true
       - name: Backtrace
         shell: bash
         env:
           SIDEVOICE_TEST_MODELS: ${{ runner.temp }}/test-models
+        if: always()
         run: |
           sudo apt-get install -y -q gdb > /dev/null
           bin=$(ls -t target/debug/deps/sidevoice_engine-* | grep -v '\.d$' | head -1)

@@ -52,8 +52,12 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .iter()
         .find(|b| b.id == "whisper-small-gguf")
         .expect("gguf");
-    assert!(!gguf.available && gguf.accelerator.is_none());
-    assert_eq!(gguf.reasons, [Reason::new("backend-not-in-this-build")]);
+    if cfg!(all(not(target_arch = "wasm32"), feature = "whisper-cpp")) {
+        assert!(gguf.available && gguf.accelerator.is_some());
+    } else {
+        assert!(!gguf.available && gguf.accelerator.is_none());
+        assert_eq!(gguf.reasons, [Reason::new("backend-not-in-this-build")]);
+    }
     let available: Vec<_> = small.builds.iter().map(|build| build.available).collect();
     assert!(
         available.windows(2).all(|pair| pair[0] >= pair[1]),

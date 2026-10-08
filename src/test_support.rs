@@ -508,8 +508,8 @@ impl CatalogSource for FakeCatalog {
                             Capability::Stt,
                             vec![
                                 build("whisper-small-mlx", "mlx", 1_024),
-                                build("whisper-small-gguf", "whisper-cpp", 1_024),
                                 build("whisper-small-onnx", "sherpa-onnx", 1_024),
+                                build("whisper-small-gguf", "whisper-cpp", 1_024),
                                 build("whisper-small-web", "transformers-js", 1_024),
                             ],
                         ),
