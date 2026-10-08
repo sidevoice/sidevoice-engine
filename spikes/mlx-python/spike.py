@@ -174,6 +174,11 @@ def install_runtime(out):
     return python
 
 
+def licences(python):
+    proc, _ = run([python, "-I", HERE / "bench.py", "licences"])
+    collect(proc)
+
+
 def cold_start(python):
     for label, cmd in (
         ("interpreter", [python, "-I", "-c", "pass"]),
@@ -345,11 +350,18 @@ def markdown():
             load = first("load", device=e["device"], model=e["model"])
             text = e.get("transcript") if e["kind"] == "stt" else e.get("text")
             label = e.get("input") or f"TTS {e['case']} ({e['voice']})"
+            if e.get("decoding") == "greedy":
+                label += " (greedy)"
             lines.append(
                 f"| {e['device']} | {e['model']} | {label} | {load and load['seconds']} | {e['audio_s']} | "
                 f"{e['first_call_s']} | {e['warm_median_s']} | {e['rtf_first']} | {e['rtf_warm']} | "
                 f"{(text or '').replace('|', '/')} |"
             )
+
+    lines += ["", "## Licences declared by the installed distributions", "", "| Distribution | Declared |", "|---|---|"]
+    for e in (x for x in ev if x["kind"] == "licence"):
+        declared = e["expression"] or "; ".join(e["classifiers"]) or e["license_field"] or "nothing declared"
+        lines.append(f"| {e['name']} {e['version']} | {declared.replace('|', '/')} |")
 
     lines += ["", "## Signing", "", "| File | codesign |", "|---|---|"]
     for e in (x for x in ev if x["kind"] == "codesign"):
@@ -373,6 +385,7 @@ def main():
     try:
         host()
         python = install_runtime(out)
+        licences(python)
         cold_start(python)
         bench(python, out)
         signing(python, out)

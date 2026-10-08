@@ -6,6 +6,7 @@ the timings here never include a network download.
 
     bench.py fetch   --models DIR --repo ID@REVISION [--repo ...]
     bench.py ready   (imports what a runner would import, then exits: the runner's cold start)
+    bench.py licences
     bench.py run     --models DIR --device gpu|cpu --clip WAV --out DIR --whisper NAME [--whisper ...]
 """
 
@@ -67,6 +68,24 @@ def ready(_args):
     import mlx_audio.tts.utils  # noqa: F401
 
     emit("ready", seconds_since_interpreter_start=round(time.perf_counter() - T0, 3), mlx=mx.__version__)
+
+
+def licences(_args):
+    """What each installed distribution declares about its licence, and the licence files it ships."""
+    from importlib import metadata
+
+    for dist in sorted(metadata.distributions(), key=lambda d: d.metadata["Name"].lower()):
+        meta = dist.metadata
+        declared = (meta.get("License") or "").strip().splitlines()
+        emit(
+            "licence",
+            name=meta["Name"],
+            version=dist.version,
+            expression=meta.get("License-Expression"),
+            license_field=declared[0][:120] if declared else None,
+            classifiers=[c.split(" :: ")[-1] for c in meta.get_all("Classifier") or [] if c.startswith("License ::")],
+            files=[str(f) for f in dist.files or [] if "licen" in str(f).lower() or "copying" in str(f).lower()][:8],
+        )
 
 
 def write_wav(path, samples, rate):
@@ -186,22 +205,29 @@ def run(args):
     for name in args.whisper:
         stt_model, load_s = timed(lambda: load_stt(str(models / name)))
         emit("load", device=args.device, model=name, seconds=round(load_s, 3))
-        for label, path, lang, reference in inputs:
-            audio = load_audio(str(path))
-            times, result = [], None
-            for _ in range(CALLS):
-                result, seconds = timed(lambda: stt_model.generate(audio, language=lang, verbose=False))
-                times.append(seconds)
-            emit(
-                "stt",
-                device=args.device,
-                model=name,
-                input=label,
-                language=lang,
-                transcript=result.text.strip(),
-                reference=reference,
-                **summarise(times, wav_seconds(path)),
-            )
+        # mlx-audio's defaults (temperature fallback 0.0..1.0), then greedy decoding only (temperature 0.0) on the GPU:
+        # the fallback samples at higher temperatures when a window fails its compression or log-prob checks.
+        variants = [("default", {})] + ([("greedy", {"temperature": 0.0})] if args.device == "gpu" else [])
+        for decoding, options in variants:
+            for label, path, lang, reference in inputs:
+                audio = load_audio(str(path))
+                times, result = [], None
+                for _ in range(CALLS):
+                    result, seconds = timed(lambda: stt_model.generate(audio, language=lang, verbose=False, **options))
+                    times.append(seconds)
+                emit(
+                    "stt",
+                    device=args.device,
+                    model=name,
+                    decoding=decoding,
+                    input=label,
+                    language=lang,
+                    transcript=result.text.strip(),
+                    reference=reference,
+                    segments=len(result.segments or []),
+                    generation_tokens=result.generation_tokens,
+                    **summarise(times, wav_seconds(path)),
+                )
         stt_model = None
         mx.clear_cache()
 
@@ -223,6 +249,7 @@ def main():
     p.add_argument("--models", required=True)
     p.add_argument("--repo", action="append", required=True)
     sub.add_parser("ready")
+    sub.add_parser("licences")
     p = sub.add_parser("run")
     p.add_argument("--models", required=True)
     p.add_argument("--device", choices=["gpu", "cpu"], required=True)
@@ -230,7 +257,7 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--whisper", action="append", required=True)
     args = parser.parse_args()
-    {"fetch": fetch, "ready": ready, "run": run}[args.command](args)
+    {"fetch": fetch, "ready": ready, "licences": licences, "run": run}[args.command](args)
 
 
 if __name__ == "__main__":
