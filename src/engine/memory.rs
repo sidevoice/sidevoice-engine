@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use crate::backend::{Library, BackendModel};
+use crate::backend::{BackendModel, Library};
 use crate::engine::Handle;
 use crate::{Error, Result};
 

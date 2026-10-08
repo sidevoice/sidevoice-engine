@@ -42,7 +42,7 @@
 use async_trait::async_trait;
 use sherpa_onnx::OfflineRecognizer;
 
-use crate::backend::{Backend, BackendFactory, BackendSpec, Library, BackendModel};
+use crate::backend::{Backend, BackendFactory, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;

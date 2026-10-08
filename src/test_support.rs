@@ -14,8 +14,8 @@ use sha2::Digest;
 
 use crate::{
     async_trait, Accelerator, Artifact, BuildEntry, Capabilities, Capability, CatalogFragment,
-    CatalogSource, Download, Error, Family, Fetcher, Host, Memory, MemorySource, ModelEntry, ModelFile,
-    Requires, Result, Runs, Storage, StorageWriter, TreeWriter,
+    CatalogSource, Download, Error, Family, Fetcher, Host, Memory, MemorySource, ModelEntry,
+    ModelFile, Requires, Result, Runs, Storage, StorageWriter, TreeWriter,
 };
 
 pub(crate) struct FakeHost;

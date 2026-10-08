@@ -1,5 +1,6 @@
-//! The installer over a host with storage in memory: a fresh install, what is already stored, files shared by two
-//! keys, a digest that does not match, a failed download, cancelling, and artifacts refused before downloading.
+//! The installer's flow over a host with storage in memory: a fresh install, what is already stored, files shared by
+//! two keys, archives unpacked once, a cancelled install, and a refused plan stopping it before any download. Each
+//! step has its own tests: `plan/tests.rs`, `download/tests.rs`, `archive/tests.rs`.
 
 use std::sync::Mutex;
 
@@ -114,42 +115,6 @@ fn a_file_two_keys_share_is_downloaded_once() {
 }
 
 #[test]
-fn a_file_whose_bytes_do_not_match_its_digest_is_not_stored() {
-    let host = host();
-    let mut artifacts = artifacts();
-    artifacts[1].sha256 = sha256(b"something else");
-    let (installed, _) = install(&host, &artifacts, &Cancel::new());
-
-    assert_eq!(installed.expect_err("mismatch").code, "digest-mismatch");
-    assert_eq!(host.stored().keys().collect::<Vec<_>>(), [&sha256(MODEL)]);
-}
-
-#[test]
-fn a_failed_download_fails_with_the_fetchers_code() {
-    let host = MemoryHost::default();
-    let (installed, _) = install(&host, &artifacts(), &Cancel::new());
-
-    assert_eq!(installed.expect_err("not served").code, "download-failed");
-    assert!(host.stored().is_empty());
-}
-
-#[test]
-fn cancelling_stops_the_install_in_the_middle_of_a_file_and_stores_nothing_of_it() {
-    let host = host();
-    let cancel = Cancel::new();
-    let progress = |progress: Progress| {
-        if progress.received > 0 {
-            cancel.cancel();
-        }
-    };
-    let installed = block_on(Installer.install(&artifacts(), &host, &progress, &cancel));
-
-    assert_eq!(installed.expect_err("cancelled").code, "cancelled");
-    assert!(host.stored().is_empty());
-    assert_eq!(host.fetches(), 1);
-}
-
-#[test]
 fn a_cancelled_install_downloads_nothing() {
     let host = host();
     let cancel = Cancel::new();
@@ -161,29 +126,12 @@ fn a_cancelled_install_downloads_nothing() {
 }
 
 #[test]
-fn malformed_digests_and_conflicting_keys_are_refused_before_downloading() {
+fn an_artifact_the_plan_refuses_stops_the_install_before_anything_is_downloaded() {
     let host = host();
-    for sha256 in [
-        "",
-        "ABC",
-        &"A".repeat(64),
-        &format!("../{}", "a".repeat(61)),
-    ] {
-        let mut artifacts = artifacts();
-        artifacts[1].sha256 = sha256.to_owned();
-        let (installed, _) = install(&host, &artifacts, &Cancel::new());
-        assert_eq!(installed.expect_err(sha256).code, "digest-invalid");
-    }
-
-    let conflicting = [
-        artifact("model.onnx", "https://models/model.onnx", MODEL),
-        artifact("model.onnx", "https://backends/library", LIBRARY),
-    ];
-    let (installed, _) = install(&host, &conflicting, &Cancel::new());
-    assert_eq!(
-        installed.expect_err("conflict").code,
-        "artifact-key-conflict"
-    );
+    let mut artifacts = artifacts();
+    artifacts[1].sha256 = "ABC".to_owned();
+    let (installed, _) = install(&host, &artifacts, &Cancel::new());
+    assert_eq!(installed.expect_err("refused").code, "digest-invalid");
     assert_eq!(host.fetches(), 0);
 }
 
@@ -277,26 +225,4 @@ fn an_archive_that_does_not_match_its_digest_is_never_unpacked() {
     assert!(host
         .tree(&format!("{}-unpacked", sha256(&archive)))
         .is_none());
-}
-
-#[test]
-fn bad_archive_paths_and_keys_naming_two_members_are_refused_before_downloading() {
-    let archive = kokoro();
-    let host = MemoryHost::serving(&[(KOKORO, &archive)]);
-    for path in ["../outside", "/kokoro/model.onnx", ""] {
-        let artifacts = [member("model", KOKORO, &archive, path)];
-        let (installed, _) = install(&host, &artifacts, &Cancel::new());
-        assert_eq!(installed.expect_err(path).code, "archive-path-invalid");
-    }
-
-    let two = [
-        member("model", KOKORO, &archive, "kokoro/model.onnx"),
-        member("model", KOKORO, &archive, "kokoro/espeak-ng-data"),
-    ];
-    let (installed, _) = install(&host, &two, &Cancel::new());
-    assert_eq!(
-        installed.expect_err("conflict").code,
-        "artifact-key-conflict"
-    );
-    assert_eq!(host.fetches(), 0);
 }

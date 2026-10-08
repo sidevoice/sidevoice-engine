@@ -7,14 +7,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::{lock, Preparing};
-use crate::backend::{Backend, BackendSpec, Library, BackendModel, SttModel};
+use crate::backend::{Backend, BackendModel, BackendSpec, Library, SttModel};
 use crate::host::Platform;
 use crate::install::Installed;
 use crate::test_support::{artifact, block_on, FakeCatalog, FakeHost, MemoryHost};
 use crate::{
-    async_trait, Accelerator, Artifact, BuildEntry, BuildState, BundledCatalog, Cancel, Capabilities,
-    Capability, Engine, Error, Fetcher, Host, ModelFile, Offer, Preferences, Reason, Rejection,
-    Result, Runs, Selection, Storage,
+    async_trait, Accelerator, Artifact, BuildEntry, BuildState, BundledCatalog, Cancel,
+    Capabilities, Capability, Engine, Error, Fetcher, Host, ModelFile, Offer, Preferences, Reason,
+    Rejection, Result, Runs, Selection, Storage,
 };
 
 #[cfg(web)]

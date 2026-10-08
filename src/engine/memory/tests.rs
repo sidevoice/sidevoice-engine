@@ -6,7 +6,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use super::Memory;
-use crate::backend::{Library, BackendModel};
+use crate::backend::{BackendModel, Library};
 use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;
