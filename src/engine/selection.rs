@@ -1,6 +1,6 @@
 //! What is chosen for a stage: what the person asked for ([`Preferences`]) and what the engine picked ([`Selection`]).
 
-use crate::catalog::{Build, Model};
+use crate::catalog::{BuildEntry, ModelEntry};
 use crate::host::Accelerator;
 
 /// What the person asked for in advanced options; `None` leaves it to the engine.
@@ -18,9 +18,9 @@ pub struct Preferences {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     /// The model chosen.
-    pub model: Model,
+    pub model: ModelEntry,
     /// Its build to run.
-    pub build: Build,
+    pub build: BuildEntry,
     /// The accelerator to run it on.
     pub accelerator: Accelerator,
 }

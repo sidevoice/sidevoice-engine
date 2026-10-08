@@ -19,7 +19,7 @@ mod tests;
 
 pub use bundled::BundledCatalog;
 pub use family::Family;
-pub use model::{Build, Capability, Memory, MemorySource, Model, ModelFile, Requires};
+pub use model::{BuildEntry, Capability, Memory, MemorySource, ModelEntry, ModelFile, Requires};
 
 /// Where catalogue entries come from: the catalogue bundled in the engine, a remote one pinned by digest, the
 /// user's own models.
@@ -126,7 +126,7 @@ impl Catalog {
     }
 
     /// The models that can do `capability`, in catalogue order.
-    pub(crate) fn models(&self, capability: Capability) -> impl Iterator<Item = &Model> {
+    pub(crate) fn models(&self, capability: Capability) -> impl Iterator<Item = &ModelEntry> {
         self.families
             .iter()
             .flat_map(|family| &family.models)
@@ -181,7 +181,7 @@ impl Catalog {
 }
 
 /// A build's own problems: its backend and its files.
-fn check_build(build: &Build, problems: &mut Vec<Problem>) {
+fn check_build(build: &BuildEntry, problems: &mut Vec<Problem>) {
     if !backend::is_known(&build.backend) {
         problems.push(Problem::UnknownBackend {
             build: build.id.clone(),

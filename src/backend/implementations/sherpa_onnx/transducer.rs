@@ -7,7 +7,7 @@ use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerM
 
 use super::{num_threads, path, recognizer, transcribe, SAMPLE_RATE};
 use crate::backend::loaded_model::SttModel;
-use crate::backend::LoadedModel;
+use crate::backend::BackendModel;
 use crate::install::Installed;
 use crate::Result;
 
@@ -32,7 +32,7 @@ impl Transducer {
     }
 }
 
-impl LoadedModel for Transducer {
+impl BackendModel for Transducer {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
     }

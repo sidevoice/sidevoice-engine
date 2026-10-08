@@ -10,8 +10,8 @@ use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use crate::backend::{self, Backend, BackendId, LoadedModel};
-use crate::catalog::{Build, Capability, Catalog, CatalogSource, ModelFile};
+use crate::backend::{self, Backend, BackendId, BackendModel};
+use crate::catalog::{BuildEntry, Capability, Catalog, CatalogSource, ModelFile};
 use crate::host::{Host, Platform};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
 use crate::resolver::{Offer, Resolver};
@@ -182,7 +182,7 @@ impl Engine {
     ///
     /// `backend-not-in-this-build`, `no-runtime-for-platform` (as [`Engine::prepare`]), and whatever the host's storage
     /// fails with.
-    pub async fn state(&self, build: &Build) -> Result<BuildState> {
+    pub async fn state(&self, build: &BuildEntry) -> Result<BuildState> {
         if lock(&self.memory).is_loaded(&build.id) {
             return Ok(BuildState::Ready);
         }
@@ -323,7 +323,7 @@ impl Engine {
     }
 
     /// `build`'s backend, and every file it needs here: the model's, then the backend's for this platform.
-    fn artifacts(&self, build: &Build) -> Result<(&dyn Backend, Vec<Artifact>)> {
+    fn artifacts(&self, build: &BuildEntry) -> Result<(&dyn Backend, Vec<Artifact>)> {
         let backend = backend::find(&self.backends, &build.backend)
             .ok_or(Error::new("backend-not-in-this-build"))?;
         let runtime = Platform::of(&self.host.capabilities())
@@ -340,7 +340,7 @@ impl Engine {
 struct InUse<'a> {
     memory: &'a Mutex<Memory>,
     handle: Handle,
-    model: Option<Box<dyn LoadedModel>>,
+    model: Option<Box<dyn BackendModel>>,
 }
 
 impl<'a> InUse<'a> {
@@ -353,7 +353,7 @@ impl<'a> InUse<'a> {
         })
     }
 
-    fn model(&mut self) -> &mut dyn LoadedModel {
+    fn model(&mut self) -> &mut dyn BackendModel {
         self.model.as_deref_mut().expect("held until dropped")
     }
 }

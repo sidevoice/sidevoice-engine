@@ -6,7 +6,7 @@ use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, OfflineWhisperMode
 
 use super::{num_threads, path, primary_language, recognizer, text, transcribe, SAMPLE_RATE};
 use crate::backend::loaded_model::SttModel;
-use crate::backend::LoadedModel;
+use crate::backend::BackendModel;
 use crate::install::Installed;
 use crate::Result;
 
@@ -54,7 +54,7 @@ impl Whisper {
     }
 }
 
-impl LoadedModel for Whisper {
+impl BackendModel for Whisper {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
     }

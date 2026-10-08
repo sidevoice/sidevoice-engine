@@ -30,8 +30,8 @@ mod web;
 
 pub use backend::BackendId;
 pub use catalog::{
-    Build, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Memory,
-    MemorySource, Model, ModelFile, Problem, Requires,
+    BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Memory,
+    MemorySource, ModelEntry, ModelFile, Problem, Requires,
 };
 pub use engine::{
     BuildState, ConfigError, Engine, Handle, Preferences, Selection, Speech, DEFAULT_IDLE_UNLOAD,

@@ -13,7 +13,7 @@
 //! A backend is its record, an optional `probe`, its `open` and its library's `load`. Everything else is somebody
 //! else's:
 //!
-//! - which models it runs: each catalogue build names its backend ([`Build::backend`](crate::Build::backend));
+//! - which models it runs: each catalogue build names its backend ([`BuildEntry::backend`](crate::BuildEntry::backend));
 //! - what it downloads: its entry in `backends.json`, read by `runtime`, with its files per platform, which the
 //!   installer fetches next to the model's files; where the entry says it does not run (`null`), the resolver rejects
 //!   its builds with `no-runtime-for-platform` before asking the backend anything;
@@ -55,7 +55,7 @@
 //! - finds each file it needs in `files` by its key in the catalogue;
 //! - loads the model's files on the `accelerator` it is given, one that `probe` returned; it does not fall back to
 //!   another one by itself (the engine decides that, with a new selection);
-//! - returns a [`LoadedModel`] that is a speech-to-text model, a text-to-speech model, or both, and keeps nothing:
+//! - returns a [`BackendModel`] that is a speech-to-text model, a text-to-speech model, or both, and keeps nothing:
 //!   the engine owns what it returns, and the backend object stays empty and stateless (what is open lives in the
 //!   library).
 //!
@@ -114,7 +114,7 @@ mod runtime;
 mod tests;
 
 pub(crate) use library::Library;
-pub(crate) use loaded_model::LoadedModel;
+pub(crate) use loaded_model::BackendModel;
 #[cfg(test)]
 pub(crate) use loaded_model::SttModel;
 #[cfg_attr(
@@ -134,7 +134,7 @@ pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
 pub(crate) use runtime::{is_known, runtime_files};
 
-/// A backend's stable id, as catalogue builds name it ([`Build::backend`](crate::Build::backend)): "sherpa-onnx",
+/// A backend's stable id, as catalogue builds name it ([`BuildEntry::backend`](crate::BuildEntry::backend)): "sherpa-onnx",
 /// "whisper-cpp", "mlx", ...
 pub type BackendId = &'static str;
 

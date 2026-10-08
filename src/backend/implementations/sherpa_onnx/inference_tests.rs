@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 
 use super::SherpaOnnx;
-use crate::backend::{Backend, LoadedModel};
+use crate::backend::{Backend, BackendModel};
 use crate::host::Accelerator;
 use crate::install::{Artifact, Cancel, Installed, Installer};
 use crate::test_support::{block_on, build};
@@ -153,7 +153,7 @@ fn accelerator(_files: &Installed) -> Accelerator {
     Accelerator::Cpu
 }
 
-fn load(files: &Installed) -> Box<dyn LoadedModel> {
+fn load(files: &Installed) -> Box<dyn BackendModel> {
     let build = build("test", "sherpa-onnx", 0);
     let model = if files.file("encoder").is_some() {
         "Whisper"

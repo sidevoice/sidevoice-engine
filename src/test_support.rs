@@ -13,8 +13,8 @@ use std::task::{Context, Poll};
 use sha2::Digest;
 
 use crate::{
-    async_trait, Accelerator, Artifact, Build, Capabilities, Capability, CatalogFragment,
-    CatalogSource, Download, Error, Family, Fetcher, Host, Memory, MemorySource, Model, ModelFile,
+    async_trait, Accelerator, Artifact, BuildEntry, Capabilities, Capability, CatalogFragment,
+    CatalogSource, Download, Error, Family, Fetcher, Host, Memory, MemorySource, ModelEntry, ModelFile,
     Requires, Result, Runs, Storage, StorageWriter, TreeWriter,
 };
 
@@ -418,8 +418,8 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 pub(crate) struct FakeCatalog;
 
 /// A build of `backend` that needs `memory_mb`, with one file.
-pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> Build {
-    Build {
+pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> BuildEntry {
+    BuildEntry {
         id: id.to_owned(),
         backend: backend.to_owned(),
         precision: "int8".to_owned(),
@@ -441,8 +441,8 @@ pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> Build {
 }
 
 /// A model that can do `capability`, with `builds`.
-pub(crate) fn model(id: &str, capability: Capability, builds: Vec<Build>) -> Model {
-    Model {
+pub(crate) fn model(id: &str, capability: Capability, builds: Vec<BuildEntry>) -> ModelEntry {
+    ModelEntry {
         id: id.to_owned(),
         capabilities: vec![capability],
         parameters_m: 1,
@@ -453,7 +453,7 @@ pub(crate) fn model(id: &str, capability: Capability, builds: Vec<Build>) -> Mod
 }
 
 /// A family of `models`.
-pub(crate) fn family(id: &str, models: Vec<Model>) -> Family {
+pub(crate) fn family(id: &str, models: Vec<ModelEntry>) -> Family {
     Family {
         id: id.to_owned(),
         architecture: id.to_owned(),

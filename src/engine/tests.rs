@@ -7,12 +7,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::{lock, Preparing};
-use crate::backend::{Backend, BackendSpec, Library, LoadedModel, SttModel};
+use crate::backend::{Backend, BackendSpec, Library, BackendModel, SttModel};
 use crate::host::Platform;
 use crate::install::Installed;
 use crate::test_support::{artifact, block_on, FakeCatalog, FakeHost, MemoryHost};
 use crate::{
-    async_trait, Accelerator, Artifact, Build, BuildState, BundledCatalog, Cancel, Capabilities,
+    async_trait, Accelerator, Artifact, BuildEntry, BuildState, BundledCatalog, Cancel, Capabilities,
     Capability, Engine, Error, Fetcher, Host, ModelFile, Offer, Preferences, Reason, Rejection,
     Result, Runs, Selection, Storage,
 };
@@ -234,10 +234,10 @@ impl Drop for FakeLibrary {
 impl Library for FakeLibrary {
     async fn load(
         &self,
-        build: &Build,
+        build: &BuildEntry,
         _accelerator: Accelerator,
         files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
+    ) -> Result<Box<dyn BackendModel>> {
         if build.id == "broken" {
             return Err(Error::new("model-did-not-load"));
         }
@@ -249,7 +249,7 @@ impl Library for FakeLibrary {
 /// A speech-to-text model that says how many samples it heard, and in which language.
 struct FakeModel;
 
-impl LoadedModel for FakeModel {
+impl BackendModel for FakeModel {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
     }
@@ -330,7 +330,7 @@ impl Fixture {
     }
 }
 
-/// Build `id` of the fake backend, whose model file is `https://models/<id>` and should be `bytes`.
+/// BuildEntry `id` of the fake backend, whose model file is `https://models/<id>` and should be `bytes`.
 fn selection(id: &str, bytes: &[u8]) -> Selection {
     let mut build = crate::test_support::build(id, "fake", 0);
     build.files = vec![ModelFile {

@@ -42,8 +42,8 @@
 use async_trait::async_trait;
 use sherpa_onnx::OfflineRecognizer;
 
-use crate::backend::{Backend, BackendFactory, BackendSpec, Library, LoadedModel};
-use crate::catalog::Build;
+use crate::backend::{Backend, BackendFactory, BackendSpec, Library, BackendModel};
+use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
@@ -95,10 +95,10 @@ struct Linked;
 impl Library for Linked {
     async fn load(
         &self,
-        _build: &Build,
+        _build: &BuildEntry,
         accelerator: Accelerator,
         files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
+    ) -> Result<Box<dyn BackendModel>> {
         let kind = Kind::of(files)?;
         let provider = kind.provider(accelerator)?;
         Ok(match kind {

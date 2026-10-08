@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
 use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
-use crate::catalog::{Build, Capability, Catalog, Model};
+use crate::catalog::{BuildEntry, Capability, Catalog, ModelEntry};
 use crate::host::{Accelerator, Capabilities, Platform};
 
 mod offer;
@@ -66,7 +66,7 @@ impl Resolver {
     /// what its probe confirms of what the host reports, then to what the build requires.
     fn fit(
         &self,
-        build: &Build,
+        build: &BuildEntry,
         backend: &dyn Backend,
         caps: &Capabilities,
     ) -> Result<Accelerator, Rejection> {
@@ -119,7 +119,7 @@ impl Resolver {
     }
 }
 
-fn rejected(model: &Model, build: &Build, why: Rejection) -> Offer {
+fn rejected(model: &ModelEntry, build: &BuildEntry, why: Rejection) -> Offer {
     Offer::Rejected {
         model: model.clone(),
         build: build.clone(),

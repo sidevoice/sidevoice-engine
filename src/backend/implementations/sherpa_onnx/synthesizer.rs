@@ -10,7 +10,7 @@ use sherpa_onnx::{GenerationConfig, OfflineTts, OfflineTtsConfig};
 
 use super::{model_metadata, num_threads, text};
 use crate::backend::loaded_model::TtsModel;
-use crate::backend::LoadedModel;
+use crate::backend::BackendModel;
 use crate::{Error, Result};
 
 /// What a model is told of the language it speaks, from a BCP 47 tag: the `lang` of the generation's extra options,
@@ -53,7 +53,7 @@ impl Synthesizer {
     }
 }
 
-impl LoadedModel for Synthesizer {
+impl BackendModel for Synthesizer {
     fn as_tts(&mut self) -> Option<&mut dyn TtsModel> {
         Some(self)
     }

@@ -7,7 +7,7 @@ use std::io::{BufReader, Cursor};
 use super::kokoro::espeak_voice;
 use super::supertonic::indexer_named_as_required;
 use super::{model_metadata, primary_language, provider, text, Kind, SherpaOnnx, SPEC};
-use crate::backend::{Backend, LoadedModel};
+use crate::backend::{Backend, BackendModel};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::test_support::{block_on, build};
@@ -88,7 +88,7 @@ fn kokoro_refuses_core_ml_whatever_the_libraries_and_the_rest_would_take_it() {
     );
 }
 
-fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
+fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn BackendModel>> {
     let files = installed(files);
     let library = block_on(SherpaOnnx.open(&files))?;
     block_on(library.load(&build("test", "sherpa-onnx", 0), accelerator, &files))
@@ -96,7 +96,7 @@ fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn Load
 
 #[test]
 fn the_linked_library_opens_with_nothing_installed_and_a_model_missing_a_file_does_not_load() {
-    let code = |result: Result<Box<dyn LoadedModel>>| result.map(|_| ()).unwrap_err().code;
+    let code = |result: Result<Box<dyn BackendModel>>| result.map(|_| ()).unwrap_err().code;
     let cpu = Accelerator::Cpu;
     assert!(block_on(SherpaOnnx.open(&installed(&[]))).is_ok());
     assert_eq!(code(load(cpu, &[("encoder", "e")])), "file-not-installed");

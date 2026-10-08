@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use crate::backend::{Library, LoadedModel};
+use crate::backend::{Library, BackendModel};
 use crate::engine::Handle;
 use crate::{Error, Result};
 
@@ -30,7 +30,7 @@ pub(super) struct Memory {
 struct Resident {
     build: String,
     /// `None` while it is taken out to be used.
-    model: Option<Box<dyn LoadedModel>>,
+    model: Option<Box<dyn BackendModel>>,
     #[allow(
         dead_code,
         reason = "held: it keeps the library open while the model is loaded"
@@ -88,7 +88,7 @@ impl Memory {
         build: &str,
         backend: &str,
         library: Arc<dyn Library>,
-        model: Box<dyn LoadedModel>,
+        model: Box<dyn BackendModel>,
     ) -> Handle {
         let handle = Handle(self.next);
         self.next += 1;
@@ -106,7 +106,7 @@ impl Memory {
 
     /// Takes `handle`'s model out to be used, which counts as using it, until [`Memory::put_back`]: `model-not-loaded`
     /// if it is not in memory (it was unloaded, or never loaded here), `model-busy` if it is out already.
-    pub(super) fn take(&mut self, handle: Handle) -> Result<Box<dyn LoadedModel>> {
+    pub(super) fn take(&mut self, handle: Handle) -> Result<Box<dyn BackendModel>> {
         let now = (self.clock)();
         let resident = self
             .models
@@ -117,7 +117,7 @@ impl Memory {
     }
 
     /// Returns `handle`'s model, taken out by [`Memory::take`]: it was in use until now.
-    pub(super) fn put_back(&mut self, handle: Handle, model: Box<dyn LoadedModel>) {
+    pub(super) fn put_back(&mut self, handle: Handle, model: Box<dyn BackendModel>) {
         let now = (self.clock)();
         if let Some(resident) = self.models.get_mut(&handle) {
             resident.used = now;

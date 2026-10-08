@@ -6,8 +6,8 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use super::Memory;
-use crate::backend::{Library, LoadedModel};
-use crate::catalog::Build;
+use crate::backend::{Library, BackendModel};
+use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{async_trait, Error, Result};
@@ -22,17 +22,17 @@ struct NoLibrary;
 impl Library for NoLibrary {
     async fn load(
         &self,
-        _build: &Build,
+        _build: &BuildEntry,
         _accelerator: Accelerator,
         _files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
+    ) -> Result<Box<dyn BackendModel>> {
         Err(Error::new("not-implemented"))
     }
 }
 
 struct NoModel;
 
-impl LoadedModel for NoModel {
+impl BackendModel for NoModel {
     fn memory_mb(&self) -> Option<u32> {
         None
     }

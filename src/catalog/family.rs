@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::Model;
+use super::ModelEntry;
 
 /// A family of models one loader runs (whisper, kokoro, ...), with its models. It has no display name: the app
 /// translates what it shows from the id.
@@ -14,5 +14,5 @@ pub struct Family {
     /// Where the family comes from: its original publisher's page.
     pub source: String,
     /// Its models.
-    pub models: Vec<Model>,
+    pub models: Vec<ModelEntry>,
 }

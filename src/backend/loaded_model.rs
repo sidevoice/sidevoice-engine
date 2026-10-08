@@ -8,7 +8,7 @@ use crate::Result;
 
 /// A model in memory. Speech to text and text to speech (as the catalogue's `Capability` names them) are what the
 /// loaded model can do, not the backend: one backend can load models of both kinds.
-pub(crate) trait LoadedModel: MaybeSend {
+pub(crate) trait BackendModel: MaybeSend {
     /// The model as speech to text, if it is one.
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         None
