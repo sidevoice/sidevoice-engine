@@ -14,10 +14,16 @@
 //!
 //! # Files
 //!
-//! - Whisper (catalogue): `encoder`, `decoder` and `tokens`.
-//! - Kokoro (catalogue): `model`, `voices`, `tokens`, and `espeak-ng-data`, a directory.
+//! A build's files are sherpa-onnx's config, as data: each file's key in the catalogue is the config field that receives
+//! it, relative to the root of its capability (`config.rs`), and `load` fills that field, on the engine's provider and
+//! threads, with everything else sherpa-onnx's default (the sample rates and feature sizes it reads from the model).
 //!
-//! Which a build is follows from its files ([`Kind::of`]).
+//! - Whisper: `whisper.encoder`, `whisper.decoder` and `tokens`, under `OfflineRecognizerConfig.model_config`.
+//! - Kokoro: `kokoro.model`, `kokoro.voices`, `kokoro.tokens` and `kokoro.data_dir` (espeak-ng's data, a directory),
+//!   under `OfflineTtsConfig.model`.
+//!
+//! The family follows from the keys ([`Kind::of`]), and only what sherpa-onnx's config does not cover is code: Whisper
+//! takes the language per call (`whisper.rs`), Kokoro names its voices (`kokoro.rs`).
 //!
 //! # Accelerators
 //!
@@ -39,6 +45,7 @@ use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
 
+mod config;
 #[cfg(test)]
 mod inference_tests;
 mod kokoro;
@@ -89,13 +96,13 @@ impl Library for Linked {
         let kind = Kind::of(files)?;
         let provider = kind.provider(accelerator)?;
         Ok(match kind {
-            Kind::Whisper => Box::new(Whisper::load(files, provider)?),
-            Kind::Kokoro => Box::new(Kokoro::load(files, provider)?),
+            Kind::Whisper => Box::new(Whisper::load(config::recognizer(files, provider)?)?),
+            Kind::Kokoro => Box::new(Kokoro::load(config::tts(files, provider)?)?),
         })
     }
 }
 
-/// Which of the models this backend runs a build is: it follows from the build's files (see *Files*).
+/// Which family a build is, for what its config does not cover: it follows from its files' keys (see *Files*).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Whisper,
@@ -103,11 +110,12 @@ enum Kind {
 }
 
 impl Kind {
-    /// `encoder` makes it Whisper, `voices` Kokoro; anything else is `unsupported-model`.
+    /// A `whisper.` key makes it Whisper, a `kokoro.` one Kokoro; anything else is `unsupported-model`.
     fn of(files: &Installed) -> Result<Self> {
-        if files.file("encoder").is_some() {
+        let has = |prefix: &str| files.files.keys().any(|key| key.starts_with(prefix));
+        if has("whisper.") {
             Ok(Self::Whisper)
-        } else if files.file("voices").is_some() {
+        } else if has("kokoro.") {
             Ok(Self::Kokoro)
         } else {
             Err(Error::new("unsupported-model"))
@@ -133,13 +141,6 @@ fn provider(accelerator: Accelerator) -> Result<&'static str> {
         Accelerator::CoreMl => Ok("coreml"),
         _ => Err(Error::new("unsupported-accelerator")),
     }
-}
-
-/// Where the host keeps the installed file `name`, for the crate: `file-not-installed`, or `invalid-text` for a path
-/// the C API cannot take.
-fn path(files: &Installed, name: &str) -> Result<String> {
-    let path = files.file(name).ok_or(Error::new("file-not-installed"))?;
-    text(path)
 }
 
 /// `text` as the crate takes it: the C API cannot take a NUL inside it, and the crate panics on one, so it is refused

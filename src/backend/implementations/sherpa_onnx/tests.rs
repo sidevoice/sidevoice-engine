@@ -1,11 +1,15 @@
-//! What sherpa-onnx's backend checks before the library is asked anything: which model a build's files make, which
-//! accelerators it takes, how it fails without its files, and the ONNX metadata reader. Running real models is
+//! What sherpa-onnx's backend checks before the library is asked anything: which family a build's files make, which
+//! config fields its keys fill (and that the bundled catalogue names only those), which accelerators it takes, how it
+//! fails without its files, and the ONNX metadata reader. Running real models is
 //! `inference_tests.rs`.
 
 use std::io::{BufReader, Cursor};
 
-use super::{model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
+use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
+
+use super::{config, model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
 use crate::backend::{Backend, LoadedModel};
+use crate::catalog::{BundledCatalog, Capability, CatalogSource};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::test_support::{build, ready};
@@ -47,12 +51,77 @@ fn kind(files: &[(&str, &str)]) -> Result<Kind> {
 }
 
 #[test]
-fn the_model_follows_from_its_files() {
-    assert_eq!(kind(&[("encoder", "e.onnx")]), Ok(Kind::Whisper));
-    assert_eq!(kind(&[("voices", "v.bin")]), Ok(Kind::Kokoro));
+fn the_family_follows_from_its_files_keys() {
+    assert_eq!(kind(&[("whisper.encoder", "e.onnx")]), Ok(Kind::Whisper));
+    assert_eq!(kind(&[("kokoro.voices", "v.bin")]), Ok(Kind::Kokoro));
     assert_eq!(kind(&[]).unwrap_err().code, "unsupported-model");
     assert_eq!(
-        kind(&[("model", "m.onnx")]).unwrap_err().code,
+        kind(&[("tokens", "t.txt")]).unwrap_err().code,
+        "unsupported-model"
+    );
+}
+
+/// Every file key of every sherpa-onnx build in the bundled catalogue names a field of its capability's config: a key
+/// sherpa-onnx does not take fails here, when the catalogue is checked, and never reaches a load.
+#[test]
+fn every_sherpa_onnx_build_in_the_catalogue_names_config_fields_its_family_takes() {
+    let catalogue = BundledCatalog.load().expect("the bundled catalogue");
+    let mut checked = 0;
+    for model in catalogue.families.iter().flat_map(|family| &family.models) {
+        for build in model.builds.iter().filter(|b| b.backend == "sherpa-onnx") {
+            for file in &build.files {
+                let known = if model.capabilities.contains(&Capability::Stt) {
+                    config::stt_field(&mut OfflineModelConfig::default(), &file.key).is_some()
+                } else {
+                    config::tts_field(&mut OfflineTtsModelConfig::default(), &file.key).is_some()
+                };
+                assert!(known, "{}: no sherpa-onnx field {}", build.id, file.key);
+            }
+            let files = Installed {
+                files: build
+                    .files
+                    .iter()
+                    .map(|file| (file.key.clone(), String::new()))
+                    .collect(),
+            };
+            assert!(Kind::of(&files).is_ok(), "{}: no family", build.id);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no sherpa-onnx build");
+}
+
+#[test]
+fn a_key_names_the_config_field_it_fills_and_an_unknown_one_is_refused() {
+    let files = installed(&[
+        ("whisper.encoder", "e.onnx"),
+        ("whisper.decoder", "d.onnx"),
+        ("tokens", "t.txt"),
+    ]);
+    let stt = config::recognizer(&files, "cpu").expect("a recognizer config");
+    assert_eq!(stt.model_config.whisper.encoder.as_deref(), Some("e.onnx"));
+    assert_eq!(stt.model_config.whisper.decoder.as_deref(), Some("d.onnx"));
+    assert_eq!(stt.model_config.tokens.as_deref(), Some("t.txt"));
+    assert_eq!(stt.model_config.provider.as_deref(), Some("cpu"));
+    // Everything else is sherpa-onnx's default.
+    assert_eq!(stt.decoding_method, None);
+    assert_eq!(stt.feat_config.feature_dim, 80);
+
+    let files = installed(&[("kokoro.model", "m.onnx"), ("kokoro.data_dir", "espeak")]);
+    let tts = config::tts(&files, "cpu").expect("a TTS config");
+    assert_eq!(tts.model.kokoro.model.as_deref(), Some("m.onnx"));
+    assert_eq!(tts.model.kokoro.data_dir.as_deref(), Some("espeak"));
+
+    let code = |result: Result<()>| result.unwrap_err().code;
+    let tokens = installed(&[("tokens", "t.txt")]);
+    assert_eq!(
+        code(config::tts(&tokens, "cpu").map(drop)),
+        "unsupported-model",
+        "an STT path is not a TTS one"
+    );
+    let typo = installed(&[("whisper.encodr", "e.onnx")]);
+    assert_eq!(
+        code(config::recognizer(&typo, "cpu").map(drop)),
         "unsupported-model"
     );
 }
@@ -76,15 +145,16 @@ fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn Load
 #[test]
 fn a_model_missing_a_file_does_not_load_and_kokoro_refuses_core_ml_first() {
     let code = |result: Result<Box<dyn LoadedModel>>| result.map(|_| ()).unwrap_err().code;
+    // sherpa-onnx checks its config before it creates anything, and refuses one whose files are not there.
     assert_eq!(
-        code(load(Accelerator::Cpu, &[("encoder", "e.onnx")])),
-        "file-not-installed"
+        code(load(Accelerator::Cpu, &[("whisper.encoder", "e.onnx")])),
+        "model-load-failed"
     );
     assert_eq!(
-        code(load(Accelerator::Cpu, &[("voices", "v.bin")])),
+        code(load(Accelerator::Cpu, &[("kokoro.voices", "v.bin")])),
         "file-not-installed"
     );
-    let kokoro = [("model", "m.onnx"), ("voices", "v.bin")];
+    let kokoro = [("kokoro.model", "m.onnx"), ("kokoro.voices", "v.bin")];
     assert_eq!(
         code(load(Accelerator::CoreMl, &kokoro)),
         "unsupported-accelerator"

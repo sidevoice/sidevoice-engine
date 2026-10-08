@@ -2,15 +2,13 @@
 //! detects.
 
 use async_trait::async_trait;
-use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, OfflineWhisperModelConfig};
+use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig};
 
-use super::{num_threads, path};
 use crate::backend::loaded_model::SttModel;
 use crate::backend::LoadedModel;
-use crate::install::Installed;
 use crate::{Error, Result};
 
-/// The sample rate [`SttModel::transcribe`] takes, and Whisper's.
+/// The sample rate [`SttModel::transcribe`] takes (the engine resamples to it), and Whisper's.
 const SAMPLE_RATE: i32 = 16_000;
 
 /// A Whisper model in memory: the recognizer for the language it was made for, and the config to make it again.
@@ -20,23 +18,11 @@ pub(super) struct Whisper {
 }
 
 impl Whisper {
-    /// Creates the recognizer from the `encoder`, `decoder` and `tokens` in `files`, on `provider`, detecting the
-    /// language.
-    pub(super) fn load(files: &Installed, provider: &str) -> Result<Self> {
-        let mut config = OfflineRecognizerConfig::default();
-        config.feat_config.sample_rate = SAMPLE_RATE;
-        config.feat_config.feature_dim = 80;
-        config.model_config.whisper = OfflineWhisperModelConfig {
-            encoder: Some(path(files, "encoder")?),
-            decoder: Some(path(files, "decoder")?),
-            language: Some(String::new()),
-            task: Some("transcribe".to_owned()),
-            ..OfflineWhisperModelConfig::default()
-        };
-        config.model_config.tokens = Some(path(files, "tokens")?);
-        config.model_config.provider = Some(provider.to_owned());
-        config.model_config.num_threads = num_threads();
-        config.decoding_method = Some("greedy_search".to_owned());
+    /// Creates the recognizer from `config`, the build's files in it (`config.rs`), to transcribe (not translate) and
+    /// to detect the language until a call names one.
+    pub(super) fn load(mut config: OfflineRecognizerConfig) -> Result<Self> {
+        config.model_config.whisper.task = Some("transcribe".to_owned());
+        config.model_config.whisper.language = Some(String::new());
         let recognizer = create(&config)?;
         Ok(Self { recognizer, config })
     }

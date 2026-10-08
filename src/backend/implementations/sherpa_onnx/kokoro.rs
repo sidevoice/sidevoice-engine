@@ -3,15 +3,11 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use sherpa_onnx::{
-    GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig,
-    OfflineTtsModelConfig,
-};
+use sherpa_onnx::{GenerationConfig, OfflineTts, OfflineTtsConfig};
 
-use super::{model_metadata, num_threads, path, text};
+use super::{model_metadata, text};
 use crate::backend::loaded_model::TtsModel;
 use crate::backend::LoadedModel;
-use crate::install::Installed;
 use crate::{Error, Result};
 
 /// A Kokoro model in memory: the TTS, its sample rate and its voices, by speaker id.
@@ -22,27 +18,15 @@ pub(super) struct Kokoro {
 }
 
 impl Kokoro {
-    /// Creates the TTS from the `model`, `voices`, `tokens` and `espeak-ng-data` (a directory) in `files`, on
-    /// `provider`. The voices are named by the model's `speaker_names` metadata; a model without it has its speaker
-    /// ids, `"0"`, `"1"`, ..., as names.
-    pub(super) fn load(files: &Installed, provider: &str) -> Result<Self> {
-        let model = path(files, "model")?;
-        let config = OfflineTtsConfig {
-            model: OfflineTtsModelConfig {
-                kokoro: OfflineTtsKokoroModelConfig {
-                    model: Some(model.clone()),
-                    voices: Some(path(files, "voices")?),
-                    tokens: Some(path(files, "tokens")?),
-                    data_dir: Some(path(files, "espeak-ng-data")?),
-                    length_scale: 1.0,
-                    ..OfflineTtsKokoroModelConfig::default()
-                },
-                num_threads: num_threads(),
-                provider: Some(provider.to_owned()),
-                ..OfflineTtsModelConfig::default()
-            },
-            ..OfflineTtsConfig::default()
-        };
+    /// Creates the TTS from `config`, the build's files in it (`config.rs`). The voices are named by the model's
+    /// `speaker_names` metadata; a model without it has its speaker ids, `"0"`, `"1"`, ..., as names.
+    pub(super) fn load(config: OfflineTtsConfig) -> Result<Self> {
+        let model = config
+            .model
+            .kokoro
+            .model
+            .clone()
+            .ok_or(Error::new("file-not-installed"))?;
         let tts = OfflineTts::create(&config).ok_or(Error::new("model-load-failed"))?;
         let sample_rate =
             u32::try_from(tts.sample_rate()).map_err(|_| Error::new("model-load-failed"))?;

@@ -75,9 +75,9 @@ pub(crate) struct Installed {
 
 impl Installed {
     /// Where the host keeps the file or directory whose key is `name`, if it is installed.
-    #[cfg_attr(
-        not(sherpa_onnx),
-        allow(dead_code, reason = "only sherpa-onnx loads a model yet")
+    #[allow(
+        dead_code,
+        reason = "sherpa-onnx takes every file by its key, the stubs load nothing: only tests ask for one"
     )]
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)

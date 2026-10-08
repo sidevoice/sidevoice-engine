@@ -101,9 +101,9 @@ let handle = engine.prepare(&selection, &|progress: Progress| report(progress), 
   memory.
 - **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
   `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
-  one archive (Kokoro: `model` and `espeak-ng-data` from one tarball; sherpa-onnx: `library`, the `lib/` directory
-  of its tarball). Each distinct archive is downloaded once, checked against its digest, and only then unpacked,
-  once, into a tree stored under its digest; the archive itself is then removed. Unpacking takes directories and
+  one archive (Kokoro: `kokoro.model` and `kokoro.data_dir`, espeak-ng's data, from one tarball). Each distinct
+  archive is downloaded once, checked against its digest, and only then unpacked, once, into a tree stored under its
+  digest; the archive itself is then removed. Unpacking takes directories and
   regular files only (no links of any kind), refuses any path that leaves the tree, and bounds the total size and
   the number of entries. The tar format is read by the `tar` crate, from storage, on a blocking thread. Archives
   come only with native-only builds (sherpa-onnx's release assets): the web build refuses them before downloading,
@@ -219,8 +219,9 @@ model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and 
 `backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
 `requires` (hard constraints only, and optional: the only `accelerators` it
 can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `source` of the figure, `estimated`,
-`declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by, a `url`,
-its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
+`declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by (for
+sherpa-onnx, the path of the config field that receives it: `whisper.encoder`, `tokens`, `kokoro.data_dir`, ...,
+checked by the backend's tests), a `url`, its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
 keys that name parts of one archive repeat its url, digest and size (it is downloaded and unpacked once). A url is
 pinned to a revision (a Hugging Face commit); a GitHub release asset cannot be, so it is marked `mutable` and only its
 digest pins it. A model lists every build that exists for it, for every backend `backends.json` declares,

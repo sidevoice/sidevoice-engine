@@ -194,7 +194,7 @@ fn accelerator(_files: &Installed) -> Accelerator {
 }
 
 fn load(files: &Installed) -> Box<dyn LoadedModel> {
-    let model = if files.file("encoder").is_some() {
+    let model = if files.file("whisper.encoder").is_some() {
         "Whisper"
     } else {
         "Kokoro"

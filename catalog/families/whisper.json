@@ -103,13 +103,13 @@
           },
           "files": [
             {
-              "key": "encoder",
+              "key": "whisper.encoder",
               "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-encoder.int8.onnx",
               "sha256": "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434",
               "bytes": 12937772
             },
             {
-              "key": "decoder",
+              "key": "whisper.decoder",
               "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-decoder.int8.onnx",
               "sha256": "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925",
               "bytes": 89855401
@@ -358,13 +358,13 @@
           },
           "files": [
             {
-              "key": "encoder",
+              "key": "whisper.encoder",
               "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/bb53ee204431c90d314c1cc08d28d23e5b7927cc/base-encoder.int8.onnx",
               "sha256": "0b8fb1304b6109976038efff5ace81720e00386f3ff6b54ee8c75291ca0a1e11",
               "bytes": 29120534
             },
             {
-              "key": "decoder",
+              "key": "whisper.decoder",
               "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/bb53ee204431c90d314c1cc08d28d23e5b7927cc/base-decoder.int8.onnx",
               "sha256": "9759d217388a01b3a4c7c15533201067b48ae819c4daafc8624e64b9409dc02d",
               "bytes": 130672026
@@ -613,13 +613,13 @@
           },
           "files": [
             {
-              "key": "encoder",
+              "key": "whisper.encoder",
               "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/8f3c18b358db4d1f2fc1eae49d75cd20989e4309/small-encoder.int8.onnx",
               "sha256": "4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9",
               "bytes": 112442483
             },
             {
-              "key": "decoder",
+              "key": "whisper.decoder",
               "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/8f3c18b358db4d1f2fc1eae49d75cd20989e4309/small-decoder.int8.onnx",
               "sha256": "acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee",
               "bytes": 262226114

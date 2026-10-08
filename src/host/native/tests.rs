@@ -244,9 +244,9 @@ fn it_installs_a_real_archive_and_hands_over_its_members_files_and_directories_a
     let host = NativeHost::new(&scratch.0).expect("host");
     let installed =
         block_on(Installer.install(&artifacts, &host, &|_| {}, &Cancel::new())).expect("installed");
-    assert!(Path::new(installed.file("model").expect("by key")).is_file());
-    assert!(Path::new(installed.file("tokens").expect("by key")).is_file());
-    assert!(Path::new(installed.file("espeak-ng-data").expect("by key")).is_dir());
+    assert!(Path::new(installed.file("kokoro.model").expect("by key")).is_file());
+    assert!(Path::new(installed.file("kokoro.tokens").expect("by key")).is_file());
+    assert!(Path::new(installed.file("kokoro.data_dir").expect("by key")).is_dir());
     let archive = scratch.0.join("files").join(&artifacts[0].sha256);
     assert!(!archive.exists(), "the archive is removed once unpacked");
     assert_eq!(entries(&scratch.0.join("partial")), 0);
