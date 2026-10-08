@@ -45,6 +45,12 @@
             "mb": 260,
             "source": "estimated",
             "basis": "weights size + 30%"
+          },
+          "call_params": {
+            "language": [
+              "canary.src_lang",
+              "canary.tgt_lang"
+            ]
           }
         }
       ]

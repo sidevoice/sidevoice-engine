@@ -26,8 +26,9 @@
 //! is alike (`recognizer.rs`), and so is every text-to-speech model (`synthesizer.rs`), told a call's language as an
 //! espeak-ng voice where its config has espeak-ng's data.
 //!
-//! A `language` passed to `transcribe` is not passed on to sherpa-onnx yet: Whisper detects the language of each turn.
-//! How a call's arguments reach a model's config is to be data, per build (sidevoice-engine#46).
+//! A `language` passed to `transcribe` reaches the model where its build's `call_params` put it in the config (Whisper's
+//! `whisper.language`, Canary's `canary.src_lang` and `canary.tgt_lang`; sidevoice-engine#46); without one, Whisper
+//! detects the language of each turn.
 //!
 //! # Accelerators
 //!
@@ -93,14 +94,17 @@ struct Linked;
 impl Library for Linked {
     async fn load(
         &self,
-        _build: &BuildEntry,
+        build: &BuildEntry,
         accelerator: Accelerator,
         files: &Installed,
     ) -> Result<Box<dyn BackendModel>> {
         let kind = Kind::of(files)?;
         let provider = provider(accelerator)?;
         Ok(match kind {
-            Kind::Stt => Box::new(Recognizer::load(&config::recognizer(files, provider)?)?),
+            Kind::Stt => Box::new(Recognizer::load(
+                config::recognizer(files, provider)?,
+                &build.call_params,
+            )?),
             Kind::Tts => Box::new(Synthesizer::load(&config::tts(files, provider)?, files)?),
         })
     }

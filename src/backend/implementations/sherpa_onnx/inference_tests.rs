@@ -58,13 +58,17 @@ struct NamedClip {
     license: String,
 }
 
-/// A build of the bundled catalogue, installed as an app installs it, and the clips it must transcribe; `note` says
-/// why a language it has is left out.
+/// A build of the bundled catalogue, installed as an app installs it, and the clips it must transcribe, each told its
+/// language (which reaches the model where the build's `call_params` map it); `detect`, the clips it must also
+/// transcribe told none, after the others (so the model switches recognizers); `note` says why a language it has is
+/// left out.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Transcribe {
     build: String,
     clips: Vec<String>,
+    #[serde(default)]
+    detect: Vec<String>,
     #[serde(default)]
     note: Option<String>,
 }
@@ -286,7 +290,7 @@ fn whisper_transcribes_a_clip() {
     let text = ready(stt.transcribe(&prepared.clip, Some("en"))).expect("a transcript");
     println!("Whisper heard: {text:?}");
     assert_eq!(normalised(&text), prepared.clip_text);
-    // The language is not passed on yet (sidevoice-engine#46): with it, without it, the same text.
+    // This build maps no `call_params`, so the language does not reach the model: with it, without it, the same text.
     let detected = ready(stt.transcribe(&prepared.clip, None)).expect("a transcript");
     let regional = ready(stt.transcribe(&prepared.clip, Some("en-GB"))).expect("a transcript");
     assert_eq!(normalised(&detected), prepared.clip_text);
@@ -426,23 +430,30 @@ fn catalogue_builds_transcribe_the_clips_they_name() {
             .unwrap_or_else(|error| panic!("{}: not loaded: {}", build.id, error.code));
         let loading = started.elapsed().as_secs_f32();
         let stt = model.as_stt().expect("speech to text");
-        for language in &entry.clips {
+        let told = entry.clips.iter().map(|clip| (clip, true));
+        for (language, tell) in told.chain(entry.detect.iter().map(|clip| (clip, false))) {
             let clip = &fixtures.clips[language];
             let audio = wav_16k_mono(
                 &fs::read(downloaded(&cache, &clip.url, &clip.sha256)).expect("the clip"),
             );
             let started = std::time::Instant::now();
-            let heard = ready(stt.transcribe(&audio, Some(language))).map_err(|error| error.code);
+            let told = tell.then_some(language.as_str());
+            let heard = ready(stt.transcribe(&audio, told)).map_err(|error| error.code);
             let seconds = started.elapsed().as_secs_f32();
             let heard = heard.unwrap_or_else(|code| format!("<{code}>"));
             let rate = wer(&clip.text, &heard);
+            let clip_name = if tell {
+                language.clone()
+            } else {
+                format!("{language}, detected")
+            };
             println!(
-                "| {} | {language} | {rate:.2} | {heard} | {loading:.1} | {seconds:.1} |",
+                "| {} | {clip_name} | {rate:.2} | {heard} | {loading:.1} | {seconds:.1} |",
                 build.id
             );
             if rate > fixtures.max_wer {
                 failed.push(format!(
-                    "{} {language}: WER {rate:.2} > {}",
+                    "{} {clip_name}: WER {rate:.2} > {}",
                     build.id, fixtures.max_wer
                 ));
             }

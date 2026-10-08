@@ -188,3 +188,50 @@ fn keys_inside_one_archive_repeat_what_it_is() {
     };
     assert_eq!(found, [inconsistent("tokens"), inconsistent("data")]);
 }
+
+#[test]
+fn a_build_maps_only_arguments_a_call_has_each_to_some_path() {
+    let mut fine = build("m/fine", "sherpa-onnx", 1);
+    fine.call_params
+        .insert("language".to_owned(), vec!["whisper.language".to_owned()]);
+    let mut unknown = build("m/unknown", "sherpa-onnx", 1);
+    unknown
+        .call_params
+        .insert("lang".to_owned(), vec!["whisper.language".to_owned()]);
+    let mut nowhere = build("m/nowhere", "sherpa-onnx", 1);
+    nowhere
+        .call_params
+        .insert("language".to_owned(), Vec::new());
+    let found = problems(vec![family(
+        "f",
+        vec![model("m", Capability::Stt, vec![fine, unknown, nowhere])],
+    )]);
+    assert_eq!(
+        found,
+        [
+            Problem::UnknownCallArgument {
+                build: "m/unknown".to_owned(),
+                argument: "lang".to_owned()
+            },
+            Problem::UnknownCallArgument {
+                build: "m/nowhere".to_owned(),
+                argument: "language".to_owned()
+            },
+        ]
+    );
+}
+
+#[test]
+fn call_params_take_one_path_or_a_list() {
+    let build: crate::BuildEntry = serde_json::from_str(
+        r#"{"id": "m/b", "backend": "sherpa-onnx", "precision": "int8",
+            "memory": {"mb": 1, "source": "estimated", "basis": "a test"}, "files": [],
+            "call_params": {"language": ["canary.src_lang", "canary.tgt_lang"], "other": "x.y"}}"#,
+    )
+    .expect("a build");
+    assert_eq!(
+        build.call_params["language"],
+        ["canary.src_lang", "canary.tgt_lang"]
+    );
+    assert_eq!(build.call_params["other"], ["x.y"]);
+}

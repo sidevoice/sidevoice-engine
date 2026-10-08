@@ -220,7 +220,10 @@
               "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
               "bytes": 816730
             }
-          ]
+          ],
+          "call_params": {
+            "language": "whisper.language"
+          }
         },
         {
           "id": "whisper-tiny/whisper-cpp-q5_1",
@@ -578,7 +581,10 @@
               "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
               "bytes": 816730
             }
-          ]
+          ],
+          "call_params": {
+            "language": "whisper.language"
+          }
         },
         {
           "id": "whisper-base/whisper-cpp-q5_1",
@@ -936,7 +942,10 @@
               "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
               "bytes": 816730
             }
-          ]
+          ],
+          "call_params": {
+            "language": "whisper.language"
+          }
         },
         {
           "id": "whisper-small/whisper-cpp-q5_1",
@@ -1216,6 +1225,9 @@
             "mb": 2210,
             "source": "estimated",
             "basis": "weights size + 30%"
+          },
+          "call_params": {
+            "language": "whisper.language"
           }
         },
         {
@@ -1496,6 +1508,9 @@
             "mb": 1290,
             "source": "estimated",
             "basis": "weights size + 30%"
+          },
+          "call_params": {
+            "language": "whisper.language"
           }
         },
         {

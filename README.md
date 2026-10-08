@@ -254,7 +254,12 @@ can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `s
 `declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by (for
 sherpa-onnx, the path of the config field that receives it: `whisper.encoder`, `tokens`, `kokoro.data_dir`, ...,
 checked by the backend's tests), a `url`, its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
-keys that name parts of one archive repeat its url, digest and size (it is downloaded and unpacked once). A url is
+keys that name parts of one archive repeat its url, digest and size (it is downloaded and unpacked once). A
+sherpa-onnx build may also have `call_params`: where each argument of a call goes in a config sherpa-onnx fixes when
+the model is created, as the paths of the fields that take it (`{"language": "whisper.language"}`; Canary's
+`["canary.src_lang", "canary.tgt_lang"]`). Its keys are checked against the calls' arguments when the catalogue is,
+and its paths against the generated fields by the backend's tests; when a call's value changes, the model's
+recognizer is made again, and the last two are kept. A url is
 pinned to a revision (a Hugging Face commit); a GitHub release asset cannot be, so it is marked `mutable` and only its
 digest pins it. A model lists every build that exists for it, for every backend `backends.json` declares,
 whether or not this build of the engine implements that backend (the resolver rejects those with
