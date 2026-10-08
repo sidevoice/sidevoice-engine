@@ -218,25 +218,30 @@ fn its_directory_reads_a_stored_file_back() {
 }
 
 #[test]
-#[ignore = "downloads sherpa-onnx's library for this platform (about 10 MB): CI runs it"]
-fn it_installs_a_backend_library_archive_and_hands_over_its_lib_directory() {
-    use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
+#[ignore = "downloads a Piper voice's archive from the bundled catalogue (about 13 MB): CI runs it"]
+fn it_installs_a_real_archive_and_hands_over_its_members_files_and_directories_alike() {
+    use crate::catalog::{CatalogSource, ModelFile};
 
-    let scratch = Scratch::new();
-    let host = NativeHost::new(&scratch.0).expect("host");
-    let platform = crate::host::Platform::of(&host.capabilities()).expect("a known platform");
-    let artifacts =
-        crate::backend::runtime_files("sherpa-onnx", platform).expect("sherpa-onnx runs here");
+    let catalogue = crate::BundledCatalog.load().expect("the bundled catalogue");
+    let build = catalogue
+        .families
+        .iter()
+        .flat_map(|family| &family.models)
+        .flat_map(|model| &model.builds)
+        .find(|build| build.id == "piper-es_ES-carlfm-x_low/sherpa-onnx-int8")
+        .expect("a small archived build");
+    let artifacts: Vec<_> = build.files.iter().map(ModelFile::artifact).collect();
     assert!(artifacts
         .iter()
         .all(|artifact| artifact.archive_path.is_some()));
 
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
     let installed =
         block_on(Installer.install(&artifacts, &host, &|_| {}, &Cancel::new())).expect("installed");
-    let lib = Path::new(installed.file("library").expect("by key"));
-    assert!(lib.is_dir(), "{}", lib.display());
-    let c_api = lib.join(format!("{DLL_PREFIX}sherpa-onnx-c-api{DLL_SUFFIX}"));
-    assert!(c_api.is_file(), "{}", c_api.display());
+    assert!(Path::new(installed.file("model").expect("by key")).is_file());
+    assert!(Path::new(installed.file("tokens").expect("by key")).is_file());
+    assert!(Path::new(installed.file("espeak-ng-data").expect("by key")).is_dir());
     let archive = scratch.0.join("files").join(&artifacts[0].sha256);
     assert!(!archive.exists(), "the archive is removed once unpacked");
     assert_eq!(entries(&scratch.0.join("partial")), 0);

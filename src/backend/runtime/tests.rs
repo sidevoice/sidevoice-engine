@@ -18,17 +18,30 @@ fn a_backend_has_no_runtime_where_backends_json_says_null() {
 }
 
 #[test]
-fn runtime_files_are_artifacts_keyed_by_their_name_at_the_backends_version() {
-    let entry = entries()
+fn sherpa_onnx_is_linked_so_it_downloads_nothing_and_its_version_is_the_crates() {
+    for platform in [
+        Platform::MacosAarch64,
+        Platform::MacosX86_64,
+        Platform::LinuxX86_64,
+        Platform::LinuxAarch64,
+        Platform::WindowsX86_64,
+    ] {
+        assert_eq!(
+            runtime_files("sherpa-onnx", platform),
+            Some(Vec::new()),
+            "{platform:?}"
+        );
+    }
+    let version = &entries()
         .iter()
         .find(|entry| entry.id == "sherpa-onnx")
-        .expect("sherpa-onnx");
-    let files = runtime_files("sherpa-onnx", Platform::LinuxX86_64).expect("linux-x86_64");
-    let keys: Vec<_> = files.iter().map(|artifact| artifact.key.as_str()).collect();
-    assert_eq!(keys, ["library"]);
-    let url = &files[0].url;
-    assert!(!url.contains("{version}"), "{url}");
-    assert!(url.contains(&format!("v{}", entry.version)), "{url}");
+        .expect("sherpa-onnx")
+        .version;
+    let pinned = format!("sherpa-onnx = {{ version = \"={version}\"");
+    assert!(
+        include_str!("../../../Cargo.toml").contains(&pinned),
+        "backends.json says {version}; Cargo.toml must pin the crate to it"
+    );
 }
 
 #[test]
@@ -37,37 +50,4 @@ fn a_backend_is_known_if_backends_json_has_it_whether_or_not_it_runs_anywhere() 
     // Its entry is all `null`: no build of the engine runs it yet, but the catalogue may name it.
     assert!(super::is_known("whisper-cpp"));
     assert!(!super::is_known("no-such-backend"));
-}
-
-#[test]
-fn the_sherpa_onnx_library_is_the_lib_directory_of_its_archive_at_the_backends_version() {
-    let version = &entries()
-        .iter()
-        .find(|entry| entry.id == "sherpa-onnx")
-        .expect("sherpa-onnx")
-        .version;
-    for platform in [
-        Platform::MacosAarch64,
-        Platform::MacosX86_64,
-        Platform::LinuxX86_64,
-        Platform::LinuxAarch64,
-        Platform::WindowsX86_64,
-    ] {
-        let files = runtime_files("sherpa-onnx", platform).expect("native");
-        let path = files[0]
-            .archive_path
-            .as_deref()
-            .expect("a member of the archive");
-        assert!(
-            path.starts_with(&format!("sherpa-onnx-v{version}-")),
-            "{path}"
-        );
-        assert!(path.ends_with("/lib"), "{path}");
-        let archive = files[0].url.rsplit('/').next().expect("a file name");
-        assert_eq!(
-            archive.strip_suffix(".tar.bz2"),
-            path.strip_suffix("/lib"),
-            "{platform:?}"
-        );
-    }
 }

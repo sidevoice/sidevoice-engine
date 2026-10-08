@@ -42,7 +42,9 @@ files. The engine ships the host of each kind of build, chosen like the backends
 every native build, the browser's to come in the web build (#8). The `Host` interface stays open, so tests and other
 platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
-when it runs. Engine libraries and models are downloaded when they are needed, never linked into the app.
+when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
+now, the sherpa-onnx backend is the exception: native builds link it statically, through the official crate, behind
+the default `sherpa-onnx` feature (sidevoice-engine#33 is loading it on demand again).
 
 ## What a host must report
 
@@ -114,8 +116,9 @@ let handle = engine.prepare(&selection, &|progress: Progress| report(progress), 
 ## Status
 
 The catalogue, the installer, the lifecycle and the native host work, and so does the first real backend:
-sherpa-onnx, natively (Whisper speech to text, Kokoro text to speech). MLX and transformers.js are stubs, and the
-browser's host is not bridged yet.
+sherpa-onnx, natively (speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and
+Supertonic), linked through the official crate. MLX and transformers.js are stubs, and the browser's host is not
+bridged yet.
 
 ## Layout
 
@@ -151,16 +154,20 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 ## Build and test
 
 You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C compiler for the native build (rustls'
-crypto, `ring`). The native tests build and check this platform's backends; the one that downloads a real file
-through `NativeHost` is ignored unless asked for, and CI asks:
+crypto, `ring`). A native build links sherpa-onnx statically: the `sherpa-onnx-sys` build script downloads its
+prebuilt static libraries for the target from sherpa-onnx's GitHub release (about 22 MB on Linux and macOS, kept in
+`target/sherpa-onnx-prebuilt/`; `SHERPA_ONNX_ARCHIVE_DIR` points it at archives you already have), and they need the
+C++ standard library the platform's C++ toolchain provides (libstdc++ on Linux). `--no-default-features` leaves the
+backend out. The native tests build and check this platform's backends; the one that downloads a real file through
+`NativeHost` is ignored unless asked for, and CI asks:
 
 ```sh
 cargo test --locked
 cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests   # with the network, as CI
 ```
 
-The sherpa-onnx backend's tests that run real models install them first, through the installer and `NativeHost`
-(about 250 MB, kept by digest in `target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips
+The sherpa-onnx backend's tests that run real models install the models first, through the installer and `NativeHost`
+(about 150 MB, kept by digest in `target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips
 them; CI runs them on each native platform:
 
 ```sh
