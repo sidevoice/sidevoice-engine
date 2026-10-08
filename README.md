@@ -69,9 +69,9 @@ anything, gathered once when the host is built:
   missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
-A catalogue build may also list the accelerators it accepts; none means any its backend runs on. A build is offered
-on the first accelerator in its backend's order of preference that the host reports, the probe confirms and the build
-accepts.
+A build is offered on the first accelerator in its backend's order of preference that the host reports, the probe
+confirms and the build allows: which accelerators a build runs on is its backend's to know, unless the build cannot
+take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
 
 ## Installing, and what stays in memory
 
@@ -82,7 +82,7 @@ archives are unpacked on Tokio's blocking threads.
 ```rust
 let host = NativeHost::new(app_data_dir.join("engine"))?;
 let engine = Engine::new(Box::new(host), sources)?;
-let selection = engine.select(Task::Stt, &Preferences::default()).expect("something fits");
+let selection = engine.select(Capability::Stt, &Preferences::default()).expect("something fits");
 let cancel = Cancel::new(); // `cancel.cancel()` from anywhere stops the install
 let handle = engine.prepare(&selection, &|progress: Progress| report(progress), &cancel).await?;
 ```
@@ -129,8 +129,8 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   capabilities/accelerator.rs), platform (which platform that is), storage (Storage, StorageWriter),
                   fetcher (Fetcher, Download), native (NativeHost, native builds only: native/directory.rs, its
                   storage, and native/http.rs, its downloads)
-  catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, a model, with model/build.rs and
-                  model/task.rs
+  catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
+                  and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements; backend/: runtime (its files:
                   the lookup, and runtime/schema.rs, the shape of backends.json), requirement, registry,
                   library (what open returns, which loads models), loaded_model (what load returns: SttModel,
@@ -145,6 +145,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   reports), storage (WebStorage), fetcher (WebFetcher)
   maybe_send.rs   Send/Sync in native builds only
 backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
+catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own
@@ -183,6 +184,34 @@ platform fails the build's tests. Digests are never typed by hand: after changin
 cargo xtask pin-backends           # download every file at its pinned version and write its sha256
 cargo xtask pin-backends --check   # what CI runs when backends.json changes
 ```
+
+The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
+(`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
+model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and `license`; a build, its `id`, the
+`backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
+`requires` (hard constraints only, and optional: the only `accelerators` it
+can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `source` of the figure, `estimated`,
+`declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by, a `url`,
+its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
+keys that name parts of one archive repeat its url, digest and size (it is downloaded and unpacked once). A url is
+pinned to a revision (a Hugging Face commit); a GitHub release asset cannot be, so it is marked `mutable` and only its
+digest pins it. A model lists every build that exists for it, for every backend `backends.json` declares,
+whether or not this build of the engine implements that backend (the resolver rejects those with
+`backend-not-in-this-build`). Each build lists exactly the files its format's reference implementation loads, no
+more and no less (transformers.js for the web ONNX builds, mlx-audio for MLX, whisper.cpp for ggml, sherpa-onnx for
+its exports), so a backend that lands later needs no catalogue change; a file that lives outside the model's
+repository is pinned from its real source. Builds carry no order: ranking them is the resolver's. Reading is strict
+(an unknown or a missing key fails the tests) and the merge of every source is checked by `Catalog::check`. Sizes,
+digests and pinned revisions come from the Hugging Face and GitHub APIs, never by hand: a new file is written with its
+`key` and a `url` (on Hugging Face at any revision, `…/resolve/main/…`), and then
+
+```sh
+cargo xtask pin-catalog            # pin every url, write sizes, digests and estimated memory
+cargo xtask pin-catalog --check    # what CI runs when the catalogue changes
+```
+
+Estimated memory is the weights plus 30% (an archive counts once, at its size); a `declared` or `measured` figure is
+never overwritten.
 
 ## How to add a backend
 
@@ -269,7 +298,8 @@ nothing here touches the public API. As an example, whisper.cpp:
    `version`, and all six platforms: `null` where it does not run, `[]` where it runs and downloads nothing, or the
    files, each with the `name` that `open` finds it by in `files`, a `url` that may say `{version}`, a `sha256`
    that `cargo xtask pin-backends` writes, and, for a member of an archive, its optional `archive_path` inside it
-   (which may say `{version}` too).
+   (which may say `{version}` too). A backend the catalogue names before its code exists (whisper.cpp, today)
+   already has an entry, all `null`, which is filled in then.
 
    ```json
    {

@@ -37,3 +37,8 @@ pub(crate) fn runtime_files(backend: &str, platform: Platform) -> Option<Vec<Art
     };
     Some(files.iter().map(artifact).collect())
 }
+
+/// Whether `backend` has an entry in `backends.json`: whether any build of the engine has it, compiled here or not.
+pub(crate) fn is_known(backend: &str) -> bool {
+    entries().iter().any(|entry| entry.id == backend)
+}

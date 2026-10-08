@@ -12,8 +12,9 @@ use crate::host::Platform;
 use crate::install::Installed;
 use crate::test_support::{artifact, block_on, FakeCatalog, FakeHost, MemoryHost};
 use crate::{
-    async_trait, Accelerator, Artifact, Build, BuildState, Cancel, Capabilities, Engine, Error,
-    Fetcher, Host, Model, Offer, Reason, Rejection, Result, Runs, Selection, Storage, Task,
+    async_trait, Accelerator, Artifact, Build, BuildState, BundledCatalog, Cancel, Capabilities,
+    Capability, Engine, Error, Fetcher, Host, ModelFile, Offer, Reason, Rejection, Result, Runs,
+    Selection, Storage,
 };
 
 #[cfg(web)]
@@ -22,7 +23,7 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 #[test]
 fn an_engine_with_a_fake_host_offers_what_fits_and_says_why_the_rest_does_not() {
     let engine = Engine::new(Box::new(FakeHost), vec![Box::new(FakeCatalog)]).expect("engine");
-    let offers = engine.offers(Task::Stt);
+    let offers = engine.offers(Capability::Stt);
 
     let offered: Vec<_> = offers
         .iter()
@@ -56,7 +57,7 @@ fn an_engine_with_a_fake_host_offers_what_fits_and_says_why_the_rest_does_not() 
     assert!(rejected.contains(&("whisper-large-onnx", large_rejection)));
     assert!(offers
         .iter()
-        .all(|offer| !matches!(offer, Offer::Offered { model, .. } if model.task != Task::Stt)));
+        .all(|offer| !matches!(offer, Offer::Offered { model, .. } if !model.capabilities.contains(&Capability::Stt))));
 }
 
 #[cfg(native)]
@@ -68,7 +69,7 @@ fn a_native_engine_and_its_futures_can_cross_threads() {
     let engine = Engine::new(Box::new(FakeHost), vec![Box::new(FakeCatalog)]).expect("engine");
     shared(&engine);
     let selection = engine
-        .select(Task::Stt, &crate::Preferences::default())
+        .select(Capability::Stt, &crate::Preferences::default())
         .expect("a selection");
     sent(engine.prepare(&selection, &|_| {}, &Cancel::new()));
 }
@@ -97,7 +98,7 @@ impl Host for Elsewhere {
 #[test]
 fn a_platform_with_no_runtime_rejects_every_build_of_this_engine_in_the_funnel() {
     let engine = Engine::new(Box::new(Elsewhere), vec![Box::new(FakeCatalog)]).expect("engine");
-    let offers = engine.offers(Task::Stt);
+    let offers = engine.offers(Capability::Stt);
     assert!(!offers.is_empty());
     for offer in offers {
         let Offer::Rejected { build, why, .. } = offer else {
@@ -115,6 +116,48 @@ fn a_platform_with_no_runtime_rejects_every_build_of_this_engine_in_the_funnel()
             assert_eq!(why, Rejection::BackendNotInThisBuild, "{}", build.id);
         }
     }
+}
+
+/// What each CI platform offers with the catalogue this repository ships: every bundled model of a capability, each
+/// on a backend this platform compiles. Which of a model's builds wins is the ranking's (sidevoice-engine#4).
+#[test]
+fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
+    let engine = Engine::new(Box::new(FakeHost), vec![Box::new(BundledCatalog)]).expect("engine");
+    let offered = |capability| {
+        let mut offered: Vec<_> = engine
+            .offers(capability)
+            .into_iter()
+            .filter_map(|offer| match offer {
+                Offer::Offered { model, build, .. } => Some((model.id, build.backend)),
+                Offer::Rejected { .. } => None,
+            })
+            .collect();
+        offered.sort();
+        offered
+    };
+    let backends: &[&str] = if cfg!(target_arch = "wasm32") {
+        &["transformers-js"]
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        &["mlx", "sherpa-onnx"]
+    } else {
+        &["sherpa-onnx"]
+    };
+
+    let stt = offered(Capability::Stt);
+    let models: Vec<_> = stt.iter().map(|(model, _)| model.as_str()).collect();
+    assert_eq!(models, ["whisper-base", "whisper-small", "whisper-tiny"]);
+    for (model, backend) in &stt {
+        assert!(backends.contains(&backend.as_str()), "{model} on {backend}");
+    }
+
+    let tts = offered(Capability::Tts);
+    let backend = if cfg!(target_arch = "wasm32") {
+        "transformers-js"
+    } else {
+        "sherpa-onnx"
+    };
+    let kokoro = ("kokoro-82m-v0.19".to_owned(), backend.to_owned());
+    assert_eq!(tts, [kokoro]);
 }
 
 const MODEL_A: &[u8] = b"model a";
@@ -253,25 +296,17 @@ impl Fixture {
 
 /// Build `id` of the fake backend, whose model file is `https://models/<id>` and should be `bytes`.
 fn selection(id: &str, bytes: &[u8]) -> Selection {
-    let build = Build {
-        id: id.to_owned(),
-        backend: "fake".to_owned(),
-        format: "onnx".to_owned(),
-        memory_mb: 0,
-        accelerators: Vec::new(),
-        files: vec![artifact(
-            "model.onnx",
-            &format!("https://models/{id}"),
-            bytes,
-        )],
-    };
+    let mut build = crate::test_support::build(id, "fake", 0);
+    build.files = vec![ModelFile {
+        key: "model.onnx".to_owned(),
+        url: format!("https://models/{id}"),
+        sha256: crate::test_support::sha256(bytes),
+        bytes: bytes.len() as u64,
+        archive_path: None,
+        mutable: false,
+    }];
     Selection {
-        model: Model {
-            id: id.to_owned(),
-            family: "fake".to_owned(),
-            task: Task::Stt,
-            builds: vec![build.clone()],
-        },
+        model: crate::test_support::model(id, Capability::Stt, vec![build.clone()]),
         build,
         accelerator: Accelerator::Cpu,
     }

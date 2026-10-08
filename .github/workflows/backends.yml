@@ -5,7 +5,6 @@ name: backends
 # Separate from ci.yml so that other pull requests download nothing.
 on:
   pull_request:
-    branches: [main]
     paths:
       - backends.json
       - xtask/**

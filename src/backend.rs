@@ -25,10 +25,9 @@
 //! A `const` [`BackendSpec`], returned by reference. It must be plain data: no I/O, no allocation, the same answer
 //! every time, callable before anything is installed. Its `id` is stable (catalogue builds and `backends.json` name
 //! the backend by it) and its `accelerators` and `requirements` hold whatever the model: a build's own needs, such as
-//! its memory or the accelerators it accepts, are the catalogue's. A requirement fails with a stable
-//! [`Reason`](crate::Reason) code and its numbers, never with a sentence (AGENTS.md); the engine ships
-//! [`MinMemoryMb`] and [`MinCores`], and a backend that needs another check writes its own [`Requirement`] next to
-//! its file without changing the contract.
+//! its memory, are the catalogue's. A requirement fails with a stable [`Reason`](crate::Reason) code and its numbers,
+//! never with a sentence (AGENTS.md); the engine ships [`MinMemoryMb`] and [`MinCores`], and a backend that needs
+//! another check writes its own [`Requirement`] next to its file without changing the contract.
 //!
 //! ## `probe`: which accelerators work here
 //!
@@ -110,7 +109,7 @@ pub(crate) use registry::{built_in, find, BackendFactory};
 )]
 pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
-pub(crate) use runtime::runtime_files;
+pub(crate) use runtime::{is_known, runtime_files};
 
 /// A backend's stable id, as catalogue builds name it ([`Build::backend`](crate::Build::backend)): "sherpa-onnx",
 /// "whisper-cpp", "mlx", ...

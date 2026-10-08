@@ -63,3 +63,11 @@ fn the_sherpa_onnx_library_is_the_lib_directory_of_its_archive_at_the_backends_v
         );
     }
 }
+
+#[test]
+fn a_backend_is_known_if_backends_json_has_it_whether_or_not_it_runs_anywhere() {
+    assert!(super::is_known("sherpa-onnx"));
+    // Its entry is all `null`: no build of the engine runs it yet, but the catalogue may name it.
+    assert!(super::is_known("whisper-cpp"));
+    assert!(!super::is_known("no-such-backend"));
+}

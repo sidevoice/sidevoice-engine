@@ -1,6 +1,6 @@
-//! The engine of one place: its host, its catalogue and the backends compiled into it, and the steps from a task to
-//! a loaded model: offers (resolver.rs), the choice per stage, installing (install.rs), loading, and unloading what
-//! goes unused.
+//! The engine of one place: its host, its catalogue and the backends compiled into it, and the steps from a capability
+//! to a loaded model: offers (resolver.rs), the choice per stage, installing (install.rs), loading, and unloading
+//! what goes unused.
 //!
 //! Inside: `selection` (what the person asks for and what is chosen), `error` (why an engine cannot be built),
 //! `lifecycle` (a build's state) and `memory` (what is loaded, and when it is unloaded).
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use crate::backend::{self, Backend, BackendId};
-use crate::catalog::{Build, Catalog, CatalogSource, Task};
+use crate::catalog::{Build, Capability, Catalog, CatalogSource, ModelFile};
 use crate::host::{Host, Platform};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
 use crate::resolver::{Offer, Resolver};
@@ -70,7 +70,9 @@ impl fmt::Debug for Engine {
 pub struct Handle(usize);
 
 impl Engine {
-    /// Builds nothing heavy: the backends are empty objects until [`Engine::prepare`].
+    /// Builds nothing heavy: the backends are empty objects until [`Engine::prepare`]. The catalogue is the merge of
+    /// `sources`, in order; the one this repository ships, [`BundledCatalog`](crate::BundledCatalog), is one of them
+    /// only when passed.
     ///
     /// # Errors
     ///
@@ -123,40 +125,43 @@ impl Engine {
             .collect()
     }
 
-    /// Every model of `task` that can run here with its best build, and every build that cannot, with why.
+    /// Every model that can do `capability` and runs here, with a build that fits, and every build that cannot, with
+    /// why.
     #[must_use]
-    pub fn offers(&self, task: Task) -> Vec<Offer> {
+    pub fn offers(&self, capability: Capability) -> Vec<Offer> {
         self.resolver.offers(
             &self.catalog,
             &self.backends,
             &self.host.capabilities(),
-            task,
+            capability,
         )
     }
 
-    /// The choice for `task`: the best offer, or the model asked for. Backend and accelerator preferences are not
+    /// The choice for `capability`: the best offer, or the model asked for. Backend and accelerator preferences are not
     /// applied yet.
     #[must_use]
-    pub fn select(&self, task: Task, preferences: &Preferences) -> Option<Selection> {
-        self.offers(task).into_iter().find_map(|offer| match offer {
-            Offer::Offered {
-                model,
-                build,
-                accelerator,
-                ..
-            } if preferences
-                .model
-                .as_ref()
-                .is_none_or(|wanted| *wanted == model.id) =>
-            {
-                Some(Selection {
+    pub fn select(&self, capability: Capability, preferences: &Preferences) -> Option<Selection> {
+        self.offers(capability)
+            .into_iter()
+            .find_map(|offer| match offer {
+                Offer::Offered {
                     model,
                     build,
                     accelerator,
-                })
-            }
-            _ => None,
-        })
+                    ..
+                } if preferences
+                    .model
+                    .as_ref()
+                    .is_none_or(|wanted| *wanted == model.id) =>
+                {
+                    Some(Selection {
+                        model,
+                        build,
+                        accelerator,
+                    })
+                }
+                _ => None,
+            })
     }
 
     /// Where `build` is now: being installed or loaded, failed, loaded, or else whether all its files are stored.
@@ -247,7 +252,7 @@ impl Engine {
         let runtime = Platform::of(&self.host.capabilities())
             .and_then(|platform| (self.runtime_files)(backend.spec().id, platform))
             .ok_or(Error::new("no-runtime-for-platform"))?;
-        let mut artifacts = build.files.clone();
+        let mut artifacts: Vec<_> = build.files.iter().map(ModelFile::artifact).collect();
         artifacts.extend(runtime);
         Ok((backend, artifacts))
     }

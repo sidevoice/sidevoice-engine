@@ -1,11 +1,12 @@
 //! The brain of local models: which models exist, which build fits on this device, which to use for each stage, and
 //! the state each one is in.
 //!
-//! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads) and,
-//! optionally, extra [`CatalogSource`]s. A native build ships one, [`NativeHost`], which keeps its files in a directory
-//! the app chooses; any other host can stand in for it. Backends are not passed in: they belong to the engine, and
-//! which ones a build contains is decided when it is compiled ([`Engine::backends`] names them). Nothing is downloaded
-//! or loaded until [`Engine::prepare`], and what goes unused is unloaded from memory again ([`BuildState`]).
+//! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads) and
+//! the [`CatalogSource`]s to merge, usually the [`BundledCatalog`] and any others. A native build ships one host,
+//! [`NativeHost`], which keeps its files in a directory the app chooses; any other host can stand in for it. Backends
+//! are not passed in: they belong to the engine, and which ones a build contains is decided when it is compiled
+//! ([`Engine::backends`] names them). Nothing is downloaded or loaded until [`Engine::prepare`], and what goes unused
+//! is unloaded from memory again ([`BuildState`]).
 //!
 //! Compiled to wasm32, the crate is also the npm package `@sidevoice/engine`: `web` is its bridge to JavaScript, and
 //! exists in no other build.
@@ -28,7 +29,10 @@ mod test_support;
 mod web;
 
 pub use backend::BackendId;
-pub use catalog::{Build, CatalogFragment, CatalogSource, Model, Problem, Task};
+pub use catalog::{
+    Build, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Memory,
+    MemorySource, Model, ModelFile, Problem, Requires,
+};
 pub use engine::{
     BuildState, ConfigError, Engine, Handle, Preferences, Selection, DEFAULT_IDLE_UNLOAD,
 };
