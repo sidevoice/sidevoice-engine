@@ -398,6 +398,9 @@ def main():
             with open(summary, "a") as f:
                 f.write(md)
         print(md)
+    failed = [e["device"] for e in results["events"] if e["kind"] == "bench_process" and e["exit_code"] != 0]
+    if failed:
+        raise SystemExit(f"bench failed on: {', '.join(failed)} (stderr in results.json)")
 
 
 if __name__ == "__main__":

@@ -225,7 +225,7 @@ def run(args):
                     transcript=result.text.strip(),
                     reference=reference,
                     segments=len(result.segments or []),
-                    generation_tokens=result.generation_tokens,
+                    generation_tokens=getattr(result, "generation_tokens", None),
                     **summarise(times, wav_seconds(path)),
                 )
         stt_model = None
