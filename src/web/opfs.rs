@@ -138,7 +138,7 @@ impl Directory {
         Ok(Some(directory))
     }
 
-    /// The file `name` inside this one: `None` if there is none and `create` is false.
+    /// The file `name` inside this one: `None` if there is none (or it is a directory) and `create` is false.
     pub(crate) async fn file(
         &self,
         name: &str,
@@ -146,7 +146,8 @@ impl Directory {
     ) -> Result<Option<FileHandle>, JsValue> {
         match self.get_file_handle(name, &self::create(create)).await {
             Ok(handle) => Ok(Some(handle.unchecked_into())),
-            Err(error) if is_not_found(&error) => Ok(None),
+            // A directory of that name is not a file either.
+            Err(error) if is_not_found(&error) || is_type_mismatch(&error) => Ok(None),
             Err(error) => Err(error),
         }
     }
