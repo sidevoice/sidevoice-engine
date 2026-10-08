@@ -1,0 +1,105 @@
+{
+  "id": "piper",
+  "architecture": "vits",
+  "source": "https://github.com/rhasspy/piper",
+  "models": [
+    {
+      "id": "piper-es_ES-carlfm-x_low",
+      "capabilities": [
+        "tts"
+      ],
+      "parameters_m": 7,
+      "languages": [
+        "es-ES"
+      ],
+      "license": "MIT",
+      "builds": [
+        {
+          "id": "piper-es_ES-carlfm-x_low/sherpa-onnx-int8",
+          "backend": "sherpa-onnx",
+          "precision": "int8",
+          "files": [
+            {
+              "key": "vits.model",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-carlfm-x_low-int8.tar.bz2",
+              "archive_path": "vits-piper-es_ES-carlfm-x_low-int8/es_ES-carlfm-x_low.onnx",
+              "sha256": "fe5b74e55254e2a568a4e4d73fcfcc02580c7957fc337777adf46e5fdfe10218",
+              "bytes": 13356095,
+              "mutable": true
+            },
+            {
+              "key": "vits.tokens",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-carlfm-x_low-int8.tar.bz2",
+              "archive_path": "vits-piper-es_ES-carlfm-x_low-int8/tokens.txt",
+              "sha256": "fe5b74e55254e2a568a4e4d73fcfcc02580c7957fc337777adf46e5fdfe10218",
+              "bytes": 13356095,
+              "mutable": true
+            },
+            {
+              "key": "vits.data_dir",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-carlfm-x_low-int8.tar.bz2",
+              "archive_path": "vits-piper-es_ES-carlfm-x_low-int8/espeak-ng-data",
+              "sha256": "fe5b74e55254e2a568a4e4d73fcfcc02580c7957fc337777adf46e5fdfe10218",
+              "bytes": 13356095,
+              "mutable": true
+            }
+          ],
+          "memory": {
+            "mb": 20,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        }
+      ]
+    },
+    {
+      "id": "piper-en_US-ljspeech-medium",
+      "capabilities": [
+        "tts"
+      ],
+      "parameters_m": 16,
+      "languages": [
+        "en-US"
+      ],
+      "license": "MIT",
+      "builds": [
+        {
+          "id": "piper-en_US-ljspeech-medium/sherpa-onnx-int8",
+          "backend": "sherpa-onnx",
+          "precision": "int8",
+          "files": [
+            {
+              "key": "vits.model",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2",
+              "archive_path": "vits-piper-en_US-ljspeech-medium-int8/en_US-ljspeech-medium.onnx",
+              "sha256": "24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b",
+              "bytes": 21090429,
+              "mutable": true
+            },
+            {
+              "key": "vits.tokens",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2",
+              "archive_path": "vits-piper-en_US-ljspeech-medium-int8/tokens.txt",
+              "sha256": "24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b",
+              "bytes": 21090429,
+              "mutable": true
+            },
+            {
+              "key": "vits.data_dir",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2",
+              "archive_path": "vits-piper-en_US-ljspeech-medium-int8/espeak-ng-data",
+              "sha256": "24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b",
+              "bytes": 21090429,
+              "mutable": true
+            }
+          ],
+          "memory": {
+            "mb": 30,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -58,6 +58,7 @@ fn every_bundled_file_is_pinned_to_a_revision_or_marked_mutable() {
 /// The directory and the list agree: a family file that is not compiled in fails here. Native only: the test reads
 /// the repository.
 #[cfg(native)]
+/// `build.rs` lists the directory itself: this checks that list, not a hand-kept one.
 #[test]
 fn every_file_in_catalog_families_is_bundled() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("catalog/families");
@@ -189,4 +190,13 @@ fn a_family_file_is_read_strictly() {
     fails("an id that is not the file's name", &|family| {
         family["id"] = "g".into()
     });
+}
+
+#[test]
+fn each_bundled_familys_id_is_its_files_name() {
+    assert!(!FAMILIES.is_empty());
+    for (name, json) in FAMILIES {
+        let family: serde_json::Value = serde_json::from_str(json).expect("JSON");
+        assert_eq!(family["id"], *name, "catalog/families/{name}.json");
+    }
 }
