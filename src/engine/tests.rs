@@ -162,6 +162,8 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
             models,
             [
                 "canary-180m-flash",
+                "fastconformer-es-large",
+                "parakeet-tdt-0.6b-v3",
                 "qwen3-asr-0.6b",
                 "whisper-base",
                 "whisper-large-v3",
@@ -176,13 +178,23 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     }
 
     let tts = offered(Capability::Tts);
-    let backend = if cfg!(target_arch = "wasm32") {
-        "transformers-js"
+    if cfg!(target_arch = "wasm32") {
+        let web = |model: &str| (model.to_owned(), "transformers-js".to_owned());
+        assert_eq!(tts, [web("kokoro-82m-v0.19"), web("kokoro-82m-v1.0")]);
     } else {
-        "sherpa-onnx"
-    };
-    let kokoro = ("kokoro-82m-v0.19".to_owned(), backend.to_owned());
-    assert_eq!(tts, [kokoro]);
+        let models: Vec<_> = tts.iter().map(|(model, _)| model.as_str()).collect();
+        assert_eq!(
+            models,
+            [
+                "kokoro-82m-v0.19",
+                "kokoro-82m-v1.0",
+                "piper-en_US-ljspeech-medium",
+                "piper-es_ES-carlfm-x_low",
+                "supertonic-3"
+            ]
+        );
+        assert!(tts.iter().all(|(_, backend)| backend == "sherpa-onnx"));
+    }
 }
 
 const MODEL_A: &[u8] = b"model a";
