@@ -10,6 +10,8 @@ use crate::resolver::Reason;
 pub struct Model {
     /// Its stable id: what [`Engine::install`](crate::Engine::install) and [`Engine::load`](crate::Engine::load) take.
     pub id: String,
+    /// The id of the family it belongs to in the catalogue: "whisper", "kokoro", ...
+    pub family: String,
     /// What it can do.
     pub capabilities: Vec<Capability>,
     /// Its size, in millions of parameters.

@@ -114,7 +114,11 @@ impl Engine {
     pub async fn models(&self) -> Result<Vec<Model>> {
         let caps = self.host.capabilities();
         let mut models = Vec::new();
-        for entry in self.entries() {
+        let mut entries = Vec::new();
+        for family in self.catalog.families() {
+            entries.extend(family.models.iter().map(|entry| (&family.id, entry)));
+        }
+        for (family, entry) in entries {
             let mut builds = Vec::new();
             for (build, fit) in self.resolver.builds(entry, &self.backends, &caps) {
                 let installed = self.is_installed(build).await?;
@@ -132,6 +136,7 @@ impl Engine {
             }
             models.push(Model {
                 id: entry.id.clone(),
+                family: family.clone(),
                 capabilities: entry.capabilities.clone(),
                 parameters_m: entry.parameters_m,
                 languages: entry.languages.clone(),
