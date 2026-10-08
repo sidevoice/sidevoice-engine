@@ -15,9 +15,9 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::pin;
-use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
+
+use std::sync::OnceLock;
+
 use std::time::Duration;
 use std::{env, fs};
 
@@ -362,21 +362,16 @@ fn primary(tag: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Runs `future` to its end on this thread, parking it while it waits (the engine needs no particular runtime).
+/// Runs `future` to its end on the loop's Tokio runtime, as an app does: the native engine downloads through reqwest
+/// and unpacks archives on Tokio's blocking threads, so its futures need one.
 fn block_on<F: Future>(future: F) -> F::Output {
-    struct Unpark(std::thread::Thread);
-    impl Wake for Unpark {
-        fn wake(self: Arc<Self>) {
-            self.0.unpark();
-        }
-    }
-    let mut future = pin!(future);
-    let waker = Waker::from(Arc::new(Unpark(std::thread::current())));
-    let mut context = Context::from_waker(&waker);
-    loop {
-        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
-        }
-        std::thread::park();
-    }
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("a Tokio runtime")
+        })
+        .block_on(future)
 }

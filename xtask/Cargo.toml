@@ -13,3 +13,5 @@ sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 # `cargo xtask e2e` runs the voice loop through the engine's public API, as an app does.
 sidevoice-engine = { path = ".." }
+# The runtime the loop runs the engine on: the native engine's downloads (reqwest) need Tokio.
+tokio = { version = "1.53.2", default-features = false, features = ["rt-multi-thread"] }
