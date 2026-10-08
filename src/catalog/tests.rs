@@ -21,13 +21,16 @@ impl CatalogSource for Families {
 fn problems(families: Vec<Family>) -> Vec<Problem> {
     Catalog::merge(&[Box::new(Families(families)) as Box<dyn CatalogSource>])
         .expect("catalogue")
-        .check()
+        .check(&crate::backend::is_known)
 }
 
 #[test]
 fn a_consistent_catalogue_has_no_problems() {
     let catalog = Catalog::merge(&[Box::new(FakeCatalog) as Box<dyn CatalogSource>]);
-    assert_eq!(catalog.expect("catalogue").check(), []);
+    assert_eq!(
+        catalog.expect("catalogue").check(&crate::backend::is_known),
+        []
+    );
 }
 
 #[test]
@@ -37,7 +40,7 @@ fn sources_merge_in_order_and_a_family_twice_is_a_problem() {
         Box::new(FakeCatalog),
     ])
     .expect("catalogue");
-    let problems = catalog.check();
+    let problems = catalog.check(&crate::backend::is_known);
     assert!(problems.contains(&Problem::DuplicateFamily {
         family: "whisper".to_owned()
     }));

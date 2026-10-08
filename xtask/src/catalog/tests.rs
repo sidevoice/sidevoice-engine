@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::json;
 
-use super::{estimate_mb, percent_decoded, repin, Entry, Hub};
+use super::{estimate_mb, percent_decoded, repin, whisper_languages, Entry, Hub};
 use crate::Result;
 
 /// A Hugging Face repository whose `main` is commit `c…c`, where `model.onnx` is in LFS and `config.json` is not;
@@ -49,6 +49,11 @@ impl Hub for FakeHub {
     fn download_sha256(&mut self, url: &str) -> Result<String> {
         self.downloads.push(url.to_owned());
         Ok(format!("digest of {url}"))
+    }
+
+    fn download_text(&mut self, url: &str) -> Result<String> {
+        self.downloads.push(url.to_owned());
+        Ok(TOKENIZER.to_owned())
     }
 }
 
@@ -175,4 +180,37 @@ fn a_release_asset_is_pinned_by_its_digest_and_marked_mutable_and_its_archive_co
     assert_eq!(files[3]["sha256"], format!("digest of {old}"));
     // Two weights in one 100 MiB archive: 100 MiB, plus 30%.
     assert_eq!(doc["models"][0]["builds"][0]["memory"]["mb"], 130);
+}
+
+/// The shape of openai/whisper's `whisper/tokenizer.py` around its table, shortened.
+const TOKENIZER: &str = r#"
+LANGUAGES = {
+    "en": "english",
+    "es": "spanish",
+    "jw": "javanese",
+    "yue": "cantonese",
+}
+
+# language code lookup by name
+TO_LANGUAGE_CODE = {
+    **{language: code for code, language in LANGUAGES.items()},
+}
+"#;
+
+#[test]
+fn a_models_languages_are_written_from_its_source_with_whispers_javanese_as_bcp_47() {
+    let source = "https://raw.githubusercontent.com/openai/whisper/abc/whisper/tokenizer.py";
+    let mut doc = family(json!({"mb": 1, "source": "measured", "basis": "a test"}));
+    doc["models"][0]["languages_source"] = source.into();
+    doc["models"][0]["languages"] = json!(["multi"]);
+    let mut hub = FakeHub::default();
+    let stale = repin(&mut doc, &mut hub).unwrap();
+    assert_eq!(stale[0], "m languages");
+    assert_eq!(doc["models"][0]["languages"], json!(["en", "es", "jv", "yue"]));
+    assert!(hub.downloads.contains(&source.to_owned()));
+    assert!(whisper_languages("no table").is_err());
+
+    doc["models"][0]["languages_source"] = "https://example.com/languages.txt".into();
+    let error = repin(&mut doc, &mut FakeHub::default()).unwrap_err();
+    assert!(error.contains("no reader"), "{error}");
 }

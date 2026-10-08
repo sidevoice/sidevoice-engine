@@ -11,5 +11,10 @@ description = "Build tooling for the engine: the npm package, the release assets
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
-# `cargo xtask e2e` runs the voice loop through the engine's public API, as an app does.
-sidevoice-engine = { path = ".." }
+# `cargo xtask e2e` runs the voice loop through the engine's public API, as an app does: only with the `e2e` feature,
+# so that the other commands build without the engine (and without the libraries its backends link).
+sidevoice-engine = { path = "..", optional = true }
+
+[features]
+default = ["e2e"]
+e2e = ["dep:sidevoice-engine"]

@@ -148,6 +148,50 @@ impl Installer {
         }
         Ok(installed)
     }
+    /// Whether every one of `artifacts` is in storage: the file under its digest, or, for a member of an archive, the
+    /// tree that archive unpacks to (the archive itself is removed once unpacked).
+    ///
+    /// # Errors
+    ///
+    /// What the host's storage fails with.
+    pub(crate) async fn is_installed(
+        &self,
+        artifacts: &[Artifact],
+        storage: &dyn Storage,
+    ) -> Result<bool> {
+        for artifact in artifacts {
+            let name = match artifact.archive_path {
+                None => artifact.sha256.clone(),
+                Some(_) => plan::unpacked(&artifact.sha256),
+            };
+            if storage.find(&name).await?.is_none() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Removes from storage what `artifacts` installed, whole files and unpacked trees alike, except what `kept` (other
+    /// models' files) also needs: a file shared by two builds stays as long as either wants it.
+    ///
+    /// # Errors
+    ///
+    /// What the host's storage fails with.
+    pub(crate) async fn uninstall(
+        &self,
+        artifacts: &[Artifact],
+        kept: &[Artifact],
+        storage: &dyn Storage,
+    ) -> Result<()> {
+        for artifact in artifacts {
+            if kept.iter().any(|other| other.sha256 == artifact.sha256) {
+                continue;
+            }
+            storage.remove(&artifact.sha256).await?;
+            storage.remove(&plan::unpacked(&artifact.sha256)).await?;
+        }
+        Ok(())
+    }
 }
 
 /// Unpacks the stored archive `sha256` into its tree.

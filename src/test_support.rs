@@ -447,7 +447,9 @@ pub(crate) fn model(id: &str, capability: Capability, builds: Vec<BuildEntry>) -
         capabilities: vec![capability],
         parameters_m: 1,
         languages: vec!["en".to_owned()],
+        languages_source: None,
         license: "MIT".to_owned(),
+        voices: Vec::new(),
         builds,
     }
 }

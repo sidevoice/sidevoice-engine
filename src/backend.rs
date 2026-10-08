@@ -116,7 +116,7 @@ mod tests;
 pub(crate) use library::Library;
 pub(crate) use loaded_model::BackendModel;
 #[cfg(test)]
-pub(crate) use loaded_model::SttModel;
+pub(crate) use loaded_model::{SttModel, TtsModel};
 #[cfg_attr(
     not(any(sherpa_onnx, web, apple_silicon)),
     allow(

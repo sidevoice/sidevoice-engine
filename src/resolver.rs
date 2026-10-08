@@ -16,37 +16,74 @@ mod offer;
 #[cfg(test)]
 mod tests;
 
-pub use offer::{Offer, Reason, Rejection};
+pub use offer::Reason;
+pub(crate) use offer::{Offer, Rejection};
 
-/// Offers per capability, remembering each backend's probe.
-#[derive(Debug, Default)]
+/// The library files a backend needs on a platform (`backends.json`, or a test's own); `None` where it does not run.
+pub(crate) type RuntimeFiles = fn(&str, Platform) -> Option<Vec<crate::install::Artifact>>;
+
+/// The funnel, remembering each backend's probe.
+#[derive(Debug)]
 pub(crate) struct Resolver {
     probes: Mutex<HashMap<BackendId, Vec<Accelerator>>>,
+    runtime_files: RuntimeFiles,
+}
+
+impl Default for Resolver {
+    /// The funnel over `backends.json`.
+    fn default() -> Self {
+        Self::new(backend::runtime_files)
+    }
 }
 
 impl Resolver {
+    /// The funnel, with each backend's files for a platform from `runtime_files`.
+    pub(crate) fn new(runtime_files: RuntimeFiles) -> Self {
+        Self {
+            probes: Mutex::default(),
+            runtime_files,
+        }
+    }
+
+    /// Every build of `model`, ranked, each with the accelerator it runs on here or why it cannot run here: the builds
+    /// that fit first, then the rest, each group in catalogue order. Ranking is still the first that fits
+    /// (sidevoice-engine#4).
+    pub(crate) fn builds<'a>(
+        &self,
+        model: &'a ModelEntry,
+        backends: &[Box<dyn Backend>],
+        caps: &Capabilities,
+    ) -> Vec<(&'a BuildEntry, Result<Accelerator, Rejection>)> {
+        let (fitting, rejected): (Vec<_>, Vec<_>) = model
+            .builds
+            .iter()
+            .map(|build| {
+                let fit = match backend::find(backends, &build.backend) {
+                    None => Err(Rejection::BackendNotInThisBuild),
+                    Some(backend) => self.fit(build, backend, caps),
+                };
+                (build, fit)
+            })
+            .partition(|(_, fit)| fit.is_ok());
+        fitting.into_iter().chain(rejected).collect()
+    }
+
     /// Every model that can do `capability`, offered with a build that fits, and every build that cannot run here,
-    /// with why. With `backend`, only that backend's builds are considered.
+    /// with why: what the web bridge lists.
     pub(crate) fn offers(
         &self,
         catalog: &Catalog,
         backends: &[Box<dyn Backend>],
         caps: &Capabilities,
         capability: Capability,
-        backend: Option<&str>,
     ) -> Vec<Offer> {
         let mut out = Vec::new();
         for model in catalog.models(capability) {
             let mut fitting = Vec::new();
-            let builds = model.builds.iter();
-            for build in builds.filter(|build| backend.is_none_or(|wanted| build.backend == wanted))
-            {
-                match backend::find(backends, &build.backend)
-                    .map(|backend| self.fit(build, backend, caps))
-                {
-                    None => out.push(rejected(model, build, Rejection::BackendNotInThisBuild)),
-                    Some(Err(why)) => out.push(rejected(model, build, why)),
-                    Some(Ok(accelerator)) => fitting.push((build.clone(), accelerator)),
+            for (build, fit) in self.builds(model, backends, caps) {
+                match fit {
+                    Err(why) => out.push(rejected(model, build, why)),
+                    Ok(accelerator) => fitting.push((build.clone(), accelerator)),
                 }
             }
             let mut fitting = fitting.into_iter();
@@ -72,7 +109,7 @@ impl Resolver {
     ) -> Result<Accelerator, Rejection> {
         // Data, not backend code: a backend with no entry for this platform in backends.json cannot run here.
         if Platform::of(caps)
-            .and_then(|platform| backend::runtime_files(backend.spec().id, platform))
+            .and_then(|platform| (self.runtime_files)(backend.spec().id, platform))
             .is_none()
         {
             return Err(Rejection::BackendUnavailable(Reason::new(

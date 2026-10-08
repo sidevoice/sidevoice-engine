@@ -14,6 +14,9 @@
 //! A build with no `memory`, or an `estimated` one, gets its estimate: its weights (the files whose name, or path
 //! inside their archive, ends in `.onnx`, `.bin`, `.npz`, `.safetensors` or `.gguf`; an archive counted once, at its
 //! size) plus 30%, in MB rounded up to a multiple of 10. A `declared` or `measured` figure is left as it is.
+//! A model with a `languages_source` gets its `languages` from it: today, Whisper's, from the `LANGUAGES` table of
+//! openai/whisper's tokenizer at a pinned commit.
+//!
 //! `pin-catalog --check` derives all of it again and fails if anything differs, writing nothing.
 
 use std::collections::{HashMap, HashSet};
@@ -47,6 +50,8 @@ trait Hub {
     fn release_asset(&mut self, repo: &str, tag: &str, name: &str) -> Result<Entry>;
     /// The SHA-256 of the file at `url`, downloaded.
     fn download_sha256(&mut self, url: &str) -> Result<String>;
+    /// The text of the file at `url`, downloaded.
+    fn download_text(&mut self, url: &str) -> Result<String>;
 }
 
 /// A file pinned: where from, what it is, and whether only its digest pins it.
@@ -101,6 +106,9 @@ fn repin(doc: &mut Value, hub: &mut impl Hub) -> Result<Vec<String>> {
     let mut stale = Vec::new();
     let models = doc["models"].as_array_mut().ok_or("no models")?;
     for model in models {
+        if let Some(what) = repin_languages(model, hub)? {
+            stale.push(what);
+        }
         let builds = model["builds"]
             .as_array_mut()
             .ok_or("a model with no builds")?;
@@ -316,6 +324,54 @@ impl Hub for Sources {
         self.digests.insert(url.to_owned(), sha256.clone());
         Ok(sha256)
     }
+
+    fn download_text(&mut self, url: &str) -> Result<String> {
+        let dir = env::temp_dir().join("xtask-pin-catalog");
+        empty_dir(&dir)?;
+        run_in(&dir, "curl -fsSL --retry 3 -o download", &[url])?;
+        String::from_utf8(read(&dir.join("download"))?).map_err(|_| format!("{url}: not UTF-8"))
+    }
+}
+
+/// Writes a model's `languages` from its `languages_source`, if it has one, and says so when they were not already
+/// what the source lists. The only source read today is openai/whisper's tokenizer (`whisper/tokenizer.py`, at a
+/// pinned commit): its `LANGUAGES` table's codes, in its order, with Whisper's one code that is not BCP 47 (`jw`)
+/// written as its BCP 47 tag (`jv`).
+fn repin_languages(model: &mut Value, hub: &mut impl Hub) -> Result<Option<String>> {
+    let Some(source) = model["languages_source"].as_str() else {
+        return Ok(None);
+    };
+    let id = model["id"].as_str().unwrap_or_default().to_owned();
+    if !(source.starts_with("https://raw.githubusercontent.com/openai/whisper/")
+        && source.ends_with("/whisper/tokenizer.py"))
+    {
+        return Err(format!("{id}: no reader for the languages source {source}"));
+    }
+    let languages = json!(whisper_languages(&hub.download_text(source)?)
+        .map_err(|e| format!("{id}: {source}: {e}"))?);
+    if model["languages"] == languages {
+        return Ok(None);
+    }
+    model["languages"] = languages;
+    Ok(Some(format!("{id} languages")))
+}
+
+/// The language codes of Whisper's `LANGUAGES = { "en": "english", ... }`, in order, as BCP 47 tags.
+fn whisper_languages(tokenizer: &str) -> Result<Vec<String>> {
+    let table = tokenizer
+        .split_once("LANGUAGES = {")
+        .and_then(|(_, rest)| rest.split_once('}'))
+        .map(|(table, _)| table)
+        .ok_or("no LANGUAGES table")?;
+    let codes: Vec<String> = table
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix('"')?.split_once('"'))
+        .map(|(code, _)| if code == "jw" { "jv" } else { code }.to_owned())
+        .collect();
+    if codes.is_empty() {
+        return Err("an empty LANGUAGES table".into());
+    }
+    Ok(codes)
 }
 
 #[cfg(test)]

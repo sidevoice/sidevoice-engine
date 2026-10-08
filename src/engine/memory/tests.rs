@@ -1,13 +1,11 @@
-//! Idle models leave memory on a clock the test moves, and a backend's library stays open while any of its models is
-//! loaded.
+//! Memory only finds what something else holds: a library and a model are found while held, and forgotten once not.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::sync::Arc;
 
 use super::Memory;
 use crate::backend::{BackendModel, Library};
 use crate::catalog::BuildEntry;
+use crate::engine::loaded::Resident;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{async_trait, Error, Result};
@@ -38,66 +36,31 @@ impl BackendModel for NoModel {
     }
 }
 
-const MINUTE: Duration = Duration::from_secs(60);
-
-#[test]
-fn a_model_leaves_memory_once_unused_for_the_idle_time_and_its_library_with_the_last_one() {
-    static MINUTES: AtomicU64 = AtomicU64::new(0);
-    let at = |minutes| MINUTES.store(minutes, Ordering::Relaxed);
-    let mut memory = Memory::with_clock(10 * MINUTE, || {
-        MINUTE * u32::try_from(MINUTES.load(Ordering::Relaxed)).unwrap()
-    });
-
-    let library: Arc<dyn Library> = Arc::new(NoLibrary);
-    let closed: Weak<dyn Library> = Arc::downgrade(&library);
-    memory.insert("a", "fake", Arc::clone(&library), Box::new(NoModel));
-    at(5);
-    let shared = memory.library("fake").expect("open while a is loaded");
-    memory.insert("b", "fake", shared, Box::new(NoModel));
-    drop(library);
-
-    at(9);
-    memory.unload_idle();
-    assert!(memory.is_loaded("a") && memory.is_loaded("b"));
-
-    at(10);
-    memory.unload_idle();
-    assert!(!memory.is_loaded("a"), "unused for 10 minutes");
-    assert!(memory.is_loaded("b"));
-    assert_eq!(memory.open_libraries(), 1);
-
-    at(14);
-    assert!(memory.handle("b").is_some(), "using it");
-    at(20);
-    memory.unload_idle();
-    assert!(memory.is_loaded("b"), "used 6 minutes ago");
-
-    at(24);
-    memory.unload_idle();
-    assert!(!memory.is_loaded("b"));
-    assert_eq!(memory.open_libraries(), 0);
-    assert!(memory.library("fake").is_none());
-    assert!(closed.upgrade().is_none(), "the library is closed");
+fn resident(library: &Arc<dyn Library>) -> Arc<Resident> {
+    Arc::new(Resident::new(
+        Box::new(NoModel),
+        Arc::clone(library),
+        Vec::new(),
+        Vec::new(),
+    ))
 }
 
 #[test]
-fn a_model_taken_out_to_be_used_is_busy_and_stays_until_put_back() {
-    let mut memory = Memory::new(Duration::ZERO);
-    let handle = memory.insert("a", "fake", Arc::new(NoLibrary), Box::new(NoModel));
-    let model = memory.take(handle).map_err(|e| e.code).expect("loaded");
-    assert_eq!(
-        memory.take(handle).map(|_| ()),
-        Err(Error::new("model-busy"))
-    );
-    memory.unload_idle();
-    assert!(memory.is_loaded("a"), "in use, whatever the idle time");
+fn a_library_and_a_model_are_found_while_held_and_forgotten_once_not() {
+    let mut memory = Memory::default();
+    let library: Arc<dyn Library> = Arc::new(NoLibrary);
+    let model = resident(&library);
+    memory.remember("fake", &library, "a", &model);
+    drop(library);
 
-    memory.put_back(handle, model);
-    assert!(memory.take(handle).is_ok(), "back");
-    memory.put_back(handle, Box::new(NoModel));
-    memory.unload_idle();
-    assert_eq!(
-        memory.take(handle).map(|_| ()),
-        Err(Error::new("model-not-loaded"))
+    assert!(
+        memory.library("fake").is_some(),
+        "the model holds its library"
     );
+    assert!(memory.model("a").is_some());
+    assert!(memory.model("b").is_none());
+
+    drop(model);
+    assert!(memory.model("a").is_none(), "nothing holds it");
+    assert!(memory.library("fake").is_none(), "nor its library");
 }

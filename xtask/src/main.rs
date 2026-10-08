@@ -20,6 +20,7 @@
 
 mod backends;
 mod catalog;
+#[cfg(feature = "e2e")]
 mod e2e;
 mod link_size;
 mod npm;
@@ -51,7 +52,9 @@ fn main() -> ExitCode {
         ["pin-backends", "--check"] => backends::pin(true),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
+        #[cfg(feature = "e2e")]
         ["e2e"] => e2e::run(None),
+        #[cfg(feature = "e2e")]
         ["e2e", dir] => e2e::run(Some(dir)),
         ["link-size"] => link_size::measure(),
         _ => Err(USAGE.into()),

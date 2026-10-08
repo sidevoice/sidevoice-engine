@@ -12,7 +12,12 @@ fn every_bundled_family_parses_and_the_merge_has_no_problems() {
         }
     }
     let catalog = Catalog::merge(&[Box::new(BundledCatalog) as Box<dyn CatalogSource>]);
-    assert_eq!(catalog.expect("bundled catalogue").check(), []);
+    assert_eq!(
+        catalog
+            .expect("bundled catalogue")
+            .check(&crate::backend::is_known),
+        []
+    );
 }
 
 #[test]

@@ -30,12 +30,10 @@ mod web;
 
 pub use backend::BackendId;
 pub use catalog::{
-    BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Memory,
-    MemorySource, ModelEntry, ModelFile, Problem, Requires,
+    BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Gender, Memory,
+    MemorySource, ModelEntry, ModelFile, Problem, Requires, Voice,
 };
-pub use engine::{
-    BuildState, ConfigError, Engine, Handle, Preferences, Selection, Speech, DEFAULT_IDLE_UNLOAD,
-};
+pub use engine::{Audio, ConfigError, Engine, LoadedModel, Model, ModelBuild, Stt, Tts};
 #[cfg(native)]
 pub use host::NativeHost;
 pub use host::{
@@ -43,7 +41,7 @@ pub use host::{
 };
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
-pub use resolver::{Offer, Reason, Rejection};
+pub use resolver::Reason;
 
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
