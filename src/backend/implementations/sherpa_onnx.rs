@@ -22,8 +22,9 @@
 //! - Kokoro: `kokoro.model`, `kokoro.voices`, `kokoro.tokens` and `kokoro.data_dir` (espeak-ng's data, a directory),
 //!   under `OfflineTtsConfig.model`.
 //!
-//! The family follows from the keys ([`Kind::of`]), and only what sherpa-onnx's config does not cover is code: Whisper
-//! takes the language per call (`whisper.rs`), Kokoro names its voices (`kokoro.rs`).
+//! What a build is follows from its keys ([`Kind::of`]), and only what sherpa-onnx's config does not cover is code:
+//! Whisper takes the language per call by a new recognizer (`whisper.rs`); every text-to-speech model is alike
+//! (`synthesizer.rs`), told a call's language as an espeak-ng voice where its config has espeak-ng's data.
 //!
 //! # Accelerators
 //!
@@ -34,8 +35,8 @@
 //! either.
 //!
 //! Kokoro must stay off Core ML whatever the libraries: creating its TTS on Core ML throws a C++ exception that the
-//! C API does not catch, and an exception that reaches Rust aborts the process. `load` refuses it with
-//! `unsupported-accelerator` before creating it, and Kokoro's catalogue builds accept the CPU only.
+//! C API does not catch, and an exception that reaches Rust aborts the process. `load` refuses it (a build with `kokoro.`
+//! keys) with `unsupported-accelerator` before creating it, and Kokoro's catalogue builds accept the CPU only.
 
 use async_trait::async_trait;
 
@@ -48,13 +49,13 @@ use crate::{Error, Result};
 mod config;
 #[cfg(test)]
 mod inference_tests;
-mod kokoro;
 mod model_metadata;
+mod synthesizer;
 #[cfg(test)]
 mod tests;
 mod whisper;
 
-use kokoro::Kokoro;
+use synthesizer::Synthesizer;
 use whisper::Whisper;
 
 struct SherpaOnnx;
@@ -94,43 +95,49 @@ impl Library for Linked {
         files: &Installed,
     ) -> Result<Box<dyn LoadedModel>> {
         let kind = Kind::of(files)?;
-        let provider = kind.provider(accelerator)?;
+        let provider = provider_for(files, accelerator)?;
         Ok(match kind {
             Kind::Whisper => Box::new(Whisper::load(config::recognizer(files, provider)?)?),
-            Kind::Kokoro => Box::new(Kokoro::load(config::tts(files, provider)?)?),
+            Kind::Tts => Box::new(Synthesizer::load(&config::tts(files, provider)?, files)?),
         })
     }
 }
 
-/// Which family a build is, for what its config does not cover: it follows from its files' keys (see *Files*).
+/// What a build is, for what its config does not cover: it follows from its files' keys (see *Files*).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
+    /// Whisper, which takes its language per call by a new recognizer (`whisper.rs`).
     Whisper,
-    Kokoro,
+    /// Any text-to-speech model (`synthesizer.rs`).
+    Tts,
 }
 
 impl Kind {
-    /// A `whisper.` key makes it Whisper, a `kokoro.` one Kokoro; anything else is `unsupported-model`.
+    /// A `whisper.` key makes it Whisper; keys that are all fields of the TTS's config make it a TTS; anything else is
+    /// `unsupported-model`.
     fn of(files: &Installed) -> Result<Self> {
-        let has = |prefix: &str| files.files.keys().any(|key| key.starts_with(prefix));
-        if has("whisper.") {
-            Ok(Self::Whisper)
-        } else if has("kokoro.") {
-            Ok(Self::Kokoro)
-        } else {
-            Err(Error::new("unsupported-model"))
+        let keys = || files.files.keys();
+        if keys().any(|key| key.starts_with("whisper.")) {
+            return Ok(Self::Whisper);
         }
+        let mut model = sherpa_onnx::OfflineTtsModelConfig::default();
+        if !files.files.is_empty() && keys().all(|key| config::tts_field(&mut model, key).is_some())
+        {
+            return Ok(Self::Tts);
+        }
+        Err(Error::new("unsupported-model"))
     }
+}
 
-    /// The execution provider this model runs on with `accelerator`, or `unsupported-accelerator`, checked before the
-    /// model is created: Kokoro on Core ML throws from inside the library, which aborts the process (see
-    /// *Accelerators*).
-    fn provider(self, accelerator: Accelerator) -> Result<&'static str> {
-        if self == Self::Kokoro && accelerator != Accelerator::Cpu {
-            return Err(Error::new("unsupported-accelerator"));
-        }
-        provider(accelerator)
+/// The execution provider `files`' model runs on with `accelerator`, or `unsupported-accelerator`, checked before the
+/// model is created: a Kokoro model (`kokoro.` keys) on Core ML throws from inside the library, which aborts the
+/// process (see *Accelerators*).
+fn provider_for(files: &Installed, accelerator: Accelerator) -> Result<&'static str> {
+    let kokoro = files.files.keys().any(|key| key.starts_with("kokoro."));
+    if kokoro && accelerator != Accelerator::Cpu {
+        return Err(Error::new("unsupported-accelerator"));
     }
+    provider(accelerator)
 }
 
 /// ONNX Runtime's name for `accelerator`'s execution provider, or `unsupported-accelerator` for one this backend does

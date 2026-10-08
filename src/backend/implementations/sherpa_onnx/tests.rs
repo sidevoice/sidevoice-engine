@@ -3,11 +3,13 @@
 //! fails without its files, and the ONNX metadata reader. Running real models is
 //! `inference_tests.rs`.
 
+use std::collections::BTreeSet;
 use std::io::{BufReader, Cursor};
 
 use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
 
-use super::{config, model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
+use super::synthesizer::espeak_voice;
+use super::{config, model_metadata, provider, provider_for, text, Kind, SherpaOnnx, SPEC};
 use crate::backend::{Backend, LoadedModel};
 use crate::catalog::{BundledCatalog, Capability, CatalogSource};
 use crate::host::Accelerator;
@@ -53,7 +55,7 @@ fn kind(files: &[(&str, &str)]) -> Result<Kind> {
 #[test]
 fn the_family_follows_from_its_files_keys() {
     assert_eq!(kind(&[("whisper.encoder", "e.onnx")]), Ok(Kind::Whisper));
-    assert_eq!(kind(&[("kokoro.voices", "v.bin")]), Ok(Kind::Kokoro));
+    assert_eq!(kind(&[("kokoro.voices", "v.bin")]), Ok(Kind::Tts));
     assert_eq!(kind(&[]).unwrap_err().code, "unsupported-model");
     assert_eq!(
         kind(&[("tokens", "t.txt")]).unwrap_err().code,
@@ -128,12 +130,27 @@ fn a_key_names_the_config_field_it_fills_and_an_unknown_one_is_refused() {
 
 #[test]
 fn kokoro_runs_on_the_cpu_only_and_whisper_on_core_ml_too() {
-    assert_eq!(Kind::Whisper.provider(Accelerator::CoreMl), Ok("coreml"));
-    assert_eq!(Kind::Kokoro.provider(Accelerator::Cpu), Ok("cpu"));
+    let whisper = installed(&[("whisper.encoder", "e.onnx")]);
+    let kokoro = installed(&[("kokoro.model", "m.onnx")]);
+    assert_eq!(provider_for(&whisper, Accelerator::CoreMl), Ok("coreml"));
+    assert_eq!(provider_for(&kokoro, Accelerator::Cpu), Ok("cpu"));
     assert_eq!(
-        Kind::Kokoro.provider(Accelerator::CoreMl).unwrap_err().code,
+        provider_for(&kokoro, Accelerator::CoreMl).unwrap_err().code,
         "unsupported-accelerator"
     );
+}
+
+#[test]
+fn a_language_reaches_espeak_ng_as_its_voice_or_its_primary_subtag() {
+    let voices: BTreeSet<String> = ["en", "en-us", "en-gb", "es", "es-419", "pt-br"]
+        .map(str::to_owned)
+        .into();
+    assert_eq!(espeak_voice("en-US", &voices), "en-us");
+    assert_eq!(espeak_voice("en_GB", &voices), "en-gb");
+    assert_eq!(espeak_voice("pt-BR", &voices), "pt-br");
+    assert_eq!(espeak_voice("es-ES", &voices), "es", "no es-es voice");
+    assert_eq!(espeak_voice("es", &voices), "es");
+    assert_eq!(espeak_voice("fr-CA", &BTreeSet::new()), "fr");
 }
 
 fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
@@ -152,7 +169,7 @@ fn a_model_missing_a_file_does_not_load_and_kokoro_refuses_core_ml_first() {
     );
     assert_eq!(
         code(load(Accelerator::Cpu, &[("kokoro.voices", "v.bin")])),
-        "file-not-installed"
+        "model-load-failed"
     );
     let kokoro = [("kokoro.model", "m.onnx"), ("kokoro.voices", "v.bin")];
     assert_eq!(
