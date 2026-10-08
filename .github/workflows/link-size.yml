@@ -3,8 +3,9 @@ name: link-size
 # What linking sherpa-onnx costs an app: the smallest program using the engine, built in release mode and stripped,
 # with and without the `sherpa-onnx` feature (xtask/src/link_size.rs); the sizes go to each job's summary. Not on
 # every pull request: on demand, and on those that change what is linked (the dependencies, sherpa-onnx's pinned
-# libraries, or the measurement itself), which also check that xtask/sherpa-onnx-libs.json is what `cargo xtask
-# sherpa-libs --pin` writes for the version Cargo.toml pins.
+# libraries, or the measurement itself), which also check that what `cargo xtask sherpa-libs --pin` writes for the
+# version Cargo.toml pins is what is committed: xtask/sherpa-onnx-libs.json, and the config fields generated from the
+# crate's source (src/backend/implementations/sherpa_onnx/config/fields.rs).
 on:
   # Into any branch, so a pull request stacked on another is checked before its base merges.
   pull_request:
@@ -15,6 +16,8 @@ on:
       - xtask/src/link_size.rs
       - xtask/src/link_size/**
       - xtask/src/sherpa_libs.rs
+      - xtask/src/sherpa_fields.rs
+      - src/backend/implementations/sherpa_onnx/config/fields.rs
       - .github/workflows/link-size.yml
   workflow_dispatch:
 
@@ -27,7 +30,7 @@ concurrency:
 
 jobs:
   pinned:
-    name: sherpa-onnx libraries pinned
+    name: sherpa-onnx pinned (libraries, config fields)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

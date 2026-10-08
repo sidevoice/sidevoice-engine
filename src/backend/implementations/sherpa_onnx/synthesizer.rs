@@ -1,10 +1,11 @@
 //! Every text-to-speech model through sherpa-onnx's offline TTS, alike: the TTS its config makes, its voices named,
 //! and a call's language told to it. Nothing here knows one model from another.
 //!
-//! A language reaches the model only where its config has espeak-ng's data (a `*.data_dir` key): as the generation's
-//! extra option `lang`, the espeak-ng voice that reads the text, which sherpa-onnx prefers to its config's `lang` and
-//! to the model's own (`offline-tts-kokoro-impl.h`). The voice is the BCP 47 tag lowercased (`en-gb`, `pt-br`) where
-//! espeak-ng has a voice of that name, and its primary subtag (`es`) otherwise.
+//! A call's language reaches the model as the generation's extra option `lang`, which sherpa-onnx prefers to its
+//! config's `lang` and to the model's own (`offline-tts-kokoro-impl.h`, `offline-tts-supertonic-impl.cc`), and which a
+//! model that takes none ignores (VITS). Where the config has espeak-ng's data (a `*.data_dir` key), it is the
+//! espeak-ng voice that reads the text: the BCP 47 tag lowercased (`en-us`, `pt-br`) where espeak-ng has a voice of
+//! that name, its primary subtag (`es`) otherwise. Without espeak-ng's data, it is the primary subtag.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -19,13 +20,13 @@ use crate::backend::LoadedModel;
 use crate::install::Installed;
 use crate::{Error, Result};
 
-/// A TTS model in memory: the TTS, its sample rate, its voices by speaker id, and the espeak-ng voices its data has,
-/// if it has espeak-ng's data.
+/// A TTS model in memory: the TTS, its sample rate, its voices by speaker id, and the espeak-ng voices its data has
+/// (none without espeak-ng's data).
 pub(super) struct Synthesizer {
     tts: OfflineTts,
     sample_rate: u32,
     voices: Vec<String>,
-    espeak: Option<BTreeSet<String>>,
+    espeak: BTreeSet<String>,
 }
 
 impl Synthesizer {
@@ -42,7 +43,9 @@ impl Synthesizer {
             .map(|names| names.split(',').map(str::to_owned).collect::<Vec<_>>())
             .filter(|names| names.len() == speakers);
         let voices = named.unwrap_or_else(|| (0..speakers).map(|id| id.to_string()).collect());
-        let espeak = key_ending(files, ".data_dir").map(|dir| espeak_voices(Path::new(dir)));
+        let espeak = key_ending(files, ".data_dir")
+            .map(|dir| espeak_voices(Path::new(dir)))
+            .unwrap_or_default();
         Ok(Self {
             tts,
             sample_rate,
@@ -124,9 +127,7 @@ impl TtsModel for Synthesizer {
             .iter()
             .position(|name| name == voice)
             .ok_or(Error::new("unknown-voice"))?;
-        let lang = language
-            .zip(self.espeak.as_ref())
-            .map(|(tag, voices)| espeak_voice(tag, voices));
+        let lang = language.map(|tag| espeak_voice(tag, &self.espeak));
         let extra =
             lang.map(|lang| HashMap::from([("lang".to_owned(), serde_json::Value::String(lang))]));
         let config = GenerationConfig {
