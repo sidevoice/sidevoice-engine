@@ -25,6 +25,13 @@ runs:
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
         key: ${{ inputs.wasm == 'true' && 'wasm' || '' }}
+    # sherpa-onnx-sys downloads its static libraries into target/sherpa-onnx-prebuilt and links them from there. The
+    # cache restores that directory pruned (rust-cache keeps build, deps and .fingerprint), and with it the build
+    # script's output, so the script would neither run again nor download what is missing: forget both, so that it
+    # runs and fetches them.
+    - name: Forget sherpa-onnx-sys's build output
+      shell: bash
+      run: rm -rf target/sherpa-onnx-prebuilt target/*/build/sherpa-onnx-sys-* target/*/.fingerprint/sherpa-onnx-sys-*
     # The CLI must be the version of the `wasm-bindgen` crate in Cargo.lock: bump both together. install-action
     # checks the release binary against the SHA-256 in its own manifest; no fallback to building it from source.
     # After the cache, so that no binary the cache restores stands in for this one.
