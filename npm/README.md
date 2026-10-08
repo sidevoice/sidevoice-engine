@@ -15,9 +15,26 @@ WebAssembly build (`wasm-bindgen --target web`).
 import init, { WebEngine } from "@sidevoice/engine";
 
 await init();
-const engine = await WebEngine.create(host); // host: { capabilities() }, see the types
-engine.backends();
+// The page says what it has; the engine keeps its files in OPFS and downloads them with fetch.
+const engine = await WebEngine.create({
+  async capabilities() {
+    return { os: "web", arch: "wasm32", accelerators: navigator.gpu ? ["webgpu", "wasm"] : ["wasm"] };
+  },
+});
+const models = await engine.models(); // each with its builds ranked, whether it is installed, the recommended build
+const whisper = await engine.load("whisper-small", undefined, (progress) => show(progress), abort.signal);
+const stt = whisper.asStt();
+const text = await stt.transcribe(samples, 48000, "es"); // any rate: the engine resamples
+const kokoro = await engine.load("kokoro-82m-v1.0");
+const { samples: speech, sampleRate } = await kokoro.asTts().speak("Hola", "ef_dora", "es");
+stt.free(); // the model leaves memory once its LoadedModel and the Stt and Tts it handed out are freed
+whisper.free(); // (or collected)
 ```
+
+Every promise rejects with an `Error` carrying the engine's stable `code` and its `params`, for the page to
+translate. Models run through [transformers.js](https://github.com/huggingface/transformers.js), a dependency of
+this package that the engine imports only when a model is loaded; Kokoro's phonemes come from eSpeak NG (the
+`espeak-ng` package), under the **GPL-3.0-or-later**: see `THIRD_PARTY_NOTICES.md`.
 
 Source, documentation and issues: https://github.com/sidevoice/sidevoice-engine
 

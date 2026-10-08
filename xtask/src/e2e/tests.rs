@@ -4,8 +4,8 @@
 use sidevoice_engine::{BundledCatalog, CatalogSource, ModelEntry};
 
 use super::audio::{read_wav, wav};
-use super::wer::{normalised, wer};
 use super::{plan, primary, BACKEND};
+use crate::wer::{normalised, wer};
 use crate::{read, repo};
 
 #[test]

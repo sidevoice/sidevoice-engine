@@ -23,6 +23,12 @@ fn parse(bytes: &[u8], what: &str) -> Result<Value> {
 
 /// `cargo xtask npm`: build, bind and pack into `target/npm/sidevoice-engine-X.Y.Z.tgz`.
 pub(crate) fn package() -> Result<()> {
+    println!("{}", packed()?.display());
+    Ok(())
+}
+
+/// The npm package, built, bound and packed: the tarball's path.
+pub(crate) fn packed() -> Result<std::path::PathBuf> {
     let (version, target) = metadata()?;
     sh("cargo build --locked --release --lib --target wasm32-unknown-unknown")?;
     let pkg = target.join("npm-package");
@@ -35,16 +41,26 @@ pub(crate) fn package() -> Result<()> {
     manifest["version"] = version.clone().into();
     let manifest = format!("{manifest:#}\n");
     write(&pkg.join("package.json"), manifest.as_bytes())?;
-    for (from, to) in [("npm/README.md", "README.md"), ("LICENSE", "LICENSE")] {
+    let copied = [
+        ("npm/README.md", "README.md"),
+        ("npm/THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
+        ("LICENSE", "LICENSE"),
+    ];
+    for (from, to) in copied {
         fs::copy(repo().join(from), pkg.join(to)).map_err(|error| format!("{from}: {error}"))?;
     }
 
-    // npm packs all of `dist/` (wasm-bindgen's `snippets/` too); the entry point, types and wasm must be there.
+    // npm packs all of `dist/` (wasm-bindgen's `snippets/` too, where the dynamic imports of transformers.js and
+    // eSpeak NG are); the entry point, types and wasm must be there, and the third-party notices.
     empty_dir(&target.join("npm"))?;
     let report = run_in(&pkg, "npm pack --json --pack-destination ../npm", &[])?;
     let report = &parse(report.as_bytes(), "npm pack")?[0];
     let packed: Vec<_> = report["files"].as_array().into_iter().flatten().collect();
-    for file in [".js", ".d.ts", "_bg.wasm"].map(|suffix| format!("dist/{STEM}{suffix}")) {
+    let wanted = [".js", ".d.ts", "_bg.wasm"].map(|suffix| format!("dist/{STEM}{suffix}"));
+    for file in wanted
+        .into_iter()
+        .chain(["THIRD_PARTY_NOTICES.md".to_owned()])
+    {
         if !packed.iter().any(|packed| packed["path"] == file.as_str()) {
             return Err(format!("npm pack left out {file}"));
         }
@@ -54,8 +70,7 @@ pub(crate) fn package() -> Result<()> {
         let wrote = &report["filename"];
         return Err(format!("npm pack wrote {wrote}, not {tarball}"));
     }
-    println!("{}", target.join("npm").join(tarball).display());
-    Ok(())
+    Ok(target.join("npm").join(tarball))
 }
 
 /// `cargo xtask npm-smoke`: install the tarball into a consumer's project and, in Node, create an engine with it.

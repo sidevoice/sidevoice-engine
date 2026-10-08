@@ -1,0 +1,22 @@
+{
+  "max_wer": 0.25,
+  "accelerators": ["wasm"],
+  "stt": {
+    "model": "whisper-tiny",
+    "build": "whisper-tiny/transformers-js-q8"
+  },
+  "tts": [
+    {
+      "model": "kokoro-82m-v1.0",
+      "build": "kokoro-82m-v1.0/transformers-js-q8",
+      "voice": "ef_dora",
+      "language": "es"
+    },
+    {
+      "model": "supertonic-2",
+      "build": "supertonic-2/transformers-js-fp32",
+      "voice": "F1",
+      "language": "es"
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 name: ci
 
 # Every pull request: format and Clippy (Clippy on macOS too, the only place the MLX backend compiles), the tests on
-# every native target and on wasm32 in Node, and the npm package `@sidevoice/engine` built and installed as a
-# consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing: what passes here is what merging
+# every native target and on wasm32 in Node and in a headless Chrome, and the npm package `@sidevoice/engine` built
+# and installed as a consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing: what passes here is what merging
 # publishes (release.yml). Which backends a build contains is checked here, per target (src/backend/tests.rs, and in the
 # packaged build by npm-smoke); whether they work on a given machine is each backend's probe(). Models run for real
 # on every native target through the sherpa-onnx backend (test-inference), and what linking it costs is measured
@@ -122,3 +122,23 @@ jobs:
       # keep the backends the web build registers (xtask/src/npm.rs).
       - run: cargo xtask npm
       - run: cargo xtask npm-smoke
+
+  # The wasm32 tests again, in a headless Chrome, with those that need a page (OPFS, an HTTP server) that Node skips
+  # (`cargo xtask test-browser`). Chrome and ChromeDriver are pinned to one Chrome for Testing version.
+  test-browser:
+    name: Test wasm (headless Chrome)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+        with:
+          wasm: true
+      - id: chrome
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          chrome-version: "155.0.8059.39"
+          install-chromedriver: true
+      - run: cargo xtask test-browser
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}

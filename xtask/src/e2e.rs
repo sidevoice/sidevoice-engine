@@ -14,19 +14,19 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::{env, fs};
 
 use serde::Deserialize;
 use sidevoice_engine::{BundledCatalog, Cancel, Engine, LoadedModel, NativeHost, Progress};
 
-use crate::{read, repo, run_in, sha256, write, Result};
+use crate::voice_loop::{fetch, primary, report, Clip, Row};
+use crate::{read, repo, write, Result};
 
 mod audio;
 #[cfg(test)]
 mod tests;
-mod wer;
 
 /// The backend the loop runs on: the one that runs every model in the plan on every platform it covers.
 const BACKEND: &str = "sherpa-onnx";
@@ -58,30 +58,6 @@ struct Speaker {
     max_wer: Option<f64>,
     #[serde(default)]
     why: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Clip {
-    /// Its primary language subtag.
-    language: String,
-    url: String,
-    sha256: String,
-    /// What is said in it, as its source transcribes it.
-    text: String,
-    /// Where it comes from, and its licence: for people, not read.
-    source: String,
-    license: String,
-}
-
-/// One comparison: who said it to whom, in which language, what was said and what was heard.
-struct Row {
-    pair: String,
-    language: String,
-    said: String,
-    heard: Result<String>,
-    /// The highest word error rate it may have, when it is not the plan's.
-    max_wer: Option<f64>,
 }
 
 /// `cargo xtask e2e [DIR]`.
@@ -172,7 +148,8 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             ));
         }
     }
-    report(&rows, plan.max_wer)
+    let title = format!("Voice loop ({} {})", env::consts::OS, env::consts::ARCH);
+    report(&title, &rows, plan.max_wer)
 }
 
 /// The plan in `json`, read strictly, and consistent: a sentence for every language spoken.
@@ -264,97 +241,6 @@ fn failed(pair: &str, language: &str, said: &str, code: &str) -> Row {
         heard: Err(code.to_owned()),
         max_wer: None,
     }
-}
-
-/// The clip, from `clips` or downloaded into it, checked against its digest either way.
-fn fetch(clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
-    let path = clips.join(&clip.sha256);
-    if !path.is_file() {
-        let partial = clips.join(format!("{}.partial", clip.sha256));
-        let target = partial.to_string_lossy();
-        run_in(clips, "curl -fsSL --retry 3 -o", &[&target, &clip.url])?;
-        fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))?;
-    }
-    let bytes = read(&path)?;
-    let digest = sha256(&bytes);
-    if digest != clip.sha256 {
-        let _ = fs::remove_file(&path);
-        return Err(format!(
-            "{}: sha256 {digest}, not {}",
-            clip.url, clip.sha256
-        ));
-    }
-    Ok(bytes)
-}
-
-/// Prints the table, writes it to `$GITHUB_STEP_SUMMARY` when set, and fails if any row failed or is above its highest
-/// word error rate: its own, or `default`.
-fn report(rows: &[Row], default: f64) -> Result<()> {
-    let mut table =
-        String::from("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
-    let mut bad = 0;
-    for row in rows {
-        let max_wer = row.max_wer.unwrap_or(default);
-        let (got, wer, ok) = match &row.heard {
-            Ok(heard) => {
-                let wer = wer::wer(&row.said, heard);
-                let own = match row.max_wer {
-                    Some(own) => format!(" (≤ {:.0}%)", own * 100.0),
-                    None => String::new(),
-                };
-                let mark = if wer <= max_wer {
-                    own
-                } else {
-                    format!("{own} ✗")
-                };
-                (
-                    heard.clone(),
-                    format!("{:.0}%{mark}", wer * 100.0),
-                    wer <= max_wer,
-                )
-            }
-            Err(code) => (format!("`{code}`"), "✗".to_owned(), false),
-        };
-        bad += usize::from(!ok);
-        let cell = |text: &str| text.replace('|', "\\|");
-        table.push_str(&format!(
-            "| {} | {} | {} | {} | {wer} |\n",
-            cell(&row.pair),
-            row.language,
-            cell(&row.said),
-            cell(&got)
-        ));
-    }
-    let verdict = format!(
-        "{} of {} within {:.0}% WER, or the voice's own limit where the plan gives one (normalised: lower case, no \
-         punctuation, vowel accents folded).",
-        rows.len() - bad,
-        rows.len(),
-        default * 100.0
-    );
-    println!("\n{table}\n{verdict}");
-    if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {
-        let mut text =
-            String::from_utf8_lossy(&fs::read(&summary).unwrap_or_default()).into_owned();
-        text.push_str(&format!(
-            "## Voice loop ({} {})\n\n{table}\n{verdict}\n",
-            env::consts::OS,
-            env::consts::ARCH
-        ));
-        write(Path::new(&summary), text.as_bytes())?;
-    }
-    if bad > 0 || rows.is_empty() {
-        return Err(format!("{bad} of {} comparisons failed", rows.len()));
-    }
-    Ok(())
-}
-
-/// The primary language subtag of the BCP 47 tag `tag`, lower-cased.
-fn primary(tag: &str) -> String {
-    tag.split(['-', '_'])
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
 }
 
 /// Runs `future` to its end on the loop's Tokio runtime, as an app does: the native engine downloads through reqwest

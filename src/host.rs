@@ -1,6 +1,6 @@
 //! The platform: what the place the engine runs in can see, keep and download. The engine ships one host per kind of
 //! build, chosen by the same aliases as the backends (`native.rs`, [`NativeHost`], in every native build; the
-//! browser's to come), and the [`Host`] interface stays open: tests and other platforms bring their own.
+//! page's in the web build, in the crate's `web` bridge), and the [`Host`] interface stays open: tests and other platforms bring their own.
 //!
 //! Inside: `capabilities` (what a host reports), `platform` (which platform that is), `storage` and `fetcher` (where
 //! files are kept, and how they arrive), and `native` (the native host).

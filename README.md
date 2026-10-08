@@ -39,7 +39,8 @@ pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)).
 
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
 files. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
-every native build, the browser's to come in the web build (#8). The `Host` interface stays open, so tests and other
+every native build, and in the web build the page's, built by `WebEngine.create(host)` from what the page reports,
+with the engine's own storage (OPFS, the browser's private file system) and downloads (`fetch`). The `Host` interface stays open, so tests and other
 platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
@@ -133,8 +134,9 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
 
 The catalogue, the installer, the lifecycle and the native host work, and so does the first real backend:
 sherpa-onnx, natively (speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and
-Supertonic), linked through the official crate. MLX and transformers.js are stubs, and the browser's host is not
-bridged yet.
+Supertonic), linked through the official crate; and transformers.js, in the browser (speech to text with Whisper;
+text to speech with Kokoro, Spanish included, through eSpeak NG, and Supertonic 2), with the page's host storing
+files in OPFS and downloading them with `fetch`. MLX is a stub.
 
 ## Layout
 
@@ -158,9 +160,10 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   engine.rs       Engine: models, install, uninstall, load; engine/: model (Model, ModelBuild: what models lists),
                   loaded (LoadedModel, Stt, Tts), audio (Audio, resampling), memory (weak references: one library
                   per backend, one model per build), error (ConfigError)
-  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
-                  the JavaScript host (JsHost) as the engine sees it; web/host/: capabilities (reading what it
-                  reports), storage (WebStorage), fetcher (WebFetcher)
+  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LoadedModel, Stt,
+                  Tts; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
+                  file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
+                  capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`)
   maybe_send.rs   Send/Sync in native builds only
 backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
 catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
@@ -213,6 +216,17 @@ cargo test --locked --target wasm32-unknown-unknown --lib
 cargo xtask npm        # target/npm/sidevoice-engine-X.Y.Z.tgz
 cargo xtask npm-smoke
 cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own tests
+```
+
+The tests that need a page (OPFS, an HTTP server) are ignored in Node and run in a headless Chrome, through
+ChromeDriver (`CHROMEDRIVER`, or `chromedriver` on the `PATH`, and `CHROME` for the Chrome it starts, of the same
+version). The voice loop runs in Chrome too, through the npm package as a page uses it: Whisper tiny transcribes the
+loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, on WebAssembly (`xtask/web-e2e.json`; about
+400 MB downloaded on every run, into a profile that is thrown away; `CHROME`, else `google-chrome`):
+
+```sh
+cargo xtask test-browser
+cargo xtask web-e2e [DIR]
 ```
 
 A backend's files are data, in `backends.json`: one `version` per backend and, per platform, the files to download,

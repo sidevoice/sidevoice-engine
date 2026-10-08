@@ -17,6 +17,10 @@
 //!   xtask/e2e.json).
 //! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
 //!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
+//! - `test-browser`: the engine's wasm32 tests in a headless Chrome, those that need a page (OPFS) included
+//!   (xtask/src/test_browser.rs).
+//! - `web-e2e [DIR]`: the voice loop for real in a headless Chrome, through the npm package: Whisper transcribes the
+//!   recorded clips, and hears Kokoro and Supertonic back (xtask/src/web_e2e.rs, plan in xtask/web-e2e.json).
 
 mod backends;
 mod catalog;
@@ -25,6 +29,10 @@ mod e2e;
 mod link_size;
 mod npm;
 mod release;
+mod test_browser;
+mod voice_loop;
+mod web_e2e;
+mod wer;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -36,7 +44,8 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR] | link-size";
+     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR] | link-size | test-browser \
+     | web-e2e [DIR]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -57,6 +66,9 @@ fn main() -> ExitCode {
         #[cfg(feature = "e2e")]
         ["e2e", dir] => e2e::run(Some(dir)),
         ["link-size"] => link_size::measure(),
+        ["test-browser"] => test_browser::run(),
+        ["web-e2e"] => web_e2e::run(None),
+        ["web-e2e", dir] => web_e2e::run(Some(dir)),
         _ => Err(USAGE.into()),
     };
     if let Err(error) = &result {

@@ -134,8 +134,9 @@ impl WebEngine {
     }
 
     /// Loads `build` of `model` (an installed one that runs here, else the recommended one, when left out),
-    /// installing it first if it is not, as [`WebEngine::install`] does. The model stays in memory until every
-    /// `LoadedModel` of its build is freed (`free()`, or `using`).
+    /// installing it first if it is not, as [`WebEngine::install`] does. The model stays in memory while a
+    /// `LoadedModel` of its build lives, or an `Stt` or `Tts` one handed out: freeing them all (`free()`, or letting
+    /// them be collected) unloads it.
     #[wasm_bindgen(unchecked_return_type = "Promise<LoadedModel>")]
     pub fn load(
         &self,
@@ -156,8 +157,8 @@ impl WebEngine {
     }
 }
 
-/// A model in memory, for JavaScript. Freeing it (`free()`) unloads the model once no other `LoadedModel` of its build
-/// lives.
+/// A model in memory, for JavaScript. It and the `Stt` and `Tts` it hands out each keep the model in memory: freeing
+/// them all (`free()`, or letting them be collected) unloads it.
 #[wasm_bindgen(js_name = LoadedModel)]
 pub struct WebLoadedModel {
     loaded: LoadedModel,
