@@ -40,7 +40,9 @@ pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)).
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
 files; each platform implements its own (the browser, the desktop app). The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
-when it runs. Engine libraries and models are downloaded when they are needed, never linked into the app.
+when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
+now, the sherpa-onnx backend is the exception: native builds link it statically, through the official crate, behind
+the default `sherpa-onnx` feature (sidevoice-engine#33 is loading it on demand again).
 
 ## What a host must report
 
@@ -74,8 +76,8 @@ accepts.
 ## Status
 
 The interfaces, discovery of the backends a build has and their lazy loading, and the first real backend:
-sherpa-onnx, natively (Whisper speech to text, Kokoro text to speech). The installer and the catalogue are not
-implemented yet, and MLX and transformers.js are stubs.
+sherpa-onnx, natively (Whisper speech to text, Kokoro text to speech), linked through the official crate. The
+installer and the catalogue are not implemented yet, and MLX and transformers.js are stubs.
 
 ## Layout
 
@@ -105,7 +107,11 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 
 ## Build and test
 
-You need Rust 1.98.1 (the version `.github/actions/setup` installs). The native tests build and check this
+You need Rust 1.98.1 (the version `.github/actions/setup` installs). A native build links sherpa-onnx statically:
+the `sherpa-onnx-sys` build script downloads its prebuilt static libraries for the target from sherpa-onnx's GitHub
+release (about 22 MB on Linux and macOS, kept in `target/sherpa-onnx-prebuilt/`; `SHERPA_ONNX_ARCHIVE_DIR` points it
+at archives you already have), and they need the C++ standard library the platform's C++ toolchain provides
+(libstdc++ on Linux). `--no-default-features` leaves the backend out. The native tests build and check this
 platform's backends:
 
 ```sh

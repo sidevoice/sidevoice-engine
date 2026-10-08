@@ -1,48 +1,16 @@
-//! What sherpa-onnx's backend checks without its library: the C structs' layout, which accelerators it takes, how it
-//! fails before a library opens, and the ONNX metadata reader. Running real models is `inference_tests.rs`.
+//! What sherpa-onnx's backend checks before the library is asked anything: which model a build's files make, which
+//! accelerators it takes, how it fails without its files, and the ONNX metadata reader. Running real models is
+//! `inference_tests.rs`.
 
 use std::io::{BufReader, Cursor};
-use std::mem::{offset_of, size_of};
 
-use super::c_api::{
-    GeneratedAudio, GenerationConfig, KokoroModelConfig, OfflineModelConfig,
-    OfflineRecognizerConfig, OfflineRecognizerResult, OfflineTtsConfig, OfflineTtsModelConfig,
-    WhisperModelConfig,
-};
-use super::{model_metadata, provider, SherpaOnnx};
+use super::{model_metadata, provider, text, Kind, SherpaOnnx};
 use crate::backend::{Backend, LoadedModel};
 use crate::catalog::Build;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::test_support::ready;
 use crate::Result;
-
-/// Sizes and offsets from c-api.h (v1.13.8), printed by a C compiler with `sizeof` and `offsetof` on a 64-bit
-/// target. If the header changes, these are measured again, and c_api.rs follows.
-#[test]
-fn the_c_structs_have_the_headers_layout() {
-    assert_eq!(size_of::<WhisperModelConfig>(), 48);
-    assert_eq!(size_of::<OfflineModelConfig>(), 504);
-    assert_eq!(offset_of!(OfflineModelConfig, whisper), 40);
-    assert_eq!(offset_of!(OfflineModelConfig, tokens), 96);
-    assert_eq!(offset_of!(OfflineModelConfig, num_threads), 104);
-    assert_eq!(offset_of!(OfflineModelConfig, provider), 112);
-    assert_eq!(size_of::<OfflineRecognizerConfig>(), 608);
-    assert_eq!(offset_of!(OfflineRecognizerConfig, model_config), 8);
-    assert_eq!(offset_of!(OfflineRecognizerConfig, decoding_method), 528);
-    assert_eq!(size_of::<OfflineRecognizerResult>(), 128);
-    assert_eq!(size_of::<KokoroModelConfig>(), 64);
-    assert_eq!(offset_of!(KokoroModelConfig, dict_dir), 40);
-    assert_eq!(size_of::<OfflineTtsModelConfig>(), 416);
-    assert_eq!(offset_of!(OfflineTtsModelConfig, num_threads), 56);
-    assert_eq!(offset_of!(OfflineTtsModelConfig, provider), 64);
-    assert_eq!(offset_of!(OfflineTtsModelConfig, kokoro), 128);
-    assert_eq!(size_of::<OfflineTtsConfig>(), 448);
-    assert_eq!(size_of::<GenerationConfig>(), 56);
-    assert_eq!(offset_of!(GenerationConfig, sid), 8);
-    assert_eq!(offset_of!(GenerationConfig, extra), 48);
-    assert_eq!(size_of::<GeneratedAudio>(), 16);
-}
 
 #[test]
 fn it_runs_on_core_ml_and_the_cpu_only() {
@@ -61,11 +29,41 @@ fn it_runs_on_core_ml_and_the_cpu_only() {
     }
 }
 
-fn load(files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
-    load_on(Accelerator::Cpu, files)
+fn installed(files: &[(&str, &str)]) -> Installed {
+    Installed {
+        files: files
+            .iter()
+            .map(|(key, path)| ((*key).to_owned(), (*path).to_owned()))
+            .collect(),
+    }
 }
 
-fn load_on(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
+fn kind(files: &[(&str, &str)]) -> Result<Kind> {
+    Kind::of(&installed(files))
+}
+
+#[test]
+fn the_model_follows_from_its_files() {
+    assert_eq!(kind(&[("encoder", "e.onnx")]), Ok(Kind::Whisper));
+    assert_eq!(kind(&[("voices", "v.bin")]), Ok(Kind::Kokoro));
+    assert_eq!(kind(&[]).unwrap_err().code, "unsupported-model");
+    assert_eq!(
+        kind(&[("model", "m.onnx")]).unwrap_err().code,
+        "unsupported-model"
+    );
+}
+
+#[test]
+fn kokoro_runs_on_the_cpu_only_and_whisper_on_core_ml_too() {
+    assert_eq!(Kind::Whisper.provider(Accelerator::CoreMl), Ok("coreml"));
+    assert_eq!(Kind::Kokoro.provider(Accelerator::Cpu), Ok("cpu"));
+    assert_eq!(
+        Kind::Kokoro.provider(Accelerator::CoreMl).unwrap_err().code,
+        "unsupported-accelerator"
+    );
+}
+
+fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
     let build = Build {
         id: "test".to_owned(),
         backend: "sherpa-onnx".to_owned(),
@@ -74,39 +72,31 @@ fn load_on(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn L
         accelerators: Vec::new(),
         files: Vec::new(),
     };
-    let files = Installed {
-        files: files
-            .iter()
-            .map(|(key, path)| ((*key).to_owned(), (*path).to_owned()))
-            .collect(),
-    };
-    ready(SherpaOnnx.load(&build, accelerator, &files))
-}
-
-fn code(result: Result<Box<dyn LoadedModel>>) -> &'static str {
-    result.map(|_| ()).unwrap_err().code
+    ready(SherpaOnnx.load(&build, accelerator, &installed(files)))
 }
 
 #[test]
-fn files_of_no_model_it_knows_are_unsupported() {
-    assert_eq!(code(load(&[])), "unsupported-model");
-    assert_eq!(code(load(&[("model", "m.onnx")])), "unsupported-model");
-}
-
-#[test]
-fn a_model_without_the_library_installed_does_not_load() {
-    assert_eq!(code(load(&[("encoder", "e.onnx")])), "file-not-installed");
-    assert_eq!(code(load(&[("voices", "v.bin")])), "file-not-installed");
-}
-
-#[test]
-fn a_library_that_is_not_there_does_not_open() {
-    let nowhere = std::env::temp_dir().join("sidevoice-sherpa-onnx-no-library");
-    let nowhere = nowhere.to_str().expect("a UTF-8 temporary directory");
+fn a_model_missing_a_file_does_not_load_and_kokoro_refuses_core_ml_first() {
+    let code = |result: Result<Box<dyn LoadedModel>>| result.map(|_| ()).unwrap_err().code;
     assert_eq!(
-        code(load(&[("library", nowhere), ("encoder", "e.onnx")])),
-        "library-open-failed"
+        code(load(Accelerator::Cpu, &[("encoder", "e.onnx")])),
+        "file-not-installed"
     );
+    assert_eq!(
+        code(load(Accelerator::Cpu, &[("voices", "v.bin")])),
+        "file-not-installed"
+    );
+    let kokoro = [("model", "m.onnx"), ("voices", "v.bin")];
+    assert_eq!(
+        code(load(Accelerator::CoreMl, &kokoro)),
+        "unsupported-accelerator"
+    );
+}
+
+#[test]
+fn text_with_a_nul_is_refused_before_the_crate_would_panic_on_it() {
+    assert_eq!(text("hola").as_deref(), Ok("hola"));
+    assert_eq!(text("a\0b").unwrap_err().code, "invalid-text");
 }
 
 /// A protobuf length-delimited field: its tag, its length and its bytes.
@@ -136,13 +126,4 @@ fn metadata_is_read_past_the_other_fields_of_the_model() {
     assert_eq!(find("speaker_names").as_deref(), Some("af,am_adam"));
     assert_eq!(find("model_type").as_deref(), Some("kokoro"));
     assert_eq!(find("sample_rate"), None);
-}
-
-#[test]
-fn kokoro_runs_on_the_cpu_only() {
-    let kokoro = [("model", "m.onnx"), ("voices", "v.bin"), ("library", "l")];
-    assert_eq!(
-        code(load_on(Accelerator::CoreMl, &kokoro)),
-        "unsupported-accelerator"
-    );
 }

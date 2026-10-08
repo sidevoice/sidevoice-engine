@@ -1,36 +1,31 @@
-// The sherpa-onnx library exists on every native platform.
-#![cfg(native)]
+// Linked only where the `sherpa-onnx` feature (default) brings the official crate in, natively: build.rs.
+#![cfg(sherpa_onnx)]
 //! sherpa-onnx: speech to text with Whisper and text to speech with Kokoro, on ONNX Runtime.
 //!
 //! # Binding
 //!
-//! Our own thin FFI over sherpa-onnx's C API (`c_api`, hand-written from the header), with the library that
-//! `backends.json` pins opened at run time with `libloading` (`library`). Not a crate such as `sherpa-rs`: those link
-//! the library at build time, or download it while building, so the app would carry ONNX Runtime whether or not
-//! anyone loads a model, and the version would be the crate's rather than `backends.json`'s. Here the library is
-//! one more installed file, fetched on demand like a model and opened by the first model that needs it.
+//! The official `sherpa-onnx` crate (k2-fsa), pinned to one exact version in Cargo.toml, through its safe API
+//! (`OfflineRecognizer`, `OfflineTts`). Its build script downloads sherpa-onnx's prebuilt static libraries for the
+//! target (ONNX Runtime included) and links them into the app: in this first phase the backend is linked, not
+//! downloaded when a model needs it, and `backends.json` lists nothing to download for it (`[]`). Loading the runtime
+//! on demand again is sidevoice-engine#33. Building without the `sherpa-onnx` feature leaves the backend out, and
+//! ONNX Runtime with it.
 //!
 //! # Files
 //!
-//! - `library` (`backends.json`): where the installer unpacked the platform's archive (the C API's library is found
-//!   below it, in `lib/`), or the C API's library itself; ONNX Runtime is beside it.
 //! - Whisper (catalogue): `encoder`, `decoder` and `tokens`.
 //! - Kokoro (catalogue): `model`, `voices`, `tokens`, and `espeak-ng-data`, a directory.
 //!
-//! Which of the two a build is follows from its files: `encoder` makes it Whisper, `voices` Kokoro.
+//! Which a build is follows from its files ([`Kind::of`]).
 //!
 //! # Accelerators
 //!
 //! Core ML on macOS (ONNX Runtime's Core ML execution provider, which runs on the CPU whatever it cannot place) and
-//! the CPU everywhere. CUDA needs sherpa-onnx's CUDA builds, which `backends.json` does not pin yet.
+//! the CPU everywhere. CUDA needs sherpa-onnx's CUDA builds, which the crate does not link.
 //!
 //! Kokoro runs on the CPU only: creating its TTS on Core ML throws a C++ exception that the C API does not catch,
-//! and an exception that reaches Rust aborts the process. `load` refuses it with `unsupported-accelerator` before the
-//! library is touched, and Kokoro's catalogue builds should accept the CPU only.
-
-use std::ffi::CString;
-use std::path::Path;
-use std::sync::Arc;
+//! and an exception that reaches Rust aborts the process. `load` refuses it with `unsupported-accelerator` before
+//! creating it, and Kokoro's catalogue builds should accept the CPU only.
 
 use async_trait::async_trait;
 
@@ -41,18 +36,15 @@ use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
 
-mod c_api;
 #[cfg(test)]
 mod inference_tests;
 mod kokoro;
-mod library;
 mod model_metadata;
 #[cfg(test)]
 mod tests;
 mod whisper;
 
 use kokoro::Kokoro;
-use library::Api;
 use whisper::Whisper;
 
 struct SherpaOnnx;
@@ -78,21 +70,42 @@ impl Backend for SherpaOnnx {
         accelerator: Accelerator,
         files: &Installed,
     ) -> Result<Box<dyn LoadedModel>> {
-        let provider = provider(accelerator)?;
-        let is_whisper = files.file("encoder").is_some();
-        if !is_whisper && files.file("voices").is_none() {
-            return Err(Error::new("unsupported-model"));
+        let kind = Kind::of(files)?;
+        let provider = kind.provider(accelerator)?;
+        Ok(match kind {
+            Kind::Whisper => Box::new(Whisper::load(files, provider)?),
+            Kind::Kokoro => Box::new(Kokoro::load(files, provider)?),
+        })
+    }
+}
+
+/// Which of the models this backend runs a build is: it follows from the build's files (see *Files*).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Whisper,
+    Kokoro,
+}
+
+impl Kind {
+    /// `encoder` makes it Whisper, `voices` Kokoro; anything else is `unsupported-model`.
+    fn of(files: &Installed) -> Result<Self> {
+        if files.file("encoder").is_some() {
+            Ok(Self::Whisper)
+        } else if files.file("voices").is_some() {
+            Ok(Self::Kokoro)
+        } else {
+            Err(Error::new("unsupported-model"))
         }
-        // Kokoro on Core ML throws from inside the library, which aborts the process (see *Accelerators*).
-        if !is_whisper && accelerator != Accelerator::Cpu {
+    }
+
+    /// The execution provider this model runs on with `accelerator`, or `unsupported-accelerator`, checked before the
+    /// model is created: Kokoro on Core ML throws from inside the library, which aborts the process (see
+    /// *Accelerators*).
+    fn provider(self, accelerator: Accelerator) -> Result<&'static str> {
+        if self == Self::Kokoro && accelerator != Accelerator::Cpu {
             return Err(Error::new("unsupported-accelerator"));
         }
-        let api = Arc::new(Api::open(Path::new(path(files, "library")?))?);
-        Ok(if is_whisper {
-            Box::new(Whisper::load(api, files, provider)?)
-        } else {
-            Box::new(Kokoro::load(api, files, provider)?)
-        })
+        provider(accelerator)
     }
 }
 
@@ -106,14 +119,20 @@ fn provider(accelerator: Accelerator) -> Result<&'static str> {
     }
 }
 
-/// Where the host keeps the installed file `name`, or `file-not-installed`.
-fn path<'a>(files: &'a Installed, name: &str) -> Result<&'a str> {
-    files.file(name).ok_or(Error::new("file-not-installed"))
+/// Where the host keeps the installed file `name`, for the crate: `file-not-installed`, or `invalid-text` for a path
+/// the C API cannot take.
+fn path(files: &Installed, name: &str) -> Result<String> {
+    let path = files.file(name).ok_or(Error::new("file-not-installed"))?;
+    text(path)
 }
 
-/// `text` for the C API, which cannot take a NUL inside it (`invalid-text`).
-fn c_string(text: &str) -> Result<CString> {
-    CString::new(text).map_err(|_| Error::new("invalid-text"))
+/// `text` as the crate takes it: the C API cannot take a NUL inside it, and the crate panics on one, so it is refused
+/// here first (`invalid-text`).
+fn text(text: &str) -> Result<String> {
+    if text.contains('\0') {
+        return Err(Error::new("invalid-text"));
+    }
+    Ok(text.to_owned())
 }
 
 /// The threads ONNX Runtime runs a model on: the machine's, up to 4, past which these small models gain little.

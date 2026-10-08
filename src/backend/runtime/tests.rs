@@ -18,15 +18,28 @@ fn a_backend_has_no_runtime_where_backends_json_says_null() {
 }
 
 #[test]
-fn runtime_files_are_artifacts_keyed_by_their_name_at_the_backends_version() {
-    let entry = entries()
+fn sherpa_onnx_is_linked_so_it_downloads_nothing_and_its_version_is_the_crates() {
+    for platform in [
+        Platform::MacosAarch64,
+        Platform::MacosX86_64,
+        Platform::LinuxX86_64,
+        Platform::LinuxAarch64,
+        Platform::WindowsX86_64,
+    ] {
+        assert_eq!(
+            runtime_files("sherpa-onnx", platform),
+            Some(Vec::new()),
+            "{platform:?}"
+        );
+    }
+    let version = &entries()
         .iter()
         .find(|entry| entry.id == "sherpa-onnx")
-        .expect("sherpa-onnx");
-    let files = runtime_files("sherpa-onnx", Platform::LinuxX86_64).expect("linux-x86_64");
-    let keys: Vec<_> = files.iter().map(|artifact| artifact.key.as_str()).collect();
-    assert_eq!(keys, ["library"]);
-    let url = &files[0].url;
-    assert!(!url.contains("{version}"), "{url}");
-    assert!(url.contains(&format!("v{}", entry.version)), "{url}");
+        .expect("sherpa-onnx")
+        .version;
+    let pinned = format!("sherpa-onnx = {{ version = \"={version}\"");
+    assert!(
+        include_str!("../../../Cargo.toml").contains(&pinned),
+        "backends.json says {version}; Cargo.toml must pin the crate to it"
+    );
 }

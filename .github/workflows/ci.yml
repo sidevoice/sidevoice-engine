@@ -5,7 +5,8 @@ name: ci
 # consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing: what passes here is what merging
 # publishes (release.yml). Which backends a build contains is checked here, per target (src/backend/tests.rs, and in the
 # packaged build by npm-smoke); whether they work on a given machine is each backend's probe(). Models run for real
-# on every native target through the sherpa-onnx backend (test-inference).
+# on every native target through the sherpa-onnx backend (test-inference), and what linking it costs is measured
+# (link-size).
 on:
   pull_request:
     branches: [main]
@@ -31,6 +32,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo fmt --manifest-path xtask/Cargo.toml --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      # Without the default `sherpa-onnx` feature: the backend, and the static libraries it links, left out.
+      - run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - run: cargo clippy --locked --all-targets --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
 
@@ -60,8 +63,8 @@ jobs:
       - run: cargo test --locked
 
   # Real models through the sherpa-onnx backend: Whisper transcribes, Kokoro speaks, and Whisper hears Kokoro back
-  # (src/backend/implementations/sherpa_onnx/inference_tests.rs). The tests download the library and the models
-  # themselves, checked by digest; the cache only spares the download, keyed by the files that pin them.
+  # (src/backend/implementations/sherpa_onnx/inference_tests.rs), on the library the build links. The tests download
+  # the models themselves, checked by digest; the cache only spares the download, keyed by the file that pins them.
   test-inference:
     name: Test inference (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
@@ -78,10 +81,27 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/test-models
-          key: test-models-${{ matrix.target }}-${{ hashFiles('backends.json', 'src/backend/implementations/sherpa_onnx/inference_tests.json') }}
+          key: test-models-${{ matrix.target }}-${{ hashFiles('src/backend/implementations/sherpa_onnx/inference_tests.json') }}
       - run: cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture --test-threads=1
         env:
           SIDEVOICE_TEST_MODELS: ${{ runner.temp }}/test-models
+
+  # What linking sherpa-onnx costs an app: the smallest program using the engine, built in release mode and stripped,
+  # with and without the `sherpa-onnx` feature (xtask/src/link_size.rs). The sizes go to the job's summary.
+  link-size:
+    name: Link size (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: macos-aarch64, runner: macos-14 }
+          - { target: linux-x86_64, runner: ubuntu-24.04 }
+          - { target: linux-aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+      - run: cargo xtask link-size
 
   test-wasm:
     name: Test wasm (Node, npm package)

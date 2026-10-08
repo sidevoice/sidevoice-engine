@@ -1,13 +1,12 @@
-//! Real models through the real library: Whisper transcribes a clip whose text is known, Kokoro speaks, and what
-//! Kokoro says Whisper hears back. They download what they need (about 250 MB: the library `backends.json` pins for
-//! this platform, Whisper tiny.en and Kokoro, both int8, pinned in `inference_tests.json`), so they are ignored by
-//! default and CI's inference job runs them:
+//! Real models through the linked library: Whisper transcribes a clip whose text is known, Kokoro speaks, and what
+//! Kokoro says Whisper hears back. They download the models they need (about 150 MB: Whisper tiny.en and Kokoro, both
+//! int8, pinned in `inference_tests.json`), so they are ignored by default and CI's inference job runs them:
 //!
 //! ```sh
 //! cargo test --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 //! ```
 //!
-//! Until the installer exists (it is the engine's, and generic), they stand in for it: each file is downloaded with
+//! Until the installer exists (it is the engine's, and generic), they stand in for it: each model file is downloaded with
 //! `curl`, checked against its digest, kept in a cache by digest (`target/test-models/`, or `SIDEVOICE_TEST_MODELS`),
 //! and the archives are unpacked there. Core ML is what macOS runs them on; the CPU elsewhere.
 
@@ -21,11 +20,11 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::SherpaOnnx;
-use crate::backend::{runtime_files, Backend, LoadedModel};
+use crate::backend::{Backend, LoadedModel};
 use crate::catalog::Build;
-use crate::host::{Accelerator, Host, Platform};
+use crate::host::Accelerator;
 use crate::install::Installed;
-use crate::test_support::{ready, FakeHost};
+use crate::test_support::ready;
 
 /// What these tests download besides the library: `inference_tests.json`.
 #[derive(Deserialize)]
@@ -82,17 +81,7 @@ fn prepared() -> &'static Prepared {
         );
         fs::create_dir_all(&cache).expect("the cache directory");
 
-        let platform =
-            Platform::of(&FakeHost.capabilities()).expect("a platform backends.json knows");
-        let runtime = runtime_files("sherpa-onnx", platform).expect("sherpa-onnx runs here");
-        let library = runtime
-            .iter()
-            .find(|file| file.key == "library")
-            .expect("its library");
-        let library = unpacked(&cache, &library.url, &library.sha256);
-        let library = ("library".to_owned(), path_text(&library));
-
-        let mut whisper: BTreeMap<_, _> = fixtures
+        let whisper: BTreeMap<_, _> = fixtures
             .whisper
             .iter()
             .map(|file| {
@@ -102,16 +91,14 @@ fn prepared() -> &'static Prepared {
                 )
             })
             .collect();
-        whisper.extend([library.clone()]);
 
         let archive = unpacked(&cache, &fixtures.kokoro.url, &fixtures.kokoro.sha256);
-        let mut kokoro: BTreeMap<_, _> = fixtures
+        let kokoro: BTreeMap<_, _> = fixtures
             .kokoro
             .files
             .iter()
             .map(|(key, inside)| (key.clone(), path_text(&archive.join(inside))))
             .collect();
-        kokoro.extend([library]);
 
         let clip = downloaded(&cache, &fixtures.clip.url, &fixtures.clip.sha256);
         Prepared {

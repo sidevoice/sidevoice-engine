@@ -10,8 +10,11 @@
 //! - `npm-publish TAG`: the tarball of the Release TAG (a `vX.Y.Z`), verified, published to npm.
 //! - `pin-backends [--check]`: every file in `backends.json` downloaded at its pinned version and its `sha256` written
 //!   (or, with `--check`, checked) (xtask/src/backends.rs).
+//! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
+//!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
 
 mod backends;
+mod link_size;
 mod npm;
 mod release;
 
@@ -25,7 +28,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check]";
+     | pin-backends [--check] | link-size";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -39,6 +42,7 @@ fn main() -> ExitCode {
         ["npm-publish", tag] => npm::publish(tag),
         ["pin-backends"] => backends::pin(false),
         ["pin-backends", "--check"] => backends::pin(true),
+        ["link-size"] => link_size::measure(),
         _ => Err(USAGE.into()),
     };
     if let Err(error) = &result {

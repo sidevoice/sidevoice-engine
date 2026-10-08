@@ -71,12 +71,14 @@
 //!
 //! ## Binding the library
 //!
-//! Nothing heavy is linked into the app, so a backend's engine library is never a build-time dependency:
+//! The design is that nothing heavy is linked into the app: a backend's engine library is downloaded when a model
+//! needs it, like the model.
 //!
-//! - native: the backend declares the library's C API in Rust (hand-written `extern "C"` signatures, or generated
-//!   once by bindgen and checked in) and opens the downloaded library at run time with `libloading`, resolving those
-//!   symbols into a table of function pointers; the first native backend that loads something adds `libloading` to
-//!   the native dependencies. A `-sys` crate that links at build time, or that downloads at build time, is not used;
+//! - native: the backend opens the downloaded library at run time and calls its C API through a table of function
+//!   pointers resolved then. **Phase 1 exception:** sherpa-onnx is linked, through the official `sherpa-onnx` crate
+//!   (static, pinned exactly in Cargo.toml, native builds only, behind the default `sherpa-onnx` feature), so its
+//!   `backends.json` entry downloads nothing (`[]`). Loading it on demand again is sidevoice-engine#33. Any other
+//!   native backend follows the design;
 //! - web: the backend's engine is a JavaScript module, and the backend imports it at run time (a dynamic `import()`
 //!   through `wasm-bindgen`), so a page that never loads a model never fetches it. Where the module comes from is
 //!   the backend's `backends.json` entry's to say: files the host stored, or `[]` when it comes with the npm
@@ -105,7 +107,15 @@ mod runtime;
 mod tests;
 
 pub(crate) use loaded_model::LoadedModel;
-pub(crate) use registry::{built_in, find, BackendFactory};
+#[cfg_attr(
+    not(any(sherpa_onnx, web, apple_silicon)),
+    allow(
+        unused_imports,
+        reason = "no backend is compiled in here without the sherpa-onnx feature"
+    )
+)]
+pub(crate) use registry::BackendFactory;
+pub(crate) use registry::{built_in, find};
 #[allow(
     unused_imports,
     reason = "a common requirement no backend declares yet"

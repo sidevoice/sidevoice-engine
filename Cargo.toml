@@ -22,9 +22,10 @@ inventory = "0.3.24"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 
-# Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The
-# libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,
-# not linked. Specific platforms first, then the general native one.
+# Which backends a build contains is decided by these tables, the features below and one `#![cfg]` per backend file
+# (build.rs). The libraries listed here are the ones backends link. Heavy engine libraries are meant to be downloaded
+# when a model needs them, not linked; sherpa-onnx is linked for now (below). Specific platforms first, then the
+# general native one.
 
 # The web build (the npm package): the bridge to JavaScript (src/web.rs), and backends whose engine is a JavaScript
 # module.
@@ -38,9 +39,12 @@ wasm-bindgen-futures = "0.4.79"
 
 # Every native build.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# sherpa-onnx's C API, opened at run time from the library the installer downloaded (src/backend/implementations/
-# sherpa_onnx/library.rs): no backend links its engine at build time.
-libloading = "0.9.0"
+# The sherpa-onnx backend (src/backend/implementations/sherpa_onnx.rs): the official crate, pinned exactly. Phase 1
+# links it statically: its build script downloads sherpa-onnx's prebuilt static libraries for the target (ONNX
+# Runtime included, about 21-23 MB compressed on Linux and macOS, 123 MB on Windows) from the GitHub release of this
+# version, and the app carries them. Loading the runtime on demand instead is sidevoice-engine#33. Never on wasm32:
+# the web build does not carry it.
+sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["static"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3.79"
@@ -54,3 +58,9 @@ tar = "0.4.46"
 
 [build-dependencies]
 cfg_aliases = "0.2.2"
+
+[features]
+default = ["sherpa-onnx"]
+# The sherpa-onnx backend, and the static libraries it links. Natively only; a build without it has no backend that
+# runs a model yet, and is smaller by what CI's `link-size` job reports.
+sherpa-onnx = ["dep:sherpa-onnx"]
