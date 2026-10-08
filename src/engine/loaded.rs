@@ -30,13 +30,21 @@ pub(super) struct Resident {
 }
 
 impl Resident {
-    /// `model`, loaded with `library`, which keeps the library open; its capabilities are what it answers to.
+    /// `model`, loaded with `library`, which keeps the library open; its capabilities are what it answers to. Shared:
+    /// every [`LoadedModel`] of it holds it, and memory remembers it weakly.
+    #[cfg_attr(
+        web,
+        allow(
+            clippy::arc_with_non_send_sync,
+            reason = "the web build has one thread: the model is shared, never sent"
+        )
+    )]
     pub(super) fn new(
         mut model: Box<dyn BackendModel>,
         library: Arc<dyn Library>,
         languages: Vec<String>,
         voices: Vec<Voice>,
-    ) -> Self {
+    ) -> Arc<Self> {
         let mut capabilities = Vec::new();
         if model.as_stt().is_some() {
             capabilities.push(Capability::Stt);
@@ -44,13 +52,13 @@ impl Resident {
         if model.as_tts().is_some() {
             capabilities.push(Capability::Tts);
         }
-        Self {
+        Arc::new(Self {
             model: Mutex::new(model),
             library,
             capabilities,
             languages,
             voices,
-        }
+        })
     }
 }
 

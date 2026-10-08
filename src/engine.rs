@@ -256,19 +256,7 @@ impl Engine {
         };
         let model = library.load(build, accelerator, &files).await?;
         let languages = entry.languages.clone();
-        #[cfg_attr(
-            web,
-            allow(
-                clippy::arc_with_non_send_sync,
-                reason = "the web build has one thread: the model is shared, never sent"
-            )
-        )]
-        let resident = Arc::new(Resident::new(
-            model,
-            Arc::clone(&library),
-            languages,
-            entry.voices.clone(),
-        ));
+        let resident = Resident::new(model, Arc::clone(&library), languages, entry.voices.clone());
         lock(&self.memory).remember(id, &library, &build.id, &resident);
         Ok(LoadedModel::new(&entry.id, &build.id, resident))
     }
