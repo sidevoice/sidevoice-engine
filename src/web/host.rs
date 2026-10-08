@@ -1,8 +1,8 @@
-//! The JavaScript host as the engine sees it: any JavaScript object with the methods of [`JsHost`], wrapped as a
-//! [`Host`]. Storage and downloads are not bridged yet.
+//! The JavaScript host as the engine sees it: any JavaScript object with the methods of [`JsHost`], which reports the
+//! page's capabilities, wrapped as a [`Host`] with the web build's own storage (OPFS) and downloads (`fetch`).
 //!
-//! Inside: `capabilities` (reading what the JavaScript host reports), `storage` and `fetcher` (its storage and
-//! downloads, not bridged yet).
+//! Inside: `capabilities` (reading what the JavaScript host reports), `storage` (`WebStorage`, files in OPFS) and
+//! `fetcher` (`WebFetcher`, downloads through `fetch`).
 
 use wasm_bindgen::prelude::*;
 
@@ -27,9 +27,11 @@ extern "C" {
     pub(super) async fn capabilities(this: &JsHost) -> Result<JsValue, JsValue>;
 }
 
-/// The JavaScript host as the engine sees it. Storage and downloads are not bridged yet.
+/// The JavaScript host as the engine sees it: the capabilities it reported, files in OPFS and downloads through
+/// `fetch`.
 pub(super) struct WebHost {
     capabilities: Capabilities,
+    storage: WebStorage,
 }
 
 impl WebHost {
@@ -37,6 +39,7 @@ impl WebHost {
     pub(super) fn from_capabilities(value: &JsValue) -> Result<Self, JsError> {
         Ok(Self {
             capabilities: capabilities::read(value)?,
+            storage: WebStorage::new(),
         })
     }
 }
@@ -47,7 +50,7 @@ impl Host for WebHost {
     }
 
     fn storage(&self) -> &dyn Storage {
-        &WebStorage
+        &self.storage
     }
 
     fn fetcher(&self) -> &dyn Fetcher {

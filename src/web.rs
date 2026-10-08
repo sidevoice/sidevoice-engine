@@ -11,6 +11,7 @@ use crate::resolver::{Offer, Rejection};
 use crate::{BundledCatalog, Capability, Engine};
 
 mod host;
+pub(crate) mod opfs;
 #[cfg(test)]
 mod tests;
 

@@ -532,3 +532,19 @@ impl CatalogSource for FakeCatalog {
         })
     }
 }
+
+/// Waits `ms` milliseconds, letting the page run what it queued (a task spawned with `spawn_local`).
+#[cfg(web)]
+pub(crate) async fn pause(ms: i32) {
+    let promise = js_sys::Promise::new(&mut |resolve, _| {
+        let set_timeout =
+            js_sys::Reflect::get(&js_sys::global(), &"setTimeout".into()).expect("setTimeout");
+        let set_timeout: js_sys::Function = wasm_bindgen::JsCast::unchecked_into(set_timeout);
+        set_timeout
+            .call2(&wasm_bindgen::JsValue::UNDEFINED, &resolve, &ms.into())
+            .expect("a timeout");
+    });
+    wasm_bindgen_futures::JsFuture::from(promise)
+        .await
+        .expect("resolved");
+}

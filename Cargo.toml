@@ -38,6 +38,22 @@ sha2 = { version = "0.11.0", default-features = false }
 js-sys = "0.3.106"
 wasm-bindgen = "0.2.129"
 wasm-bindgen-futures = "0.4.79"
+# The page's own APIs the web host and the transformers.js backend use: downloads through `fetch`, read as streams and
+# stopped with an AbortController (src/web/host/fetcher.rs); stored files read back as Blobs and handed to
+# transformers.js as Responses; an AbortSignal from the page (src/web.rs). OPFS itself is bound by hand
+# (src/web/opfs.rs): web-sys has no binding for moving a file.
+web-sys = { version = "0.3.106", features = [
+  "AbortController",
+  "AbortSignal",
+  "Blob",
+  "EventTarget",
+  "Headers",
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "Response",
+  "ResponseInit",
+  "console",
+] }
 
 # macOS on Apple silicon, on top of everything native: MLX.
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
