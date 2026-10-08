@@ -72,7 +72,10 @@ pub(crate) struct Installed {
 
 impl Installed {
     /// Where the host keeps the file or directory whose key is `name`, if it is installed.
-    #[cfg_attr(web, allow(dead_code, reason = "no web backend loads a model yet"))]
+    #[cfg_attr(
+        not(sherpa_onnx),
+        allow(dead_code, reason = "only sherpa-onnx loads a model yet")
+    )]
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)
     }

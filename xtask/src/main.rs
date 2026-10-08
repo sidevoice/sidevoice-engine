@@ -15,10 +15,13 @@
 //! - `e2e [DIR]`: the voice loop for real through the engine's public API: text to speech to text, and recorded clips
 //!   to text, in English and Spanish, each transcript held to a word error rate (xtask/src/e2e.rs, plan in
 //!   xtask/e2e.json).
+//! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
+//!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
 
 mod backends;
 mod catalog;
 mod e2e;
+mod link_size;
 mod npm;
 mod release;
 
@@ -32,7 +35,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR]";
+     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR] | link-size";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -50,6 +53,7 @@ fn main() -> ExitCode {
         ["pin-catalog", "--check"] => catalog::pin(true),
         ["e2e"] => e2e::run(None),
         ["e2e", dir] => e2e::run(Some(dir)),
+        ["link-size"] => link_size::measure(),
         _ => Err(USAGE.into()),
     };
     if let Err(error) = &result {

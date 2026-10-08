@@ -1,15 +1,14 @@
-//! Real models through the real library: Whisper transcribes a clip whose text is known, Kokoro speaks, and what
-//! Kokoro says Whisper hears back. They download what they need (about 250 MB: the library `backends.json` pins for
-//! this platform, Whisper tiny.en and Kokoro, both int8, pinned in `inference_tests.json`), so they are ignored by
-//! default and CI's inference job runs them:
+//! Real models through the linked library: Whisper transcribes a clip whose text is known, Kokoro speaks, and what
+//! Kokoro says Whisper hears back. They download the models they need (about 150 MB: Whisper tiny.en and Kokoro, both
+//! int8, pinned in `inference_tests.json`), so they are ignored by default and CI's inference job runs them:
 //!
 //! ```sh
 //! cargo test --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 //! ```
 //!
 //! They install what they need as the engine does, with its installer and `NativeHost`, whose directory
-//! (`target/test-models/`, or `SIDEVOICE_TEST_MODELS`) keeps everything by digest between runs. Core ML is what macOS
-//! runs Whisper on; the CPU elsewhere.
+//! (`target/test-models/`, or `SIDEVOICE_TEST_MODELS`) keeps everything by digest between runs. They run on the CPU,
+//! the one accelerator the linked libraries have.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,13 +17,13 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 
 use super::SherpaOnnx;
-use crate::backend::{runtime_files, Backend, LoadedModel};
-use crate::host::{Accelerator, Host, Platform};
+use crate::backend::{Backend, LoadedModel};
+use crate::host::Accelerator;
 use crate::install::{Artifact, Cancel, Installed, Installer};
 use crate::test_support::{block_on, build};
 use crate::NativeHost;
 
-/// What these tests download besides the library: `inference_tests.json`.
+/// What these tests download: `inference_tests.json`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Fixtures {
@@ -78,8 +77,6 @@ fn prepared() -> &'static Prepared {
             PathBuf::from,
         );
         let host = NativeHost::new(cache).expect("the cache directory");
-        let platform = Platform::of(&host.capabilities()).expect("a platform backends.json knows");
-        let library = runtime_files("sherpa-onnx", platform).expect("sherpa-onnx runs here");
 
         let file = |key: &str, url: &str, sha256: &str| Artifact {
             key: key.to_owned(),
@@ -106,8 +103,8 @@ fn prepared() -> &'static Prepared {
         )]);
         let clip = fs::read(clip.file("clip").expect("the clip")).expect("the clip");
         Prepared {
-            whisper: install(whisper.chain(library.clone()).collect()),
-            kokoro: install(kokoro.chain(library).collect()),
+            whisper: install(whisper.collect()),
+            kokoro: install(kokoro.collect()),
             clip: wav_16k_mono(&clip),
             clip_text: fixtures.clip.text,
         }
@@ -150,14 +147,10 @@ fn wav_16k_mono(wav: &[u8]) -> Vec<f32> {
     panic!("the clip has no data");
 }
 
-/// What the app would pick: Core ML on macOS for Whisper, and the CPU for everything else (Kokoro runs on the CPU
-/// only, see *Accelerators* in `sherpa_onnx.rs`).
-fn accelerator(files: &Installed) -> Accelerator {
-    if std::env::consts::OS == "macos" && files.file("encoder").is_some() {
-        Accelerator::CoreMl
-    } else {
-        Accelerator::Cpu
-    }
+/// What the app would pick: the CPU, the one accelerator the linked libraries have (see *Accelerators* in
+/// `sherpa_onnx.rs`).
+fn accelerator(_files: &Installed) -> Accelerator {
+    Accelerator::Cpu
 }
 
 fn load(files: &Installed) -> Box<dyn LoadedModel> {
