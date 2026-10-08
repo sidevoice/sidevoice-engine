@@ -1,9 +1,10 @@
 name: e2e
 
 # The voice loop for real, on each native platform, through the engine's public API (`cargo xtask e2e`, plan in
-# xtask/e2e.json): text spoken by every text-to-speech model and transcribed by the speech-to-text models of its
-# language, and real recorded clips transcribed, in English and Spanish, each transcript held to a word error rate.
-# The table goes to the job's summary, and what each model said is kept as an artifact. On every pull request that
+# xtask/e2e.json): text spoken by every text-to-speech build and transcribed by the speech-to-text builds of its
+# language (Whisper on sherpa-onnx and on whisper.cpp among them), and real recorded clips transcribed, in English and
+# Spanish, each transcript held to a word error rate. The table, and the accelerator each build was loaded on, go to
+# the job's summary; what each model said is kept as an artifact. On every pull request that
 # touches what the loop runs, whatever its base, so a stacked pull request runs it too.
 on:
   pull_request:

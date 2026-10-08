@@ -12,19 +12,20 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 fn built_in_is_exactly_this_platforms_backends() {
     let mut ids: Vec<_> = built_in().iter().map(|backend| backend.spec().id).collect();
     ids.sort_unstable();
-    let expected: &[&str] = if cfg!(target_arch = "wasm32") {
-        &["transformers-js"]
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        if cfg!(feature = "sherpa-onnx") {
-            &["mlx", "sherpa-onnx"]
-        } else {
-            &["mlx"]
-        }
-    } else if cfg!(feature = "sherpa-onnx") {
-        &["sherpa-onnx"]
+    let mut expected: Vec<&str> = Vec::new();
+    if cfg!(target_arch = "wasm32") {
+        expected.push("transformers-js");
     } else {
-        &[]
-    };
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            expected.push("mlx");
+        }
+        if cfg!(feature = "sherpa-onnx") {
+            expected.push("sherpa-onnx");
+        }
+        if cfg!(feature = "whisper-cpp") {
+            expected.push("whisper-cpp");
+        }
+    }
     assert_eq!(ids, expected);
 }
 
@@ -54,7 +55,7 @@ fn every_backend_of_this_build_is_known_and_describes_itself() {
     }
     assert!(
         is_known("whisper-cpp"),
-        "named by the catalogue before its code exists"
+        "named by the catalogue, whether this build has its code or not"
     );
     assert!(!is_known("no-such-backend"));
     let mut sorted = KNOWN.to_vec();

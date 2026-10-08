@@ -10,5 +10,6 @@ fn main() {
         native: { not(target_arch = "wasm32") },
         apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
         sherpa_onnx: { all(not(target_arch = "wasm32"), feature = "sherpa-onnx") },
+        whisper_cpp: { all(not(target_arch = "wasm32"), feature = "whisper-cpp") },
     }
 }

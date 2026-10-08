@@ -1,11 +1,11 @@
 //! The loop's arithmetic and its plan, without running a model: word error rates, WAV files, resampling, and that the
-//! plan names models the bundled catalogue has on sherpa-onnx.
+//! plan names builds the bundled catalogue has.
 
 use sidevoice_engine::{BundledCatalog, CatalogSource, ModelEntry};
 
 use super::audio::{read_wav, wav};
 use super::wer::{normalised, wer};
-use super::{plan, primary, BACKEND};
+use super::{plan, primary};
 use crate::{read, repo};
 
 #[test]
@@ -36,7 +36,7 @@ fn a_wav_written_reads_back() {
 }
 
 #[test]
-fn the_plan_names_bundled_models_on_sherpa_onnx_and_has_a_sentence_for_each_language() {
+fn the_plan_names_bundled_builds_and_has_a_sentence_for_each_language() {
     let plan = plan(&String::from_utf8(read(&repo().join("xtask/e2e.json")).unwrap()).unwrap())
         .expect("e2e.json");
     let catalogue = BundledCatalog.load().expect("the bundled catalogue");
@@ -45,20 +45,19 @@ fn the_plan_names_bundled_models_on_sherpa_onnx_and_has_a_sentence_for_each_lang
         .iter()
         .flat_map(|family| &family.models)
         .collect();
-    let on_sherpa = |id: &str| {
+    let bundled = |id: &str| {
         models
             .iter()
-            .find(|model| model.id == id)
-            .is_some_and(|model| model.builds.iter().any(|build| build.backend == BACKEND))
+            .any(|model| model.builds.iter().any(|build| build.id == id))
     };
     for speaker in &plan.tts {
-        assert!(on_sherpa(&speaker.model), "{}", speaker.model);
-        assert!(!speaker.voices.is_empty(), "{}", speaker.model);
+        assert!(bundled(&speaker.build), "{}", speaker.build);
+        assert!(!speaker.voices.is_empty(), "{}", speaker.build);
     }
     for (language, listeners) in &plan.stt {
         assert!(plan.sentences.contains_key(language), "{language}");
         for listener in listeners {
-            assert!(on_sherpa(listener), "{listener}");
+            assert!(bundled(listener), "{listener}");
         }
     }
     for clip in &plan.clips {
@@ -70,7 +69,7 @@ fn the_plan_names_bundled_models_on_sherpa_onnx_and_has_a_sentence_for_each_lang
 
 #[test]
 fn a_plan_with_a_language_and_no_sentence_for_it_is_refused() {
-    let json = r#"{"max_wer": 0.2, "sentences": {}, "tts": [{"model": "m", "voices": {"es": null}}],
+    let json = r#"{"max_wer": 0.2, "sentences": {}, "tts": [{"build": "m/b", "voices": {"es": null}}],
         "stt": {}, "clips": []}"#;
     assert!(plan(json).is_err());
     assert!(plan(r#"{"max_wer": 0.2}"#).is_err(), "strict");
@@ -81,7 +80,7 @@ fn a_voice_with_its_own_limit_must_say_why() {
     let json = |extra: &str| {
         format!(
             r#"{{"max_wer": 0.2, "sentences": {{"es": "hola"}}, "stt": {{}}, "clips": [],
-            "tts": [{{"model": "m", "voices": {{"es": null}}{extra}}}]}}"#
+            "tts": [{{"build": "m/b", "voices": {{"es": null}}{extra}}}]}}"#
         )
     };
     assert!(plan(&json("")).is_ok());

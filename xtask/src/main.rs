@@ -13,8 +13,8 @@
 //! - `e2e [DIR]`: the voice loop for real through the engine's public API: text to speech to text, and recorded clips
 //!   to text, in English and Spanish, each transcript held to a word error rate (xtask/src/e2e.rs, plan in
 //!   xtask/e2e.json).
-//! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
-//!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
+//! - `link-size`: what linking each backend's engine costs, as the release size of the smallest program using the
+//!   engine with no linked backend, with `sherpa-onnx` or `whisper-cpp` alone, and with both (xtask/src/link_size.rs).
 
 mod catalog;
 #[cfg(feature = "e2e")]

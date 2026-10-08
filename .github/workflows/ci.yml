@@ -5,8 +5,8 @@ name: ci
 # consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing: what passes here is what merging
 # publishes (release.yml). Which backends a build contains is checked here, per target (src/backend/tests.rs, and in the
 # packaged build by npm-smoke); whether they work on a given machine is each backend's probe(). Models run for real
-# on every native target through the sherpa-onnx backend (test-inference), and what linking it costs is measured
-# (link-size).
+# on every native target through the sherpa-onnx backend (test-inference; whisper.cpp runs them in the e2e workflow),
+# and what linking each backend's engine costs is measured (link-size).
 on:
   # Into any branch, so a pull request stacked on another is checked before its base merges.
   pull_request:
@@ -32,7 +32,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo fmt --manifest-path xtask/Cargo.toml --check
       - run: cargo clippy --locked --all-targets -- -D warnings
-      # Without the default `sherpa-onnx` feature: the backend, and the static libraries it links, left out.
+      # Without the default `sherpa-onnx` and `whisper-cpp` features: the backends, and the libraries they link, left out.
       - run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - run: cargo clippy --locked --all-targets --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
@@ -89,8 +89,9 @@ jobs:
         env:
           SIDEVOICE_TEST_MODELS: ${{ runner.temp }}/test-models
 
-  # What linking sherpa-onnx costs an app: the smallest program using the engine, built in release mode and stripped,
-  # with and without the `sherpa-onnx` feature (xtask/src/link_size.rs). The sizes go to the job's summary.
+  # What linking each backend's engine costs an app: the smallest program using the engine, built in release mode and
+  # stripped, with no linked backend, with `sherpa-onnx` or `whisper-cpp` alone, and with both, the default
+  # (xtask/src/link_size.rs). The sizes go to the job's summary.
   link-size:
     name: Link size (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}

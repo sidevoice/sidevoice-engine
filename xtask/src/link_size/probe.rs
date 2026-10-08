@@ -1,5 +1,5 @@
-// The smallest program that uses the engine, built by `cargo xtask link-size` with and without the sherpa-onnx
-// feature: an engine on the built-in host, over a directory it never writes to, with no catalogue, which prints the
+// The smallest program that uses the engine, built by `cargo xtask link-size` with each set of linked backends: an
+// engine on the built-in host, over a directory it never writes to, with no catalogue, which prints the
 // backends it was built with.
 
 use sidevoice_engine::{Engine, NativeHost};

@@ -1,7 +1,8 @@
-//! `cargo xtask link-size`: what linking sherpa-onnx costs an app. The smallest program that uses the engine
-//! (`link_size/probe.rs`) is built in release mode and stripped, as an app ships, twice: with the engine's default
-//! features (the sherpa-onnx backend, linked) and without them. Each build must report the backends it expects; the
-//! two sizes and their difference are printed, and added to `$GITHUB_STEP_SUMMARY` when it is set.
+//! `cargo xtask link-size`: what linking each backend's engine costs an app. The smallest program that uses the engine
+//! (`link_size/probe.rs`) is built in release mode and stripped, as an app ships, once per set of the engine's
+//! features: none, `sherpa-onnx` alone, `whisper-cpp` alone, and the default (both). Each build must report exactly the
+//! linked backends it expects; the sizes and what each backend adds to the build without any are printed, and added to
+//! `$GITHUB_STEP_SUMMARY` when it is set.
 
 use std::env;
 use std::path::Path;
@@ -10,23 +11,43 @@ use crate::{empty_dir, metadata, read, repo, run_in, write, Result};
 
 const PROBE: &str = include_str!("link_size/probe.rs");
 
+/// The backends whose engine is linked, by their feature, which is also their id.
+const LINKED: [&str; 2] = ["sherpa-onnx", "whisper-cpp"];
+
 /// `cargo xtask link-size`.
 pub(crate) fn measure() -> Result<()> {
     let (_, target) = metadata()?;
     let root = target.join("link-size");
     let shared_target = root.join("target");
-    let with = build(&root, &shared_target, "with", true)?;
-    let without = build(&root, &shared_target, "without", false)?;
+    let none = build(&root, &shared_target, "none", &[])?;
+    let mut alone = Vec::new();
+    for backend in LINKED {
+        alone.push(build(&root, &shared_target, backend, &[backend])?);
+    }
+    let default = build(&root, &shared_target, "default", &LINKED)?;
     let mb = |bytes: u64| bytes as f64 / 1_048_576.0;
-    let table = format!(
-        "| Platform | Engine with sherpa-onnx | Engine without | sherpa-onnx costs |\n|---|---|---|---|\n\
-         | {} {} | {:.1} MB ({with} B) | {:.1} MB ({without} B) | {:.1} MB |\n",
-        env::consts::OS,
-        env::consts::ARCH,
-        mb(with),
-        mb(without),
-        mb(with.saturating_sub(without)),
-    );
+    let size = |bytes: u64| format!("{:.1} MB ({bytes} B)", mb(bytes));
+    let costs = |bytes: u64| format!("+{:.1} MB", mb(bytes.saturating_sub(none)));
+    let mut table =
+        String::from("| Platform | Engine with | Size | Over none |\n|---|---|---|---|\n");
+    let platform = format!("{} {}", env::consts::OS, env::consts::ARCH);
+    table.push_str(&format!(
+        "| {platform} | no linked backend | {} | |\n",
+        size(none)
+    ));
+    for (backend, bytes) in LINKED.iter().zip(&alone) {
+        table.push_str(&format!(
+            "| {platform} | `{backend}` | {} | {} |\n",
+            size(*bytes),
+            costs(*bytes)
+        ));
+    }
+    table.push_str(&format!(
+        "| {platform} | default (`{}`) | {} | {} |\n",
+        LINKED.join("`, `"),
+        size(default),
+        costs(default)
+    ));
     println!("{table}");
     if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {
         let mut text =
@@ -38,9 +59,9 @@ pub(crate) fn measure() -> Result<()> {
     Ok(())
 }
 
-/// The probe built as the package `probe-<name>`, with or without the engine's default features, run once to check
-/// which backends it has, and its size in bytes.
-fn build(root: &Path, shared_target: &Path, name: &str, sherpa: bool) -> Result<u64> {
+/// The probe built as the package `probe-<name>`, with the engine's `features` and no others, run once to check that
+/// the linked backends it has are exactly those, and its size in bytes.
+fn build(root: &Path, shared_target: &Path, name: &str, features: &[&str]) -> Result<u64> {
     let dir = root.join(name);
     empty_dir(&dir.join("src"))?;
     let engine = repo()
@@ -49,7 +70,7 @@ fn build(root: &Path, shared_target: &Path, name: &str, sherpa: bool) -> Result<
     let engine = engine.to_string_lossy().replace('\\', "/");
     let manifest = format!(
         "[package]\nname = \"probe-{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
-         [dependencies]\nsidevoice-engine = {{ path = \"{engine}\", default-features = {sherpa} }}\n\n\
+         [dependencies]\nsidevoice-engine = {{ path = \"{engine}\", default-features = false, features = {features:?} }}\n\n\
          [profile.release]\nstrip = true\n\n[workspace]\n"
     );
     write(&dir.join("Cargo.toml"), manifest.as_bytes())?;
@@ -62,7 +83,11 @@ fn build(root: &Path, shared_target: &Path, name: &str, sherpa: bool) -> Result<
         .join("release")
         .join(format!("probe-{name}{}", env::consts::EXE_SUFFIX));
     let backends = run_in(&dir, &binary.to_string_lossy(), &[])?;
-    if backends.contains("sherpa-onnx") != sherpa {
+    let has: Vec<&str> = backends.trim().split(',').collect();
+    if LINKED
+        .iter()
+        .any(|backend| has.contains(backend) != features.contains(backend))
+    {
         return Err(format!("probe-{name} has the backends {backends:?}"));
     }
     let bytes = std::fs::metadata(&binary)

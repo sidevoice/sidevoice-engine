@@ -77,8 +77,8 @@ pub(crate) struct Installed {
 impl Installed {
     /// Where the host keeps the file or directory whose key is `name`, if it is installed.
     #[cfg_attr(
-        not(sherpa_onnx),
-        allow(dead_code, reason = "only sherpa-onnx loads a model yet")
+        not(any(sherpa_onnx, whisper_cpp)),
+        allow(dead_code, reason = "only sherpa-onnx and whisper.cpp load models yet")
     )]
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)
