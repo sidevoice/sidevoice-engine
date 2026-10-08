@@ -2,7 +2,7 @@
 
 /// `text` as it is compared: lower case, letters and digits only, the accents of vowels (and of `ç`) folded, single
 /// spaces. `ñ` stays itself: it is a letter of its own, not an accent.
-pub(super) fn normalised(text: &str) -> String {
+pub(crate) fn normalised(text: &str) -> String {
     let folded: String = text
         .chars()
         .flat_map(char::to_lowercase)
@@ -22,7 +22,7 @@ pub(super) fn normalised(text: &str) -> String {
 
 /// The word error rate of `heard` against `said`: words substituted, deleted and inserted (the fewest that turn one
 /// into the other), over the words said, both texts [`normalised`]. 0 is a perfect transcript; it can exceed 1.
-pub(super) fn wer(said: &str, heard: &str) -> f64 {
+pub(crate) fn wer(said: &str, heard: &str) -> f64 {
     let (said, heard) = (normalised(said), normalised(heard));
     let said: Vec<&str> = said.split(' ').filter(|word| !word.is_empty()).collect();
     let heard: Vec<&str> = heard.split(' ').filter(|word| !word.is_empty()).collect();

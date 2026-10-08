@@ -132,14 +132,12 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     let stt = offered(Capability::Stt);
     let models: Vec<_> = stt.iter().map(|(model, _)| model.as_str()).collect();
     if cfg!(target_arch = "wasm32") {
-        // Large-v3 too, though its q8 build is over its WebAssembly cap (`wasm-memory`): its fp16 build declares only WebGPU
-        // features, which the resolver does not check yet, and no accelerator, so it is offered on WebAssembly. Its data
-        // should require the WebGPU accelerator.
+        // Not large-v3: its q8 build is over its WebAssembly cap (`wasm-memory`), and its fp16 build runs on WebGPU
+        // only, which this host does not report.
         assert_eq!(
             models,
             [
                 "whisper-base",
-                "whisper-large-v3",
                 "whisper-large-v3-turbo",
                 "whisper-small",
                 "whisper-tiny"
