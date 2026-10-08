@@ -1,12 +1,13 @@
-//! The loop's arithmetic and its plan, without running a model: word error rates, WAV files, resampling, and that the
-//! plan names builds the bundled catalogue has.
+//! The loop's arithmetic and its plan, without running a model: word error rates, WAV files, and that the plan names
+//! builds the bundled catalogue has. These run with every `cargo test`.
+
+use std::fs;
 
 use sidevoice_engine::{BundledCatalog, CatalogSource, ModelEntry};
 
 use super::audio::{read_wav, wav};
 use super::wer::{normalised, wer};
-use super::{plan, primary};
-use crate::{read, repo};
+use super::{plan, plan_path, primary};
 
 #[test]
 fn texts_are_compared_without_case_punctuation_or_vowel_accents() {
@@ -37,8 +38,7 @@ fn a_wav_written_reads_back() {
 
 #[test]
 fn the_plan_names_bundled_builds_and_has_a_sentence_for_each_language() {
-    let plan = plan(&String::from_utf8(read(&repo().join("xtask/e2e.json")).unwrap()).unwrap())
-        .expect("e2e.json");
+    let plan = plan(&fs::read_to_string(plan_path()).expect("voice_loop.json")).expect("a plan");
     let catalogue = BundledCatalog.load().expect("the bundled catalogue");
     let models: Vec<&ModelEntry> = catalogue
         .families

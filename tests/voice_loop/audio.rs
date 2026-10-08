@@ -2,7 +2,7 @@
 //! to a model's rate is the engine's.
 
 /// The samples of a WAV file (PCM of 16 bits, or IEEE floats of 32), its channels mixed down to one, and their rate.
-pub(super) fn read_wav(wav: &[u8]) -> Result<(Vec<f32>, u32), String> {
+pub(crate) fn read_wav(wav: &[u8]) -> Result<(Vec<f32>, u32), String> {
     let u16_at = |at: usize| u16::from_le_bytes([wav[at], wav[at + 1]]);
     let u32_at = |at: usize| u32::from_le_bytes([wav[at], wav[at + 1], wav[at + 2], wav[at + 3]]);
     if wav.len() < 12 || &wav[..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
@@ -60,7 +60,7 @@ pub(super) fn read_wav(wav: &[u8]) -> Result<(Vec<f32>, u32), String> {
 }
 
 /// `samples` as a 16-bit PCM mono WAV file at `rate`.
-pub(super) fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
+pub(crate) fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
     let data = u32::try_from(samples.len() * 2).unwrap_or(u32::MAX);
     let mut out = Vec::with_capacity(44 + samples.len() * 2);
     out.extend_from_slice(b"RIFF");

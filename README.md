@@ -35,7 +35,9 @@ device is one more provider.
 One Rust repository, one version. Native consumers (the desktop app, later the core as a provider for its own
 machine) depend on the crate at a release's git tag and compile it themselves. The web gets a WebAssembly build,
 published on npm as `@sidevoice/engine` for every release; every push to `main` also publishes a `nightly`
-pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)).
+pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)). To try a pull request's engine before it
+merges, its CI keeps the npm package it built for 7 days, as the Actions artifact `engine-npm-<head sha>`
+([`RELEASING.md`](RELEASING.md#a-pull-requests-package)).
 
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
 files. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
@@ -223,7 +225,7 @@ ignored unless asked for, and CI asks:
 
 ```sh
 cargo test --locked
-cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests   # with the network, as CI
+cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests --skip the_voice_loop   # with the network, as CI
 ```
 
 The sherpa-onnx backend's tests that run real models download them first (about 250 MB, cached by digest in
@@ -234,16 +236,19 @@ native platform:
 cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 ```
 
-The whole voice loop runs as an app would run it, through the public API: the bundled catalogue, `Engine::models`
-(the builds the plan names), `Engine::load`, then the loaded model's `speak` and `transcribe`. Each text-to-speech build of the plan
-(`xtask/e2e.json`) says a sentence in English or Spanish, each speech-to-text build of that language transcribes it
-(Whisper base on sherpa-onnx and on whisper.cpp among them), real recorded clips are transcribed too, and every
-transcript must stay within the plan's word error rate. It
-downloads about 1.5 GB the first time (kept by digest in the directory given, `target/e2e` by default); the `e2e`
-workflow runs it on Linux x86_64 and arm64 and on macOS arm64, and puts the table in the job's summary:
+The whole voice loop is an integration test, `tests/voice_loop.rs`, and uses only the public API, as an app does:
+`NativeHost`, the bundled catalogue, `Engine::models` (the builds the plan names), `Engine::load`, then the loaded
+model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-speech build of the plan
+(`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text build of that language
+transcribes it (Whisper base on sherpa-onnx and on whisper.cpp among them), real recorded clips are transcribed too,
+and every transcript must stay within the plan's word error rate. It downloads about 1.5 GB the first time (kept by
+digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless asked for; the `e2e` workflow runs it on Linux x86_64 and
+arm64 and on macOS arm64 through `cargo xtask e2e`, which puts its table, and the accelerator each build was loaded
+on, in the job's summary:
 
 ```sh
-cargo xtask e2e [DIR]
+cargo test --locked --test voice_loop -- --ignored --nocapture
+cargo xtask e2e [DIR]   # the same, keeping its files in DIR (target/voice-loop by default), as CI
 ```
 
 The wasm32 tests run in Node and need the wasm32 target, Node.js and npm, and the wasm-bindgen CLI at the version of

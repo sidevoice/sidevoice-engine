@@ -1,17 +1,19 @@
 name: e2e
 
-# The voice loop for real, on each native platform, through the engine's public API (`cargo xtask e2e`, plan in
-# xtask/e2e.json): text spoken by every text-to-speech build and transcribed by the speech-to-text builds of its
-# language (Whisper on sherpa-onnx and on whisper.cpp among them), and real recorded clips transcribed, in English and
-# Spanish, each transcript held to a word error rate. The table, and the accelerator each build was loaded on, go to
-# the job's summary; what each model said is kept as an artifact. On every pull request that
+# The voice loop for real, on each native platform: the engine's ignored integration test tests/voice_loop.rs, which
+# uses only the public API (plan in tests/voice_loop.json), run by `cargo xtask e2e`: text spoken by every
+# text-to-speech build and transcribed by the speech-to-text builds of its language (Whisper on sherpa-onnx and on
+# whisper.cpp among them), and real recorded clips transcribed, in English and Spanish, each transcript held to a word
+# error rate. The table, and the accelerator each build was loaded on, go to the job's summary; what each model said
+# is kept as an artifact. On every pull request that
 # touches what the loop runs, whatever its base, so a stacked pull request runs it too.
 on:
   pull_request:
     paths:
       - src/**
       - catalog/**
-      - xtask/**
+      - tests/**
+      - xtask/src/e2e.rs
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/e2e.yml
@@ -45,7 +47,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/e2e
-          key: e2e-${{ matrix.target }}-${{ hashFiles('catalog/families/*.json', 'xtask/e2e.json') }}
+          key: e2e-${{ matrix.target }}-${{ hashFiles('catalog/families/*.json', 'tests/voice_loop.json') }}
           restore-keys: e2e-${{ matrix.target }}-
       - run: cargo xtask e2e "$RUNNER_TEMP/e2e"
       - if: always() && steps.models.outputs.cache-hit != 'true'
