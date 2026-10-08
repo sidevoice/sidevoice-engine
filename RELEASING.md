@@ -15,7 +15,7 @@ The engine reaches its consumers in two ways:
 
 | Act | Who | What happens |
 |---|---|---|
-| Open / update a PR | anyone | `ci`: format and Clippy (Linux and macOS), the native tests on every target, the wasm32 tests in Node, and the npm package built and installed as a consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing. **PR title is a conventional commit**. |
+| Open / update a PR | anyone | `ci`: format and Clippy (Linux and macOS), the native tests on every target, the wasm32 tests in Node, and the npm package built and installed as a consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing; the package is kept 7 days as the artifact `engine-npm-<head sha>` ([A pull request's package](#a-pull-requests-package)). **PR title is a conventional commit**. |
 | Squash-merge into `main` | reviewer | The PR title becomes the commit. `release` runs: the wasm32 tests, the npm package built and smoke-tested; then it attests the assets, attaches them to the **`nightly`** pre-release, reads them back, verifies them and publishes it. Never on npm. release-please opens or updates the **release PR** ("chore(main): release X.Y.Z"). |
 | Merge the release PR | a maintainer | **This is the release.** release-please tags `vX.Y.Z` and creates a draft GitHub Release whose notes are that version's changelog; `release` runs from the tag, attaches and verifies the assets, and publishes the Release; then it publishes `@sidevoice/engine@X.Y.Z` to npm. |
 
@@ -129,7 +129,28 @@ Every green `release` run on `main` moves the tag `nightly` to that commit and r
 `nightly` pre-release. Its notes give the commit. It is a snapshot, not a version: never latest, never on npm, and
 release-please ignores the tag. Pin a `vX.Y.Z` release, never `nightly`.
 
-Build artifacts on Actions runs are kept 7 days, for debugging only. Download from Releases.
+Build artifacts on Actions runs are kept 7 days, for debugging and for trying a commit before it is released (below).
+To depend on the engine, download from Releases.
+
+## A pull request's package
+
+Every pull request's `ci` run uploads the npm package it built as the Actions artifact **`engine-npm-<sha>`**, `<sha>`
+being the PR's head commit (all 40 characters), and every push to `main` does the same for that commit (`release`).
+Each is kept **7 days**; after that, push again or re-run the job. It is built, as everything in `ci`, from GitHub's
+merge of that head into the PR's base, and published nowhere: a snapshot to try (the playground loads it), never a
+dependency.
+
+From a PR to its package:
+
+```sh
+sha=$(gh pr view 41 --repo sidevoice/sidevoice-engine --json headRefOid --jq .headRefOid)
+gh api "repos/sidevoice/sidevoice-engine/actions/artifacts?name=engine-npm-$sha" \
+  --jq '[.artifacts[] | select(.expired | not)][0].archive_download_url'
+```
+
+That URL needs a GitHub token (any, read access; GitHub asks for one even on a public repository) and answers a zip
+holding the one `sidevoice-engine-X.Y.Z.tgz`, which `npm install` takes as it is. While the run is still going, the
+artifact is not there yet; when the job that builds it failed, it is never there.
 
 ## When something fails
 

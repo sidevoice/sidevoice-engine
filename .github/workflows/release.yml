@@ -49,6 +49,16 @@ jobs:
           path: target/npm/*.tgz
           retention-days: 7
           if-no-files-found: error
+      # The same package under the name a pull request's carries (ci.yml), so a commit of main is found as a PR's head
+      # is: `engine-npm-<sha>`, kept 7 days. Not for a vX.Y.Z release, which is on npm.
+      - if: ${{ !inputs.tag }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: engine-npm-${{ github.sha }}
+          path: target/npm/*.tgz
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
 
   publish-release:
     name: Publish GitHub Release
