@@ -149,10 +149,10 @@ whether or not this build of the engine implements that backend (the resolver re
 `backend-not-in-this-build`). Each build lists exactly the files its format's reference implementation loads, no
 more and no less (transformers.js for the web ONNX builds, mlx-audio for MLX, whisper.cpp for ggml, sherpa-onnx for
 its exports), so a backend that lands later needs no catalogue change; a file that lives outside the model's
-repository is pinned from its real source. Builds carry no order: ranking them is the resolver's. Reading is strict (an unknown or a missing key
-fails the tests) and the merge of every source is checked by `Catalog::check`. Sizes, digests and pinned revisions
-come from the Hugging Face and GitHub APIs, never by hand: a new file is written with its `key` and a `url` (on
-Hugging Face at any revision, `…/resolve/main/…`), and then
+repository is pinned from its real source. Builds carry no order: ranking them is the resolver's. Reading is strict
+(an unknown or a missing key fails the tests) and the merge of every source is checked by `Catalog::check`. Sizes,
+digests and pinned revisions come from the Hugging Face and GitHub APIs, never by hand: a new file is written with its
+`key` and a `url` (on Hugging Face at any revision, `…/resolve/main/…`), and then
 
 ```sh
 cargo xtask pin-catalog            # pin every url, write sizes, digests and estimated memory
