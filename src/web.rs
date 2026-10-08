@@ -7,7 +7,7 @@
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::prelude::*;
 
-use crate::{Engine, Offer, Rejection, Task};
+use crate::{BundledCatalog, Capability, Engine, Offer, Rejection};
 
 mod host;
 #[cfg(test)]
@@ -23,14 +23,14 @@ pub struct WebEngine {
 
 #[wasm_bindgen]
 impl WebEngine {
-    /// Asks the host for its capabilities once, and builds the engine.
+    /// Asks the host for its capabilities once, and builds the engine on the bundled catalogue.
     pub async fn create(host: JsHost) -> Result<WebEngine, JsError> {
         let caps = host
             .capabilities()
             .await
             .map_err(|_| JsError::new("host-capabilities"))?;
         let host = WebHost::from_capabilities(&caps)?;
-        let engine = Engine::new(Box::new(host), vec![])
+        let engine = Engine::new(Box::new(host), vec![Box::new(BundledCatalog)])
             .map_err(|error| JsError::new(&error.to_string()))?;
         Ok(WebEngine { engine })
     }
@@ -44,16 +44,16 @@ impl WebEngine {
             .collect()
     }
 
-    /// `task`: "stt" or "tts". One `{ model, build, offered, why? }` per offer or rejected build; `why` is a stable
-    /// code the page translates.
-    pub fn offers(&self, task: &str) -> Result<Array, JsError> {
-        let task = match task {
-            "stt" => Task::Stt,
-            "tts" => Task::Tts,
-            _ => return Err(JsError::new("unknown-task")),
+    /// `capability`: "stt" or "tts". One `{ model, build, offered, why? }` per offer or rejected build; `why` is a
+    /// stable code the page translates.
+    pub fn offers(&self, capability: &str) -> Result<Array, JsError> {
+        let capability = match capability {
+            "stt" => Capability::Stt,
+            "tts" => Capability::Tts,
+            _ => return Err(JsError::new("unknown-capability")),
         };
         let out = Array::new();
-        for offer in self.engine.offers(task) {
+        for offer in self.engine.offers(capability) {
             let entry = Object::new();
             let (model, build, why) = match &offer {
                 Offer::Offered { model, build, .. } => (model, build, None),

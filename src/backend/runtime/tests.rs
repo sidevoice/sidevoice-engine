@@ -30,3 +30,11 @@ fn runtime_files_are_artifacts_keyed_by_their_name_at_the_backends_version() {
     assert!(!url.contains("{version}"), "{url}");
     assert!(url.contains(&format!("v{}", entry.version)), "{url}");
 }
+
+#[test]
+fn a_backend_is_known_if_backends_json_has_it_whether_or_not_it_runs_anywhere() {
+    assert!(super::is_known("sherpa-onnx"));
+    // Its entry is all `null`: no build of the engine runs it yet, but the catalogue may name it.
+    assert!(super::is_known("whisper-cpp"));
+    assert!(!super::is_known("no-such-backend"));
+}

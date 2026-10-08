@@ -1,5 +1,5 @@
-//! The engine of one place: its host, its catalogue and the backends compiled into it, and the steps from a task to
-//! a loaded model: offers (resolver.rs), the choice per stage, installing (install.rs) and loading.
+//! The engine of one place: its host, its catalogue and the backends compiled into it, and the steps from a capability
+//! to a loaded model: offers (resolver.rs), the choice per stage, installing (install.rs) and loading.
 //!
 //! Inside: `selection` (what the person asks for and what is chosen), `error` (why an engine cannot be built) and
 //! `lifecycle` (a build's state).
@@ -8,7 +8,7 @@ use std::fmt;
 use std::sync::{Mutex, PoisonError};
 
 use crate::backend::{self, Backend, BackendId, LoadedModel};
-use crate::catalog::{Catalog, CatalogSource, Task};
+use crate::catalog::{Capability, Catalog, CatalogSource, ModelFile};
 use crate::host::{Host, Platform};
 use crate::install::Installer;
 use crate::resolver::{Offer, Resolver};
@@ -47,7 +47,9 @@ impl fmt::Debug for Engine {
 pub struct Handle(usize);
 
 impl Engine {
-    /// Builds nothing heavy: the backends are empty objects until [`Engine::prepare`].
+    /// Builds nothing heavy: the backends are empty objects until [`Engine::prepare`]. The catalogue is the merge of
+    /// `sources`, in order; the one this repository ships, [`BundledCatalog`](crate::BundledCatalog), is one of them
+    /// only when passed.
     ///
     /// # Errors
     ///
@@ -81,40 +83,43 @@ impl Engine {
             .collect()
     }
 
-    /// Every model of `task` that can run here with its best build, and every build that cannot, with why.
+    /// Every model that can do `capability` and runs here, with a build that fits, and every build that cannot, with
+    /// why.
     #[must_use]
-    pub fn offers(&self, task: Task) -> Vec<Offer> {
+    pub fn offers(&self, capability: Capability) -> Vec<Offer> {
         self.resolver.offers(
             &self.catalog,
             &self.backends,
             &self.host.capabilities(),
-            task,
+            capability,
         )
     }
 
-    /// The choice for `task`: the best offer, or the model asked for. Backend and accelerator preferences are not
+    /// The choice for `capability`: the best offer, or the model asked for. Backend and accelerator preferences are not
     /// applied yet.
     #[must_use]
-    pub fn select(&self, task: Task, preferences: &Preferences) -> Option<Selection> {
-        self.offers(task).into_iter().find_map(|offer| match offer {
-            Offer::Offered {
-                model,
-                build,
-                accelerator,
-                ..
-            } if preferences
-                .model
-                .as_ref()
-                .is_none_or(|wanted| *wanted == model.id) =>
-            {
-                Some(Selection {
+    pub fn select(&self, capability: Capability, preferences: &Preferences) -> Option<Selection> {
+        self.offers(capability)
+            .into_iter()
+            .find_map(|offer| match offer {
+                Offer::Offered {
                     model,
                     build,
                     accelerator,
-                })
-            }
-            _ => None,
-        })
+                    ..
+                } if preferences
+                    .model
+                    .as_ref()
+                    .is_none_or(|wanted| *wanted == model.id) =>
+                {
+                    Some(Selection {
+                        model,
+                        build,
+                        accelerator,
+                    })
+                }
+                _ => None,
+            })
     }
 
     /// Installs the selected build and loads it: only that backend is ever activated. The installer gets the model's
@@ -130,7 +135,12 @@ impl Engine {
         let runtime = Platform::of(&self.host.capabilities())
             .and_then(|platform| backend::runtime_files(backend.spec().id, platform))
             .ok_or(Error::new("no-runtime-for-platform"))?;
-        let mut artifacts = selection.build.files.clone();
+        let mut artifacts: Vec<_> = selection
+            .build
+            .files
+            .iter()
+            .map(ModelFile::artifact)
+            .collect();
         artifacts.extend(runtime);
         let files = self
             .installer
