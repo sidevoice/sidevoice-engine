@@ -140,10 +140,11 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     }
 
     let tts = offered(Capability::Tts);
-    if cfg!(target_arch = "wasm32") {
-        assert_eq!(tts, []);
+    let backend = if cfg!(target_arch = "wasm32") {
+        "transformers-js"
     } else {
-        let kokoro = ("kokoro-82m-v0.19".to_owned(), "sherpa-onnx".to_owned());
-        assert_eq!(tts, [kokoro]);
-    }
+        "sherpa-onnx"
+    };
+    let kokoro = ("kokoro-82m-v0.19".to_owned(), backend.to_owned());
+    assert_eq!(tts, [kokoro]);
 }
