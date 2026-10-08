@@ -37,6 +37,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .iter()
         .find(|m| m.id == "whisper-small")
         .expect("small");
+    assert_eq!(small.family, "whisper", "its family, from the catalogue");
 
     let recommended = if cfg!(target_arch = "wasm32") {
         "whisper-small-web"

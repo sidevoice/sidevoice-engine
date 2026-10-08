@@ -140,6 +140,11 @@ impl Catalog {
         Ok(Self { families })
     }
 
+    /// Every family, with its models, in catalogue order.
+    pub(crate) fn families(&self) -> &[Family] {
+        &self.families
+    }
+
     /// Every model, in catalogue order.
     pub(crate) fn entries(&self) -> impl Iterator<Item = &ModelEntry> {
         self.families.iter().flat_map(|family| &family.models)
