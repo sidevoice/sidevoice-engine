@@ -37,12 +37,12 @@ impl BackendModel for NoModel {
 }
 
 fn resident(library: &Arc<dyn Library>) -> Arc<Resident> {
-    Arc::new(Resident::new(
+    Resident::new(
         Box::new(NoModel),
         Arc::clone(library),
         Vec::new(),
         Vec::new(),
-    ))
+    )
 }
 
 #[test]
