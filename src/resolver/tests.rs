@@ -206,3 +206,79 @@ fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
         .iter()
         .all(|accelerator| *accelerator == Accelerator::Cpu));
 }
+
+/// A backend of the page, running on WebAssembly, with no requirement of its own.
+struct PageBackend(BackendSpec);
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl Backend for PageBackend {
+    fn spec(&self) -> &BackendSpec {
+        &self.0
+    }
+
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
+        Err(Error::new("not-implemented"))
+    }
+}
+
+/// A catalogue of one transformers.js build that takes `memory_mb` and declares WebAssembly's cap.
+struct WasmCatalog(u32);
+
+impl CatalogSource for WasmCatalog {
+    fn load(&self) -> Result<CatalogFragment> {
+        let mut build = build("model/transformers-js-q8", "transformers-js", self.0);
+        build.requires.wasm_max_mb = Some(2_048);
+        Ok(CatalogFragment {
+            families: vec![family(
+                "family",
+                vec![model("model", Capability::Stt, vec![build])],
+            )],
+        })
+    }
+}
+
+/// The one build of [`WasmCatalog`] taking `memory_mb`, on a host that `runs` there, offered or why not.
+fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
+    let source = WasmCatalog(memory_mb);
+    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let backend = PageBackend(BackendSpec {
+        id: "transformers-js",
+        accelerators: &[Accelerator::Wasm],
+        requirements: &[],
+    });
+    let (os, arch) = match runs {
+        Runs::Page => ("web", "wasm32"),
+        Runs::Native => ("linux", "x86_64"),
+    };
+    let caps = Capabilities {
+        runs,
+        os: os.to_owned(),
+        arch: arch.to_owned(),
+        accelerators: vec![Accelerator::Wasm],
+        memory_mb: Some(16_384),
+        cores: Some(8),
+    };
+    let offers = Resolver::default().offers(&catalog, &[Box::new(backend)], &caps, Capability::Stt);
+    match <[Offer; 1]>::try_from(offers).expect("one offer") {
+        [Offer::Offered { accelerator, .. }] => Ok(accelerator),
+        [Offer::Rejected { why, .. }] => Err(why),
+    }
+}
+
+#[test]
+fn in_a_page_a_build_over_its_webassembly_cap_does_not_fit_whatever_the_machine_has() {
+    assert_eq!(
+        fit_wasm(2_260, Runs::Page),
+        Err(Rejection::DoesNotFit(Reason::with_numbers(
+            "wasm-memory",
+            2_260,
+            2_048
+        )))
+    );
+    assert_eq!(
+        fit_wasm(2_048, Runs::Page),
+        Ok(Accelerator::Wasm),
+        "at the cap"
+    );
+}

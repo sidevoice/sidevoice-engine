@@ -146,14 +146,28 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     let stt = offered(Capability::Stt);
     let models: Vec<_> = stt.iter().map(|(model, _)| model.as_str()).collect();
     if cfg!(target_arch = "wasm32") {
-        assert_eq!(models, ["whisper-base", "whisper-small", "whisper-tiny"]);
+        // Not large-v3: its q8 build takes more than WebAssembly hands it (`wasm-memory`), and its fp16 one needs WebGPU,
+        // which the fake host has not.
+        assert_eq!(
+            models,
+            [
+                "whisper-base",
+                "whisper-large-v3-turbo",
+                "whisper-small",
+                "whisper-tiny"
+            ]
+        );
     } else {
         assert_eq!(
             models,
             [
+                "canary-180m-flash",
                 "fastconformer-es-large",
                 "parakeet-tdt-0.6b-v3",
+                "qwen3-asr-0.6b",
                 "whisper-base",
+                "whisper-large-v3",
+                "whisper-large-v3-turbo",
                 "whisper-small",
                 "whisper-tiny"
             ]
