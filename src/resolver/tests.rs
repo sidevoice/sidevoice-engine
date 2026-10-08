@@ -1,15 +1,14 @@
 //! The funnel's accelerator and requirement steps, on hosts that report little: what the host cannot tell passes, what
-//! it does not report is absent, a probe only narrows what it reports, and a build only runs on what it accepts.
+//! it does not report is absent, a probe only narrows what it reports, and a build only runs on what it requires.
 
 use async_trait::async_trait;
 
 use super::Resolver;
-use crate::backend::{Backend, BackendSpec, LoadedModel, MinCores};
+use crate::backend::{Backend, BackendSpec, Library, MinCores};
 use crate::catalog::{Catalog, CatalogFragment, CatalogSource};
 use crate::install::Installed;
-use crate::{
-    Accelerator, Build, Capabilities, Error, Model, Offer, Reason, Rejection, Result, Runs, Task,
-};
+use crate::test_support::{build, family, model};
+use crate::{Accelerator, Capabilities, Capability, Error, Offer, Reason, Rejection, Result, Runs};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -46,35 +45,24 @@ impl Backend for FixedProbeBackend {
         self.probe.to_vec()
     }
 
-    async fn load(
-        &self,
-        _build: &Build,
-        _accelerator: Accelerator,
-        _files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
         Err(Error::new("not-implemented"))
     }
 }
 
-/// A catalogue of one model with one build for that backend that needs 2 GB and accepts `accelerators`.
+/// A catalogue of one model with one build for that backend that needs 2 GB and requires these accelerators.
 struct OneBuildCatalog(&'static [Accelerator]);
 
 impl CatalogSource for OneBuildCatalog {
     fn load(&self) -> Result<CatalogFragment> {
+        let mut build = build("model/sherpa-onnx", "sherpa-onnx", 2_048);
+        build.requires.accelerators = self.0.to_vec();
+        let builds = vec![build];
         Ok(CatalogFragment {
-            models: vec![Model {
-                id: "model".to_owned(),
-                family: "family".to_owned(),
-                task: Task::Stt,
-                builds: vec![Build {
-                    id: "model-onnx".to_owned(),
-                    backend: "sherpa-onnx".to_owned(),
-                    format: "onnx".to_owned(),
-                    memory_mb: 2_048,
-                    accelerators: self.0.to_vec(),
-                    files: Vec::new(),
-                }],
-            }],
+            families: vec![family(
+                "family",
+                vec![model("model", Capability::Stt, builds)],
+            )],
         })
     }
 }
@@ -90,20 +78,24 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
     }
 }
 
-/// The accelerator the one build is offered on, or why it is rejected.
-fn fit(
-    build_accepts: &'static [Accelerator],
+/// The accelerator the one build, requiring none, is offered on, or why it is rejected.
+fn fit(probe: &'static [Accelerator], caps: &Capabilities) -> Result<Accelerator, Rejection> {
+    fit_requiring(&[], probe, caps)
+}
+
+/// The accelerator the one build, requiring `accelerators`, is offered on, or why it is rejected.
+fn fit_requiring(
+    accelerators: &'static [Accelerator],
     probe: &'static [Accelerator],
     caps: &Capabilities,
 ) -> Result<Accelerator, Rejection> {
-    let catalog =
-        Catalog::merge(&[Box::new(OneBuildCatalog(build_accepts)) as Box<dyn CatalogSource>])
-            .expect("catalogue");
+    let source = OneBuildCatalog(accelerators);
+    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let offers = Resolver::default().offers(
         &catalog,
         &[FixedProbeBackend::probing(probe)],
         caps,
-        Task::Stt,
+        Capability::Stt,
     );
     match <[Offer; 1]>::try_from(offers).expect("one offer") {
         [Offer::Offered { accelerator, .. }] => Ok(accelerator),
@@ -116,7 +108,7 @@ const COREML_AND_CPU: &[Accelerator] = &[Accelerator::CoreMl, Accelerator::Cpu];
 #[test]
 fn unknown_memory_and_cores_pass_the_requirements() {
     assert_eq!(
-        fit(&[], COREML_AND_CPU, &caps(COREML_AND_CPU, None, None)),
+        fit(COREML_AND_CPU, &caps(COREML_AND_CPU, None, None)),
         Ok(Accelerator::CoreMl)
     );
 }
@@ -124,17 +116,13 @@ fn unknown_memory_and_cores_pass_the_requirements() {
 #[test]
 fn known_memory_and_cores_below_the_requirements_reject_with_the_numbers() {
     assert_eq!(
-        fit(
-            &[],
-            COREML_AND_CPU,
-            &caps(COREML_AND_CPU, Some(1_024), None)
-        ),
+        fit(COREML_AND_CPU, &caps(COREML_AND_CPU, Some(1_024), None)),
         Err(Rejection::DoesNotFit(Reason::with_numbers(
             "memory", 2_048, 1_024
         )))
     );
     assert_eq!(
-        fit(&[], COREML_AND_CPU, &caps(COREML_AND_CPU, None, Some(2))),
+        fit(COREML_AND_CPU, &caps(COREML_AND_CPU, None, Some(2))),
         Err(Rejection::DoesNotFit(Reason::with_numbers("cores", 4, 2)))
     );
 }
@@ -142,7 +130,7 @@ fn known_memory_and_cores_below_the_requirements_reject_with_the_numbers() {
 #[test]
 fn an_accelerator_the_host_does_not_report_is_absent() {
     assert_eq!(
-        fit(&[], COREML_AND_CPU, &caps(&[], None, None)),
+        fit(COREML_AND_CPU, &caps(&[], None, None)),
         Err(Rejection::BackendUnavailable(Reason::new("no-accelerator")))
     );
 }
@@ -151,50 +139,38 @@ fn an_accelerator_the_host_does_not_report_is_absent() {
 fn a_probe_narrows_what_the_host_reports_and_never_widens_it() {
     // The probe finds CoreML unusable: the CPU is next.
     assert_eq!(
-        fit(&[], &[Accelerator::Cpu], &caps(COREML_AND_CPU, None, None)),
+        fit(&[Accelerator::Cpu], &caps(COREML_AND_CPU, None, None)),
         Ok(Accelerator::Cpu)
     );
     // The probe claims CoreML, which the host does not report: it does not count.
     assert_eq!(
-        fit(&[], COREML_AND_CPU, &caps(&[Accelerator::Cpu], None, None)),
+        fit(COREML_AND_CPU, &caps(&[Accelerator::Cpu], None, None)),
         Ok(Accelerator::Cpu)
     );
 }
 
 #[test]
-fn a_build_runs_only_on_accelerators_it_accepts_in_the_backends_order() {
-    // Accepting both, or saying nothing, the backend's preference decides.
+fn a_build_runs_only_on_accelerators_it_requires_in_the_backends_order() {
+    let host = caps(COREML_AND_CPU, None, None);
+    // Requiring both, or nothing, the backend's preference decides.
+    let both = &[Accelerator::Cpu, Accelerator::CoreMl];
     assert_eq!(
-        fit(
-            &[Accelerator::Cpu, Accelerator::CoreMl],
-            COREML_AND_CPU,
-            &caps(COREML_AND_CPU, None, None)
-        ),
+        fit_requiring(both, COREML_AND_CPU, &host),
         Ok(Accelerator::CoreMl)
     );
+    // Kokoro on sherpa-onnx: the CPU only.
     assert_eq!(
-        fit(
-            &[Accelerator::Cpu],
-            COREML_AND_CPU,
-            &caps(COREML_AND_CPU, None, None)
-        ),
+        fit_requiring(&[Accelerator::Cpu], COREML_AND_CPU, &host),
         Ok(Accelerator::Cpu)
     );
+    let build_accelerator = Err(Rejection::DoesNotFit(Reason::new("build-accelerator")));
     assert_eq!(
-        fit(
-            &[Accelerator::Cuda],
-            COREML_AND_CPU,
-            &caps(COREML_AND_CPU, None, None)
-        ),
-        Err(Rejection::DoesNotFit(Reason::new("build-accelerator")))
+        fit_requiring(&[Accelerator::Cuda], COREML_AND_CPU, &host),
+        build_accelerator
     );
-    // What the build accepts must still have passed the probe.
+    // What the build requires must still have passed the probe.
     assert_eq!(
-        fit(
-            &[Accelerator::CoreMl],
-            &[Accelerator::Cpu],
-            &caps(COREML_AND_CPU, None, None)
-        ),
-        Err(Rejection::DoesNotFit(Reason::new("build-accelerator")))
+        fit_requiring(&[Accelerator::CoreMl], &[Accelerator::Cpu], &host),
+        build_accelerator
     );
 }

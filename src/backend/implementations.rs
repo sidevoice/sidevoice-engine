@@ -1,8 +1,8 @@
 //! One file per backend. Each registers itself with `inventory::submit!`, so nothing else lists them: adding a backend
 //! is its file and its line here (README, "How to add a backend"; the contract is in `backend.rs`). A file whose
 //! library cannot compile everywhere starts with one `#![cfg(<alias>)]` (aliases in build.rs) and is empty elsewhere.
-//! sherpa-onnx loads models; MLX and transformers.js are stubs: they describe themselves, keep the default `probe`,
-//! and load nothing yet.
+//! sherpa-onnx opens its library and loads models; MLX and transformers.js are stubs: they describe themselves, keep
+//! the default `probe`, and open nothing yet.
 
 mod mlx;
 mod sherpa_onnx;

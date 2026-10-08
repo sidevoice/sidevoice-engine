@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use crate::maybe_send::MaybeSend;
 use crate::Result;
 
-/// A model in memory. Speech to text and text to speech (as the catalogue's `Task` names them) are capabilities of the
-/// loaded model, not of the backend: one backend can load models of both kinds.
+/// A model in memory. Speech to text and text to speech (as the catalogue's `Capability` names them) are what the
+/// loaded model can do, not the backend: one backend can load models of both kinds.
 #[allow(
     dead_code,
     reason = "the engine does not use a loaded model yet: only the tests do"

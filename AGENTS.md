@@ -19,9 +19,10 @@ Read `README.md` (what the engine is and where things are) and `RELEASING.md` (h
 The repository is Rust only: one crate (`src/`), and the build tooling `cargo xtask` (`xtask/`).
 
 - **The engine has no remote providers.** Those stay in sidevoice-core; to the core, the device is one more provider.
-- **The platform is injected** through `Host` (capabilities, storage, fetching), implemented by each platform outside
-  this repository; here there are only the fake hosts of the tests. The engine does not reach for the file system,
-  the network or the browser by itself.
+- **The platform is injected** through `Host` (capabilities, storage, fetching). The engine ships the host of each
+  kind of build, chosen by the same aliases as the backends (`src/host/native.rs`, `NativeHost`; the browser's to
+  come), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
+  network or the browser; the rest of the engine goes through `Host`.
 - **Backends are internal, optional and lazy.** Which exist in a build is a compile-time decision (the cfg aliases
   `web`, `native`, `apple_silicon` from `build.rs`); a backend file carries a single `#![cfg(alias)]` only when its
   library cannot compile elsewhere, and registers itself with `inventory`. A backend describes itself as data
@@ -49,7 +50,7 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
   `BackendSpec`. A type gets its own file only when it is a concept of its own, not a part or a detail of another
   (`Accelerator`, `Build`, `Platform`). Split by cohesion and size, never one type per file: the module is the unit.
 - **Names say what a thing is**: `runtime.rs` (the library files a backend needs), not `downloads.rs`;
-  `loaded_model.rs`; `SttModel` and `TtsModel`, after the catalogue's `Task`. Name by role, never by state:
+  `loaded_model.rs`; `SttModel` and `TtsModel`, after the catalogue's `Capability`. Name by role, never by state:
   `WebStorage`, not `Unimplemented`; that something is not implemented yet, a stub or a placeholder is said in its
   docs and its `not-implemented` error code, not in its name.
 - **Unit tests live in `x/tests.rs`** beside their module (`#[cfg(test)] mod tests;`), never inline. Test doubles

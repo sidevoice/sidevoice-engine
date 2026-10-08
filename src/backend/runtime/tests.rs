@@ -43,3 +43,11 @@ fn sherpa_onnx_is_linked_so_it_downloads_nothing_and_its_version_is_the_crates()
         "backends.json says {version}; Cargo.toml must pin the crate to it"
     );
 }
+
+#[test]
+fn a_backend_is_known_if_backends_json_has_it_whether_or_not_it_runs_anywhere() {
+    assert!(super::is_known("sherpa-onnx"));
+    // Its entry is all `null`: no build of the engine runs it yet, but the catalogue may name it.
+    assert!(super::is_known("whisper-cpp"));
+    assert!(!super::is_known("no-such-backend"));
+}

@@ -8,7 +8,9 @@
 //! `no-runtime-for-platform`).
 //!
 //! Each backend has one `version`, from its `upstream`; each file's `url` may say `{version}`, and its `sha256` is
-//! written by `cargo xtask pin-backends`, never by hand. Inside: `schema`, the file's shape and reading it.
+//! written by `cargo xtask pin-backends`, never by hand. A file that is a member of an archive also says its
+//! `archive_path` inside it (which may say `{version}` too): the installer unpacks the archive and hands `load` that
+//! member, a file or a directory. Inside: `schema`, the file's shape and reading it.
 
 use crate::host::Platform;
 use crate::install::Artifact;
@@ -28,6 +30,15 @@ pub(crate) fn runtime_files(backend: &str, platform: Platform) -> Option<Vec<Art
         key: file.name.clone(),
         url: file.url.replace("{version}", &entry.version),
         sha256: file.sha256.clone(),
+        archive_path: file
+            .archive_path
+            .as_ref()
+            .map(|path| path.replace("{version}", &entry.version)),
     };
     Some(files.iter().map(artifact).collect())
+}
+
+/// Whether `backend` has an entry in `backends.json`: whether any build of the engine has it, compiled here or not.
+pub(crate) fn is_known(backend: &str) -> bool {
+    entries().iter().any(|entry| entry.id == backend)
 }

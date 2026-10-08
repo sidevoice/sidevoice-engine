@@ -6,10 +6,9 @@ use std::io::{BufReader, Cursor};
 
 use super::{model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
 use crate::backend::{Backend, LoadedModel};
-use crate::catalog::Build;
 use crate::host::Accelerator;
 use crate::install::Installed;
-use crate::test_support::ready;
+use crate::test_support::{build, ready};
 use crate::Result;
 
 #[test]
@@ -69,15 +68,9 @@ fn kokoro_runs_on_the_cpu_only_and_whisper_on_core_ml_too() {
 }
 
 fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
-    let build = Build {
-        id: "test".to_owned(),
-        backend: "sherpa-onnx".to_owned(),
-        format: "onnx".to_owned(),
-        memory_mb: 0,
-        accelerators: Vec::new(),
-        files: Vec::new(),
-    };
-    ready(SherpaOnnx.load(&build, accelerator, &installed(files)))
+    let files = installed(files);
+    let library = ready(SherpaOnnx.open(&files))?;
+    ready(library.load(&build("test", "sherpa-onnx", 0), accelerator, &files))
 }
 
 #[test]

@@ -38,7 +38,9 @@ published on npm as `@sidevoice/engine` for every release; every push to `main` 
 pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)).
 
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
-files; each platform implements its own (the browser, the desktop app). The backends that run models are internal
+files. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
+every native build, the browser's to come in the web build (#8). The `Host` interface stays open, so tests and other
+platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
 now, the sherpa-onnx backend is the exception: native builds link it statically, through the official crate, behind
@@ -69,37 +71,85 @@ anything, gathered once when the host is built:
   missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
-A catalogue build may also list the accelerators it accepts; none means any its backend runs on. A build is offered
-on the first accelerator in its backend's order of preference that the host reports, the probe confirms and the build
-accepts.
+A build is offered on the first accelerator in its backend's order of preference that the host reports, the probe
+confirms and the build allows: which accelerators a build runs on is its backend's to know, unless the build cannot
+take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
+
+## Installing, and what stays in memory
+
+A native app builds its host on a directory of its own and hands it to the engine. The native engine's futures expect a
+**Tokio runtime** (the app's own, as sidevoice-core and the desktop app have): downloads go through `reqwest`, and
+archives are unpacked on Tokio's blocking threads.
+
+```rust
+let host = NativeHost::new(app_data_dir.join("engine"))?;
+let engine = Engine::new(Box::new(host), sources)?;
+let selection = engine.select(Capability::Stt, &Preferences::default()).expect("something fits");
+let cancel = Cancel::new(); // `cancel.cancel()` from anywhere stops the install
+let handle = engine.prepare(&selection, &|progress: Progress| report(progress), &cancel).await?;
+```
+
+- **`NativeHost`** (`src/host/native.rs`) takes one parameter, the data directory, which it creates. It reports `os`
+  and `arch` from `std::env::consts`, `cores` from `available_parallelism`, the machine's memory (or its cgroup's
+  limit) from `sysinfo`, and `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver is
+  installed. It downloads over HTTPS with `reqwest` and rustls, the HTTP client sidevoice-core and the desktop app
+  use, streaming each body as it arrives.
+- **The installer does not know what a file is.** A build's model files (catalogue) and its backend's files
+  (`backends.json`) are one list of artifacts. Each is stored under its SHA-256 (content-addressed), checked as it
+  arrives, and only stored whole once it matches; `key` is only the name the backend finds it by. A file already
+  stored is not downloaded again, whichever build or version asks for it. Files stay on disk when their models leave
+  memory.
+- **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
+  `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
+  one archive (Kokoro: `model` and `espeak-ng-data` from one tarball; sherpa-onnx: `library`, the `lib/` directory
+  of its tarball). Each distinct archive is downloaded once, checked against its digest, and only then unpacked,
+  once, into a tree stored under its digest; the archive itself is then removed. Unpacking takes directories and
+  regular files only (no links of any kind), refuses any path that leaves the tree, and bounds the total size and
+  the number of entries. The tar format is read by the `tar` crate, from storage, on a blocking thread. Archives
+  come only with native-only builds (sherpa-onnx's release assets): the web build refuses them before downloading,
+  with `archive-unsupported`.
+- **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
+  **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
+- **A build's state** is `Engine::state(&build)`: `Absent → Installing → Installed → Loading → Ready`, or `Failed`
+  with its code (`digest-mismatch`, `download-failed`, `storage-failed`, ...).
+- **Memory follows use.** A model unused for 10 minutes (`DEFAULT_IDLE_UNLOAD`, or `Engine::with_idle_unload`) is
+  unloaded, and its build is `Installed` again. A backend's library is opened with the first of its models and closed
+  after the last one is unloaded. The engine has no timer of its own: it unloads idle models on each `prepare` and
+  when the app calls `Engine::unload_idle`, which it should do on a schedule (once a minute is plenty).
 
 ## Status
 
-The interfaces, discovery of the backends a build has and their lazy loading, and the first real backend:
-sherpa-onnx, natively (Whisper speech to text, Kokoro text to speech), linked through the official crate. The
-installer and the catalogue are not implemented yet, and MLX and transformers.js are stubs.
+The catalogue, the installer, the lifecycle and the native host work, and so does the first real backend:
+sherpa-onnx, natively (speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and
+Supertonic), linked through the official crate. MLX and transformers.js are stubs, and the browser's host is not
+bridged yet.
 
 ## Layout
 
 ```
 src/            the crate sidevoice-engine, one package per concept (`x.rs` is the package, `x/` its parts):
   lib.rs          the front door: declares the packages, exports the public API
-  host.rs         Host, Storage, Fetcher: the platform contract; host/: capabilities (what a host reports, and
-                  capabilities/accelerator.rs), platform (which platform that is)
-  catalog.rs      CatalogSource, the merged catalogue; catalog/model.rs, a model, with model/build.rs and
-                  model/task.rs
+  host.rs         Host: the platform contract; host/: capabilities (what a host reports, and
+                  capabilities/accelerator.rs), platform (which platform that is), storage (Storage, StorageWriter),
+                  fetcher (Fetcher, Download), native (NativeHost, native builds only: native/directory.rs, its
+                  storage, and native/http.rs, its downloads)
+  catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
+                  and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements; backend/: runtime (its files:
                   the lookup, and runtime/schema.rs, the shape of backends.json), requirement, registry,
-                  loaded_model (what load returns: SttModel, TtsModel), implementations/ (one file per backend)
+                  library (what open returns, which loads models), loaded_model (what load returns: SttModel,
+                  TtsModel), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
-  install.rs      the installer
+  install.rs      the installer (Artifact); install/: progress (Progress, ProgressSink), cancel (Cancel),
+                  digest (SHA-256)
   engine.rs       Engine: puts it together; engine/: selection (Preferences, Selection), error (ConfigError),
-                  lifecycle (a build's state)
+                  lifecycle (BuildState), memory (what is loaded, and unloading what goes unused)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
                   the JavaScript host (JsHost) as the engine sees it; web/host/: capabilities (reading what it
                   reports), storage (WebStorage), fetcher (WebFetcher)
   maybe_send.rs   Send/Sync in native builds only
 backends.json   each backend's runtime files per platform, compiled in; digests written by `cargo xtask pin-backends`
+catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own
@@ -107,20 +157,22 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 
 ## Build and test
 
-You need Rust 1.98.1 (the version `.github/actions/setup` installs). A native build links sherpa-onnx statically:
-the `sherpa-onnx-sys` build script downloads its prebuilt static libraries for the target from sherpa-onnx's GitHub
-release (about 22 MB on Linux and macOS, kept in `target/sherpa-onnx-prebuilt/`; `SHERPA_ONNX_ARCHIVE_DIR` points it
-at archives you already have), and they need the C++ standard library the platform's C++ toolchain provides
-(libstdc++ on Linux). `--no-default-features` leaves the backend out. The native tests build and check this
-platform's backends:
+You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C compiler for the native build (rustls'
+crypto, `ring`). A native build links sherpa-onnx statically: the `sherpa-onnx-sys` build script downloads its
+prebuilt static libraries for the target from sherpa-onnx's GitHub release (about 22 MB on Linux and macOS, kept in
+`target/sherpa-onnx-prebuilt/`; `SHERPA_ONNX_ARCHIVE_DIR` points it at archives you already have), and they need the
+C++ standard library the platform's C++ toolchain provides (libstdc++ on Linux). `--no-default-features` leaves the
+backend out. The native tests build and check this platform's backends; the one that downloads a real file through
+`NativeHost` is ignored unless asked for, and CI asks:
 
 ```sh
 cargo test --locked
+cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests   # with the network, as CI
 ```
 
-The sherpa-onnx backend's tests that run real models download them first (about 250 MB, cached by digest in
-`target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips them; CI runs them on each
-native platform:
+The sherpa-onnx backend's tests that run real models install the models first, through the installer and `NativeHost`
+(about 150 MB, kept by digest in `target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips
+them; CI runs them on each native platform:
 
 ```sh
 cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
@@ -149,13 +201,41 @@ cargo xtask pin-backends           # download every file at its pinned version a
 cargo xtask pin-backends --check   # what CI runs when backends.json changes
 ```
 
+The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
+(`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
+model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and `license`; a build, its `id`, the
+`backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
+`requires` (hard constraints only, and optional: the only `accelerators` it
+can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `source` of the figure, `estimated`,
+`declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by, a `url`,
+its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
+keys that name parts of one archive repeat its url, digest and size (it is downloaded and unpacked once). A url is
+pinned to a revision (a Hugging Face commit); a GitHub release asset cannot be, so it is marked `mutable` and only its
+digest pins it. A model lists every build that exists for it, for every backend `backends.json` declares,
+whether or not this build of the engine implements that backend (the resolver rejects those with
+`backend-not-in-this-build`). Each build lists exactly the files its format's reference implementation loads, no
+more and no less (transformers.js for the web ONNX builds, mlx-audio for MLX, whisper.cpp for ggml, sherpa-onnx for
+its exports), so a backend that lands later needs no catalogue change; a file that lives outside the model's
+repository is pinned from its real source. Builds carry no order: ranking them is the resolver's. Reading is strict
+(an unknown or a missing key fails the tests) and the merge of every source is checked by `Catalog::check`. Sizes,
+digests and pinned revisions come from the Hugging Face and GitHub APIs, never by hand: a new file is written with its
+`key` and a `url` (on Hugging Face at any revision, `…/resolve/main/…`), and then
+
+```sh
+cargo xtask pin-catalog            # pin every url, write sizes, digests and estimated memory
+cargo xtask pin-catalog --check    # what CI runs when the catalogue changes
+```
+
+Estimated memory is the weights plus 30% (an archive counts once, at its size); a `declared` or `measured` figure is
+never overwritten.
+
 ## How to add a backend
 
-A backend is a record, an optional `probe` and a `load`; the engine does the rest for every backend alike. The
-contract, with what each part must and must not do, is the documentation of `src/backend.rs`. Which models it runs
-is the catalogue's to say (each build names its backend), and what it downloads is data: its entry in
-`backends.json`, read by `src/backend/runtime.rs`. Backends are crate-private: nothing here touches the public API.
-As an example, whisper.cpp:
+A backend is a record, an optional `probe` and an `open` whose library loads models; the engine does the rest for
+every backend alike. The contract, with what each part must and must not do, is the documentation of
+`src/backend.rs`. Which models it runs is the catalogue's to say (each build names its backend), and what it
+downloads is data: its entry in `backends.json`, read by `src/backend/runtime.rs`. Backends are crate-private:
+nothing here touches the public API. As an example, whisper.cpp:
 
 1. **Its file**, `src/backend/implementations/whisper_cpp.rs`. If its code cannot compile everywhere, the file
    starts with one `#![cfg(<alias>)]` from `build.rs` (`web`, `native`, `apple_silicon`), with a comment saying why,
@@ -191,13 +271,15 @@ As an example, whisper.cpp:
    best first, quickly, without its library or a model, and answers "no" instead of failing. The engine caches the
    answer.
 
-5. **Its `load`**: called only for the selected build, once its files are installed. It opens the backend's library
-   at run time (natively, its C API declared in Rust and the library opened with `libloading` from the file its
-   `backends.json` entry names; on the web, its JavaScript module, with a dynamic import), loads the model's files
-   on the accelerator it is given,
-   and returns a `LoadedModel` that transcribes, speaks, or both. It downloads nothing, reads nothing outside
-   `files`, keeps no state, and fails with a stable error code, never a sentence. Speech comes back as one buffer
-   with its sample rate.
+5. **Its `open` and its library's `load`**: called only for the selected build, once its files are installed.
+   `open` opens the backend's library at run time (natively, its C API declared in Rust and the library opened with
+   `libloading` from the file its `backends.json` entry names; on the web, its JavaScript module, with a dynamic
+   import) and returns it as a `Library`. The engine keeps one per backend while any of its models is in memory: it
+   calls `open` for the first model of the backend, and drops the library after the last one is unloaded. The
+   library's `load` loads the model's files on the accelerator it is given, and returns a `LoadedModel` that
+   transcribes, speaks, or both. Neither downloads anything, reads anything outside `files` or keeps state in the
+   backend, and both fail with a stable error code, never a sentence. Speech comes back as one buffer with its sample
+   rate.
 
    ```rust
    #[cfg_attr(native, async_trait)]
@@ -207,13 +289,21 @@ As an example, whisper.cpp:
            &SPEC
        }
 
+       async fn open(&self, files: &Installed) -> Result<Box<dyn Library>> {
+           // Open the library from `files` with libloading.
+       }
+   }
+
+   #[cfg_attr(native, async_trait)]
+   #[cfg_attr(web, async_trait(?Send))]
+   impl Library for WhisperCppLibrary {
        async fn load(
            &self,
            build: &Build,
            accelerator: Accelerator,
            files: &Installed,
        ) -> Result<Box<dyn LoadedModel>> {
-           // Open the library from `files` with libloading, then the model's files on `accelerator`.
+           // The model's files from `files`, on `accelerator`.
        }
    }
    ```
@@ -222,8 +312,10 @@ As an example, whisper.cpp:
    `src/backend/runtime/schema.rs`, strict (an unknown or a missing key fails the tests), and *Build and test* above
    says how the platforms and digests work. The entry has its `id`, a name and description, its `upstream` and one
    `version`, and all six platforms: `null` where it does not run, `[]` where it runs and downloads nothing, or the
-   files, each with the `name` that `load` finds it by in `files`, a `url` that may say `{version}`, and a `sha256`
-   that `cargo xtask pin-backends` writes.
+   files, each with the `name` that `open` finds it by in `files`, a `url` that may say `{version}`, a `sha256`
+   that `cargo xtask pin-backends` writes, and, for a member of an archive, its optional `archive_path` inside it
+   (which may say `{version}` too). A backend the catalogue names before its code exists (whisper.cpp, today)
+   already has an entry, all `null`, which is filled in then.
 
    ```json
    {

@@ -4,7 +4,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_test::wasm_bindgen_test;
 
 #[wasm_bindgen_test]
-async fn a_web_engine_on_a_js_host_has_the_web_backends_only() {
+async fn a_web_engine_on_a_js_host_has_the_web_backends_and_the_bundled_catalogue() {
     let caps =
         js_sys::JSON::parse(r#"{"os":"web","arch":"wasm32","accelerators":["wasm"]}"#).unwrap();
     let host = Object::new();
@@ -16,5 +16,13 @@ async fn a_web_engine_on_a_js_host_has_the_web_backends_only() {
         .await
         .expect("engine");
     assert_eq!(engine.backends(), ["transformers-js"]);
-    assert_eq!(engine.offers("stt").expect("offers").length(), 0);
+    // Each bundled Whisper model is offered once, on transformers.js; every other build comes back with why not.
+    let offered = engine
+        .offers("stt")
+        .expect("offers")
+        .iter()
+        .filter(|entry| Reflect::get(entry, &"offered".into()).ok() == Some(JsValue::TRUE))
+        .count();
+    assert_eq!(offered, 3);
+    assert!(engine.offers("llm").is_err());
 }

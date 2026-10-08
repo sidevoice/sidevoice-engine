@@ -7,9 +7,10 @@
 //! The official `sherpa-onnx` crate (k2-fsa), pinned to one exact version in Cargo.toml, through its safe API
 //! (`OfflineRecognizer`, `OfflineTts`). Its build script downloads sherpa-onnx's prebuilt static libraries for the
 //! target (ONNX Runtime included) and links them into the app: in this first phase the backend is linked, not
-//! downloaded when a model needs it, and `backends.json` lists nothing to download for it (`[]`). Loading the runtime
-//! on demand again is sidevoice-engine#33. Building without the `sherpa-onnx` feature leaves the backend out, and
-//! ONNX Runtime with it.
+//! downloaded when a model needs it, and `backends.json` lists nothing to download for it (`[]`). So `open` has
+//! nothing to open: its library is the linked one, and the contract (`open`, then the library's `load`) stays as it
+//! is for when loading the runtime on demand comes back (sidevoice-engine#33). Building without the `sherpa-onnx`
+//! feature leaves the backend out, and ONNX Runtime with it.
 //!
 //! # Files
 //!
@@ -32,8 +33,7 @@
 
 use async_trait::async_trait;
 
-use crate::backend::LoadedModel;
-use crate::backend::{Backend, BackendFactory, BackendSpec};
+use crate::backend::{Backend, BackendFactory, BackendSpec, Library, LoadedModel};
 use crate::catalog::Build;
 use crate::host::Accelerator;
 use crate::install::Installed;
@@ -68,6 +68,18 @@ impl Backend for SherpaOnnx {
         &SPEC
     }
 
+    /// The library is linked: there is nothing to open, and nothing installed is read.
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
+        Ok(Box::new(Linked))
+    }
+}
+
+/// The linked sherpa-onnx, which loads the model.
+struct Linked;
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl Library for Linked {
     async fn load(
         &self,
         _build: &Build,

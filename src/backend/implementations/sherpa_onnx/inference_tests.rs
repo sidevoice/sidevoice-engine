@@ -17,14 +17,12 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 use super::SherpaOnnx;
 use crate::backend::{Backend, LoadedModel};
-use crate::catalog::Build;
 use crate::host::Accelerator;
 use crate::install::Installed;
-use crate::test_support::ready;
+use crate::test_support::{build, ready, sha256 as sha256_of};
 
 /// What these tests download besides the library: `inference_tests.json`.
 #[derive(Deserialize)]
@@ -124,10 +122,7 @@ fn downloaded(cache: &Path, url: &str, sha256: &str) -> PathBuf {
         .status()
         .expect("curl runs");
     assert!(status.success(), "downloading {url}: {status}");
-    let digest = format!(
-        "{:x}",
-        Sha256::digest(fs::read(&partial).expect("the download"))
-    );
+    let digest = sha256_of(&fs::read(&partial).expect("the download"));
     assert_eq!(digest, sha256, "the digest of {url}");
     fs::rename(&partial, &path).expect("the download kept");
     path
@@ -199,22 +194,15 @@ fn accelerator(_files: &Installed) -> Accelerator {
 }
 
 fn load(files: &Installed) -> Box<dyn LoadedModel> {
-    let build = Build {
-        id: "test".to_owned(),
-        backend: "sherpa-onnx".to_owned(),
-        format: "onnx".to_owned(),
-        memory_mb: 0,
-        accelerators: Vec::new(),
-        files: Vec::new(),
-    };
     let model = if files.file("encoder").is_some() {
         "Whisper"
     } else {
         "Kokoro"
     };
     eprintln!("loading {model} on {:?}", accelerator(files));
-    let loaded =
-        ready(SherpaOnnx.load(&build, accelerator(files), files)).expect("the model loads");
+    let library = ready(SherpaOnnx.open(files)).expect("the linked library");
+    let loaded = ready(library.load(&build("test", "sherpa-onnx", 0), accelerator(files), files))
+        .expect("the model loads");
     eprintln!("loaded {model}");
     loaded
 }
