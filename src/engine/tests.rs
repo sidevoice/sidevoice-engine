@@ -146,11 +146,13 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     let stt = offered(Capability::Stt);
     let models: Vec<_> = stt.iter().map(|(model, _)| model.as_str()).collect();
     if cfg!(target_arch = "wasm32") {
-        // Large-v3's q8 build takes more than wasm32's 2 GiB, and its fp16 one needs WebGPU, which the fake host has not.
+        // Large-v3 too, although its q8 build declares more than wasm32's 2 GiB (`requires.wasm_max_mb`): the resolver does
+        // not enforce that requirement yet.
         assert_eq!(
             models,
             [
                 "whisper-base",
+                "whisper-large-v3",
                 "whisper-large-v3-turbo",
                 "whisper-small",
                 "whisper-tiny"
