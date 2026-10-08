@@ -165,7 +165,8 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
 
     let tts = offered(Capability::Tts);
     if cfg!(target_arch = "wasm32") {
-        assert_eq!(tts, []);
+        let web = |model: &str| (model.to_owned(), "transformers-js".to_owned());
+        assert_eq!(tts, [web("kokoro-82m-v0.19"), web("kokoro-82m-v1.0")]);
     } else {
         let models: Vec<_> = tts.iter().map(|(model, _)| model.as_str()).collect();
         assert_eq!(
