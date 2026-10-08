@@ -57,7 +57,8 @@ impl Kokoro {
         let loaded = async {
             let id: JsValue = model.served.id().into();
             let tokenizer = model.export("AutoTokenizer")?;
-            let tokenizer = call_method(&tokenizer, "from_pretrained", &[id.clone()]).await?;
+            let tokenizer =
+                call_method(&tokenizer, "from_pretrained", std::slice::from_ref(&id)).await?;
             let class = model.export("StyleTextToSpeech2Model")?;
             let loaded = call_method(&class, "from_pretrained", &[id, model.options()]).await?;
             let espeak = Espeak::import().await?;
