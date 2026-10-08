@@ -1,7 +1,7 @@
 //! transformers.js's hub, pointed at the engine's files. transformers.js reads a model's files by their path in its
 //! repository, through its `env`: first a cache (`env.customCache`), then `env.fetch`. While the library is open, the
 //! hub answers both for the models the engine serves, each under a name of its own (`sidevoice-engine-opfs/m<n>`):
-//! the cache with the file the host stored (a `Response` over the OPFS file), `fetch` with a 404 for a path the build
+//! the cache with the file in the build's folder, at its path in the repository (a `Response` over the OPFS file), `fetch` with a 404 for a path the build
 //! does not have (an optional file such as `generation_config.json` of a model without one). Anything else goes where
 //! it went before: the page's own use of transformers.js keeps its cache and its downloads. Closing the library puts
 //! `env` back as it was.

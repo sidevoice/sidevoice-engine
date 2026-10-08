@@ -2,7 +2,8 @@
 //! directories, files, writing a file through a stream and moving it into place. Only what the engine needs is bound,
 //! from `navigator.storage.getDirectory()` down; a failure is a JavaScript value for the caller to turn into its code.
 //!
-//! A *location* is a `/`-separated path from the OPFS root (`sidevoice-engine/<sha256>`): what `WebStorage` says a
+//! A *location* is a `/`-separated path from the OPFS root (`sidevoice-engine/blobs/<sha256>`,
+//! `sidevoice-engine/models/<build id>/onnx/model_q8.onnx`): what `WebStorage` says a
 //! stored file is at, and what the transformers.js backend opens a file by.
 
 use js_sys::{Reflect, Uint8Array};
@@ -56,6 +57,9 @@ extern "C" {
     #[wasm_bindgen(method, catch)]
     async fn write(this: &Writable, data: &Uint8Array) -> Result<JsValue, JsValue>;
 
+    #[wasm_bindgen(method, catch, js_name = write)]
+    async fn write_blob(this: &Writable, data: &web_sys::Blob) -> Result<JsValue, JsValue>;
+
     #[wasm_bindgen(method, catch)]
     async fn close(this: &Writable) -> Result<JsValue, JsValue>;
 
@@ -75,6 +79,14 @@ pub(crate) async fn root() -> Result<Directory, JsValue> {
     Ok(wasm_bindgen_futures::JsFuture::from(promise)
         .await?
         .unchecked_into())
+}
+
+/// Whether `error` is the `TypeMismatchError` an entry of the other kind (a file for a directory) fails with.
+fn is_type_mismatch(error: &JsValue) -> bool {
+    Reflect::get(error, &"name".into())
+        .ok()
+        .and_then(|name| name.as_string())
+        .is_some_and(|name| name == "TypeMismatchError")
 }
 
 /// Whether `error` is the `NotFoundError` a missing entry fails with.
@@ -97,6 +109,33 @@ impl Directory {
     pub(crate) async fn directory(&self, name: &str) -> Result<Directory, JsValue> {
         let handle = self.get_directory_handle(name, &create(true)).await?;
         Ok(handle.unchecked_into())
+    }
+
+    /// The directory `name` inside this one, if it is there.
+    pub(crate) async fn existing(&self, name: &str) -> Result<Option<Directory>, JsValue> {
+        match self.get_directory_handle(name, &create(false)).await {
+            Ok(handle) => Ok(Some(handle.unchecked_into())),
+            // A file of that name is not a directory either.
+            Err(error) if is_not_found(&error) || is_type_mismatch(&error) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// The directory at the `/`-separated `path` below this one: created where `create`, else `None` if it is not
+    /// all there.
+    pub(crate) async fn at(&self, path: &str, create: bool) -> Result<Option<Directory>, JsValue> {
+        let mut directory = self.clone();
+        for segment in path.split('/').filter(|segment| !segment.is_empty()) {
+            directory = if create {
+                directory.directory(segment).await?
+            } else {
+                match directory.existing(segment).await? {
+                    Some(directory) => directory,
+                    None => return Ok(None),
+                }
+            };
+        }
+        Ok(Some(directory))
     }
 
     /// The file `name` inside this one: `None` if there is none and `create` is false.
@@ -145,6 +184,11 @@ impl Writable {
         self.write(&Uint8Array::from(bytes)).await.map(drop)
     }
 
+    /// Appends what `blob` holds (a stored file, copied without passing through wasm memory).
+    pub(crate) async fn append_blob(&self, blob: &web_sys::Blob) -> Result<(), JsValue> {
+        self.write_blob(blob).await.map(drop)
+    }
+
     /// Applies what was written to the file.
     pub(crate) async fn finish(&self) -> Result<(), JsValue> {
         self.close().await.map(drop)
@@ -176,7 +220,6 @@ pub(crate) async fn open(location: &str) -> Result<Option<web_sys::Blob>, JsValu
     }
 }
 
-#[cfg(test)]
 impl Directory {
     /// Removes the entry `name` and everything in it; nothing happens if there is none.
     pub(crate) async fn remove_recursively(&self, name: &str) -> Result<(), JsValue> {

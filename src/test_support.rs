@@ -14,8 +14,8 @@ use sha2::Digest;
 use crate::TreeWriter;
 use crate::{
     async_trait, Accelerator, Artifact, BuildEntry, Capabilities, Capability, CatalogFragment,
-    CatalogSource, Download, Error, Family, Fetcher, Host, Memory, MemorySource, ModelEntry,
-    ModelFile, Requires, Result, Runs, Storage, StorageWriter,
+    CatalogSource, Download, Error, Family, Fetcher, FolderWriter, Host, Memory, MemorySource,
+    ModelEntry, ModelFile, Requires, Result, Runs, Storage, StorageWriter,
 };
 
 pub(crate) struct FakeHost;
@@ -77,6 +77,26 @@ impl Storage for FakeHost {
     fn create_tree(&self, _name: &str) -> Result<Box<dyn TreeWriter>> {
         unreachable!("offers never store")
     }
+
+    async fn find_folder(&self, _name: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn find_in_folder(&self, _name: &str, _path: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn create_folder(&self, _name: &str) -> Result<Box<dyn FolderWriter>> {
+        unreachable!("offers never store")
+    }
+
+    async fn remove_folder(&self, _name: &str) -> Result<()> {
+        unreachable!("offers never remove")
+    }
+
+    async fn is_linked(&self, _name: &str) -> Result<bool> {
+        Ok(false)
+    }
 }
 
 #[cfg_attr(native, async_trait)]
@@ -87,15 +107,19 @@ impl Fetcher for FakeHost {
     }
 }
 
-/// [`FakeHost`]'s capabilities, a storage in memory (files, and trees), and a fetcher that serves some URLs, a few
-/// bytes at a time.
+/// [`FakeHost`]'s capabilities, a storage in memory (files, trees, and build folders of links), and a fetcher that
+/// serves some URLs, a few bytes at a time.
 #[derive(Default)]
 pub(crate) struct MemoryHost {
     served: BTreeMap<String, Vec<u8>>,
     stored: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
     trees: Arc<Mutex<BTreeMap<String, MemoryTree>>>,
+    folders: Arc<Mutex<BTreeMap<String, MemoryFolder>>>,
     fetches: AtomicUsize,
 }
+
+/// A build folder's links: each path, and the blob (and member of it) it links.
+pub(crate) type MemoryFolder = BTreeMap<String, (String, Option<String>)>;
 
 /// A tree's paths: a file's bytes, or `None` for a directory.
 pub(crate) type MemoryTree = BTreeMap<String, Option<Vec<u8>>>;
@@ -126,6 +150,11 @@ impl MemoryHost {
     #[cfg(native)]
     pub(crate) fn tree(&self, name: &str) -> Option<MemoryTree> {
         lock(&self.trees).get(name).cloned()
+    }
+
+    /// The build folder stored as `name`.
+    pub(crate) fn folder(&self, name: &str) -> Option<MemoryFolder> {
+        lock(&self.folders).get(name).cloned()
     }
 
     /// How many downloads were started.
@@ -202,6 +231,40 @@ impl Storage for MemoryHost {
             trees: Arc::clone(&self.trees),
         }))
     }
+
+    async fn find_folder(&self, name: &str) -> Result<Option<String>> {
+        let stored = lock(&self.folders).contains_key(name);
+        Ok(stored.then(|| format!("memory:models/{name}")))
+    }
+
+    async fn find_in_folder(&self, name: &str, path: &str) -> Result<Option<String>> {
+        let below = format!("{path}/");
+        let found = lock(&self.folders).get(name).is_some_and(|links| {
+            links.contains_key(path) || links.keys().any(|other| other.starts_with(&below))
+        });
+        Ok(found.then(|| format!("memory:models/{name}/{path}")))
+    }
+
+    async fn create_folder(&self, name: &str) -> Result<Box<dyn FolderWriter>> {
+        Ok(Box::new(MemoryFolderWriter {
+            name: name.to_owned(),
+            links: MemoryFolder::new(),
+            stored: Arc::clone(&self.stored),
+            trees: Arc::clone(&self.trees),
+            folders: Arc::clone(&self.folders),
+        }))
+    }
+
+    async fn remove_folder(&self, name: &str) -> Result<()> {
+        lock(&self.folders).remove(name);
+        Ok(())
+    }
+
+    async fn is_linked(&self, name: &str) -> Result<bool> {
+        let folders = lock(&self.folders);
+        let mut links = folders.values().flat_map(BTreeMap::values);
+        Ok(links.any(|(blob, _)| blob == name))
+    }
 }
 
 #[cfg(native)]
@@ -237,6 +300,42 @@ impl TreeWriter for MemoryTreeWriter {
     fn commit(self: Box<Self>) -> Result<String> {
         let location = format!("memory:{}", self.name);
         lock(&self.trees).insert(self.name, self.paths);
+        Ok(location)
+    }
+}
+
+struct MemoryFolderWriter {
+    name: String,
+    links: MemoryFolder,
+    stored: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    trees: Arc<Mutex<BTreeMap<String, MemoryTree>>>,
+    folders: Arc<Mutex<BTreeMap<String, MemoryFolder>>>,
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl FolderWriter for MemoryFolderWriter {
+    async fn link(&mut self, path: &str, blob: &str, member: Option<&str>) -> Result<()> {
+        let exists = match member {
+            None => lock(&self.stored).contains_key(blob),
+            Some(member) => lock(&self.trees).get(blob).is_some_and(|paths| {
+                let below = format!("{member}/");
+                paths.contains_key(member) || paths.keys().any(|path| path.starts_with(&below))
+            }),
+        };
+        if !exists {
+            return Err(Error::new("storage-failed"));
+        }
+        self.links.insert(
+            path.to_owned(),
+            (blob.to_owned(), member.map(str::to_owned)),
+        );
+        Ok(())
+    }
+
+    async fn commit(self: Box<Self>) -> Result<String> {
+        let location = format!("memory:models/{}", self.name);
+        lock(&self.folders).entry(self.name).or_insert(self.links);
         Ok(location)
     }
 }
@@ -530,6 +629,17 @@ impl CatalogSource for FakeCatalog {
                 ),
             ],
         })
+    }
+}
+
+/// The output of `future`, which must be ready on its first poll: the engine's futures that do not wait on a host
+/// (a backend's `load`, a loaded model's work) are, and the tests have no executor.
+#[cfg(sherpa_onnx)]
+pub(crate) fn ready<F: std::future::Future>(future: F) -> F::Output {
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    match std::pin::pin!(future).poll(&mut context) {
+        std::task::Poll::Ready(output) => output,
+        std::task::Poll::Pending => panic!("the future waits on something"),
     }
 }
 

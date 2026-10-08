@@ -120,13 +120,7 @@ impl Engine {
         for entry in self.entries() {
             let mut builds = Vec::new();
             for (build, fit) in self.resolver.builds(entry, &self.backends, &caps) {
-                let installed = match self.artifacts(build) {
-                    Ok((_, artifacts)) => {
-                        let storage = self.host.storage();
-                        self.installer.is_installed(&artifacts, storage).await?
-                    }
-                    Err(_) => false,
-                };
+                let installed = self.is_installed(build).await?;
                 builds.push(ModelBuild {
                     id: build.id.clone(),
                     backend: build.backend.clone(),
@@ -176,13 +170,13 @@ impl Engine {
         let (_, build, _) = self.choose(model, build).await?;
         let (_, artifacts) = self.artifacts(build)?;
         self.installer
-            .install(&artifacts, self.host.as_ref(), progress, cancel)
+            .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
             .await
             .map(drop)
     }
 
-    /// Removes every build of the model `model` from storage, except the files another model also uses. Its backends'
-    /// library files stay: other models use them.
+    /// Removes every build of the model `model` from storage: each build's folder, then each of its files no other
+    /// build's folder links, so a file another model also uses stays.
     ///
     /// # Errors
     ///
@@ -199,22 +193,21 @@ impl Engine {
         if in_use {
             return Err(Error::new("model-in-use"));
         }
-        let files = |entry: &ModelEntry| -> Vec<Artifact> {
-            entry
-                .builds
-                .iter()
-                .flat_map(|build| &build.files)
-                .map(ModelFile::artifact)
-                .collect()
-        };
-        let kept: Vec<Artifact> = self
-            .entries()
-            .filter(|other| other.id != entry.id)
-            .flat_map(files)
-            .collect();
-        self.installer
-            .uninstall(&files(entry), &kept, self.host.storage())
-            .await
+        for build in &entry.builds {
+            let artifacts = match self.artifacts(build) {
+                Ok((_, artifacts)) => artifacts,
+                Err(_) => build.files.iter().map(ModelFile::artifact).collect(),
+            };
+            self.installer
+                .uninstall(&build.id, &artifacts, self.host.storage())
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Whether `build`'s folder is stored, which it only is with every file in it.
+    async fn is_installed(&self, build: &BuildEntry) -> Result<bool> {
+        Ok(self.host.storage().find_folder(&build.id).await?.is_some())
     }
 
     /// Loads `build` of the model `model`, or, with `None`, an installed build that runs here, else the recommended
@@ -240,7 +233,7 @@ impl Engine {
         let (backend, artifacts) = self.artifacts(build)?;
         let files = self
             .installer
-            .install(&artifacts, self.host.as_ref(), progress, cancel)
+            .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
             .await?;
         cancel.check()?;
         let _loading = self.loading.lock().await;
@@ -297,14 +290,8 @@ impl Engine {
             .filter_map(|(build, fit)| fit.ok().map(|accelerator| (build, accelerator)))
             .collect();
         for &(build, accelerator) in &available {
-            if let Ok((_, artifacts)) = self.artifacts(build) {
-                if self
-                    .installer
-                    .is_installed(&artifacts, self.host.storage())
-                    .await?
-                {
-                    return Ok((entry, build, accelerator));
-                }
+            if self.is_installed(build).await? {
+                return Ok((entry, build, accelerator));
             }
         }
         let (build, accelerator) = available

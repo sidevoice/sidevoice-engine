@@ -50,64 +50,50 @@
           "precision": "int8",
           "files": [
             {
-              "key": "duration_predictor",
-              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-              "archive_path": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/duration_predictor.int8.onnx",
-              "sha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-              "bytes": 128774318,
-              "mutable": true
+              "key": "supertonic.duration_predictor",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/duration_predictor.int8.onnx",
+              "sha256": "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db",
+              "bytes": 3700147
             },
             {
-              "key": "text_encoder",
-              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-              "archive_path": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/text_encoder.int8.onnx",
-              "sha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-              "bytes": 128774318,
-              "mutable": true
+              "key": "supertonic.text_encoder",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/text_encoder.int8.onnx",
+              "sha256": "c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff",
+              "bytes": 36416150
             },
             {
-              "key": "vector_estimator",
-              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-              "archive_path": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/vector_estimator.int8.onnx",
-              "sha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-              "bytes": 128774318,
-              "mutable": true
+              "key": "supertonic.vector_estimator",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/vector_estimator.int8.onnx",
+              "sha256": "20cd86fa5c6effedfda0e7cffe5b0569ca401c440a0c3a1d72bf39286c0db3fd",
+              "bytes": 78400833
             },
             {
-              "key": "vocoder",
-              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-              "archive_path": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/vocoder.int8.onnx",
-              "sha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-              "bytes": 128774318,
-              "mutable": true
+              "key": "supertonic.vocoder",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/vocoder.int8.onnx",
+              "sha256": "e923d60f53f95eb1ce235f1dc33ec56d9c057823c96fa6f8acf98f32b0da6152",
+              "bytes": 25991073
             },
             {
-              "key": "tts_json",
-              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-              "archive_path": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/tts.json",
-              "sha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-              "bytes": 128774318,
-              "mutable": true
+              "key": "supertonic.tts_json",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/tts.json",
+              "sha256": "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09",
+              "bytes": 8253
             },
             {
-              "key": "unicode_indexer",
-              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-              "archive_path": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/unicode_indexer.bin",
-              "sha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-              "bytes": 128774318,
-              "mutable": true
+              "key": "supertonic.unicode_indexer",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/unicode_indexer.bin",
+              "sha256": "8402ca48e5189a8950138580b0fff64db6f072f24ac07cd54ba8b2fbb9883b30",
+              "bytes": 262144
             },
             {
-              "key": "voice_style",
-              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-              "archive_path": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/voice.bin",
-              "sha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-              "bytes": 128774318,
-              "mutable": true
+              "key": "supertonic.voice_style",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/voice.bin",
+              "sha256": "67d5209b0ee8ce6c74105ffbe12fe6a7628aea3b4ba2fcb308a4a67938a93ce8",
+              "bytes": 517168
             }
           ],
           "memory": {
-            "mb": 160,
+            "mb": 190,
             "source": "estimated",
             "basis": "weights size + 30%"
           }
