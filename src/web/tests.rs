@@ -46,6 +46,10 @@ async fn a_web_engine_lists_every_model_with_its_web_builds_first() {
         .expect("whisper-tiny");
     assert_eq!(get(&whisper, "installed"), JsValue::FALSE);
     assert_eq!(get(&whisper, "parametersM").as_f64(), Some(39.0));
+    assert_eq!(
+        get(&whisper, "family").as_string().as_deref(),
+        Some("whisper")
+    );
     let builds: Array = get(&whisper, "builds").into();
     let first = builds.get(0);
     assert_eq!(

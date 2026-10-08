@@ -9,7 +9,7 @@ use crate::{Accelerator, Audio, Capability, Gender, Model, ModelBuild, Progress,
 #[cfg(test)]
 mod tests;
 
-/// `{ id, capabilities, parametersM, languages, license, voices, installed, builds, recommendedBuild? }`.
+/// `{ id, family, capabilities, parametersM, languages, license, voices, installed, builds, recommendedBuild? }`.
 pub(super) fn model(model: &Model) -> JsValue {
     let capabilities: Array = model
         .capabilities
@@ -18,6 +18,7 @@ pub(super) fn model(model: &Model) -> JsValue {
         .collect();
     object(&[
         ("id", Some(model.id.as_str().into())),
+        ("family", Some(model.family.as_str().into())),
         ("capabilities", Some(capabilities.into())),
         ("parametersM", Some(model.parameters_m.into())),
         ("languages", Some(strings(&model.languages))),

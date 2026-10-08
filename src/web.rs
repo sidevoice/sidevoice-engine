@@ -44,7 +44,8 @@ export interface ModelBuild {
   available: boolean; reasons: Reason[]; installed: boolean;
 }
 export interface Model {
-  id: string; capabilities: ("stt" | "tts")[]; parametersM: number; languages: string[]; license: string;
+  id: string; family: string; capabilities: ("stt" | "tts")[]; parametersM: number; languages: string[];
+  license: string;
   voices: Voice[]; installed: boolean; builds: ModelBuild[]; recommendedBuild?: string;
 }
 /** How far an install has got: files done of all, and the bytes of the file being downloaded. */
