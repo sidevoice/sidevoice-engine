@@ -10,7 +10,7 @@ use crate::Result;
 /// loaded model can do, not the backend: one backend can load models of both kinds.
 #[allow(
     dead_code,
-    reason = "no backend loads a model yet, and the engine does not use one yet"
+    reason = "the engine does not use a loaded model yet: only the tests do"
 )]
 pub(crate) trait LoadedModel: MaybeSend {
     /// The model as speech to text, if it is one.
@@ -28,9 +28,13 @@ pub(crate) trait LoadedModel: MaybeSend {
 /// A speech-to-text model: one whole turn at a time.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-#[allow(dead_code, reason = "no backend loads a model yet")]
+#[allow(
+    dead_code,
+    reason = "the engine does not use a loaded model yet: only the tests do"
+)]
 pub(crate) trait SttModel {
-    /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it.
+    /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it. A backend may not pass it on yet:
+    /// sherpa-onnx's detects the language itself (sidevoice-engine#46).
     async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String>;
 }
 
@@ -38,12 +42,23 @@ pub(crate) trait SttModel {
 /// *Speech out* in `backend.rs`).
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-#[allow(dead_code, reason = "no backend loads a model yet")]
+#[allow(
+    dead_code,
+    reason = "the engine does not use a loaded model yet: only the tests do"
+)]
 pub(crate) trait TtsModel {
     /// The voices it speaks with.
     fn voices(&self) -> Vec<String>;
     /// The sample rate of what [`TtsModel::speak`] returns, in Hz.
     fn sample_rate(&self) -> u32;
     /// `text` spoken with `voice` at `speed` (1.0 is normal), as mono samples at [`TtsModel::sample_rate`].
-    async fn speak(&mut self, text: &str, voice: &str, speed: f32) -> Result<Vec<f32>>;
+    /// `language`: `text`'s, as a BCP 47 tag, for a model that speaks several; `None` leaves it to the model, and a
+    /// model of one language ignores it.
+    async fn speak(
+        &mut self,
+        text: &str,
+        voice: &str,
+        language: Option<&str>,
+        speed: f32,
+    ) -> Result<Vec<f32>>;
 }

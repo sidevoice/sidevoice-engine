@@ -24,9 +24,10 @@ serde_json = "1.0.151"
 # Each downloaded file is checked against its digest as it arrives (src/install.rs), on every target.
 sha2 = { version = "0.11.0", default-features = false }
 
-# Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The
-# libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,
-# not linked. Specific platforms first, then the general native one. The stub backends link nothing yet.
+# Which backends a build contains is decided by these tables, the features below and one `#![cfg]` per backend file
+# (build.rs). The libraries listed here are the ones backends link. Heavy engine libraries are meant to be downloaded
+# when a model needs them, not linked; sherpa-onnx is linked for now (below). Specific platforms first, then the
+# general native one.
 
 # The web build (the npm package): the bridge to JavaScript (src/web.rs), and backends whose engine is a JavaScript
 # module.
@@ -52,6 +53,12 @@ reqwest = { version = "=0.13.0", default-features = false, features = ["rustls",
 sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
 tar = { version = "0.4.46", default-features = false }
 tokio = { version = "1.53.2", default-features = false, features = ["rt"] }
+# The sherpa-onnx backend (src/backend/implementations/sherpa_onnx.rs): the official crate, pinned exactly. Phase 1
+# links it statically: its build script downloads sherpa-onnx's prebuilt static libraries for the target (ONNX
+# Runtime included, about 21-23 MB compressed on Linux and macOS, 123 MB on Windows) from the GitHub release of this
+# version, and the app carries them. Loading the runtime on demand instead is sidevoice-engine#33. Never on wasm32:
+# the web build does not carry it.
+sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["static"], optional = true }
 
 # The native tests run the engine's futures on one multi-threaded Tokio runtime, as an app does (src/test_support.rs).
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
@@ -62,3 +69,9 @@ wasm-bindgen-test = "0.3.79"
 
 [build-dependencies]
 cfg_aliases = "0.2.2"
+
+[features]
+default = ["sherpa-onnx"]
+# The sherpa-onnx backend, and the static libraries it links. Natively only; a build without it has no backend that
+# runs a model yet, and is smaller by what CI's `link-size` job reports.
+sherpa-onnx = ["dep:sherpa-onnx"]

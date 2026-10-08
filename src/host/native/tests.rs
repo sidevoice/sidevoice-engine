@@ -1,5 +1,5 @@
-//! The native host: what it reports, its directory, and (with the network, which CI has) a real file and a backend's
-//! library archive installed through it.
+//! The native host: what it reports, its directory (blobs, and build folders of hard links to them), and (with the
+//! network, which CI has) a real file and a real archive installed and uninstalled through it.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -52,21 +52,21 @@ fn its_directory_stores_a_file_only_once_committed() {
     let scratch = Scratch::new();
     let host = NativeHost::new(&scratch.0).expect("host");
     let storage = host.storage();
-    let files = scratch.0.join("files");
+    let blobs = scratch.0.join("blobs");
     let partial = scratch.0.join("partial");
 
     let mut dropped = block_on(storage.create("abc")).expect("writer");
     block_on(dropped.write(b"half")).expect("written");
     assert_eq!(entries(&partial), 1);
     drop(dropped);
-    assert_eq!((entries(&files), entries(&partial)), (0, 0));
+    assert_eq!((entries(&blobs), entries(&partial)), (0, 0));
     assert_eq!(block_on(storage.find("abc")), Ok(None));
 
     let mut kept = block_on(storage.create("abc")).expect("writer");
     block_on(kept.write(b"who")).expect("written");
     block_on(kept.write(b"le")).expect("written");
     let location = block_on(kept.commit()).expect("committed");
-    assert_eq!(Path::new(&location), files.join("abc"));
+    assert_eq!(Path::new(&location), blobs.join("abc"));
     assert_eq!(std::fs::read(&location).expect("stored"), b"whole");
     assert_eq!(block_on(storage.find("abc")), Ok(Some(location)));
     assert_eq!(entries(&partial), 0);
@@ -95,7 +95,7 @@ const PINNED_SIZE: u64 = 184_990;
 
 #[test]
 #[ignore = "downloads from Hugging Face: CI runs it (cargo test -- --include-ignored)"]
-fn it_installs_a_real_file_and_finds_it_installed_afterwards() {
+fn it_installs_a_real_file_in_its_build_folder_and_uninstalls_it() {
     let scratch = Scratch::new();
     let host = NativeHost::new(&scratch.0).expect("host");
     let artifacts = [Artifact {
@@ -107,16 +107,30 @@ fn it_installs_a_real_file_and_finds_it_installed_afterwards() {
     let sizes = std::sync::Mutex::new(Vec::new());
     let progress = |progress: crate::Progress| sizes.lock().unwrap().push(progress);
 
-    let installed = block_on(Installer.install(&artifacts, &host, &progress, &Cancel::new()))
-        .expect("installed");
+    let installed = block_on(Installer.install(
+        "whisper-tiny/hf",
+        &artifacts,
+        &host,
+        &progress,
+        &Cancel::new(),
+    ))
+    .expect("installed");
     let location = installed.file("preprocessor_config.json").expect("by key");
-    assert_eq!(
-        Path::new(location),
-        scratch.0.join("files").join(PINNED_SHA256)
-    );
+    // Under its original name in the build's folder, a hard link to its blob.
+    let in_folder = scratch
+        .0
+        .join("models/whisper-tiny/hf/preprocessor_config.json");
+    assert_eq!(Path::new(location), in_folder);
     assert_eq!(
         std::fs::metadata(location).expect("stored").len(),
         PINNED_SIZE
+    );
+    let blob = scratch.0.join("blobs").join(PINNED_SHA256);
+    assert!(blob.is_file());
+    #[cfg(unix)]
+    assert_eq!(
+        std::os::unix::fs::MetadataExt::nlink(&std::fs::metadata(&blob).expect("blob")),
+        2
     );
     let sizes = sizes.into_inner().unwrap();
     assert!(sizes
@@ -126,13 +140,14 @@ fn it_installs_a_real_file_and_finds_it_installed_afterwards() {
         .iter()
         .any(|progress| progress.received == PINNED_SIZE));
 
-    // A new host on the same directory finds it, without downloading: the URL no longer matters.
+    // A new host on the same directory finds the build installed, without downloading: the URL no longer matters.
     let again = NativeHost::new(&scratch.0).expect("host");
     let offline = [Artifact {
-        url: "https://invalid.invalid/".to_owned(),
+        url: "https://invalid.invalid/preprocessor_config.json".to_owned(),
         ..artifacts[0].clone()
     }];
-    let found = block_on(Installer.install(&offline, &again, &|_| {}, &Cancel::new()));
+    let found =
+        block_on(Installer.install("whisper-tiny/hf", &offline, &again, &|_| {}, &Cancel::new()));
     assert_eq!(
         found.expect("found").file("preprocessor_config.json"),
         Some(location)
@@ -142,17 +157,28 @@ fn it_installs_a_real_file_and_finds_it_installed_afterwards() {
         sha256: "0".repeat(64),
         ..artifacts[0].clone()
     }];
-    let mismatch = block_on(Installer.install(&wrong, &host, &|_| {}, &Cancel::new()));
+    let mismatch =
+        block_on(Installer.install("other/wrong", &wrong, &host, &|_| {}, &Cancel::new()));
     assert_eq!(mismatch.map_err(|error| error.code), Err("digest-mismatch"));
     assert_eq!(entries(&scratch.0.join("partial")), 0);
+    assert!(!scratch.0.join("models/other").exists(), "no folder");
 
     let missing = [Artifact {
         url: format!("{PINNED}-missing"),
         sha256: "1".repeat(64),
         ..artifacts[0].clone()
     }];
-    let failed = block_on(Installer.install(&missing, &host, &|_| {}, &Cancel::new()));
+    let failed =
+        block_on(Installer.install("other/missing", &missing, &host, &|_| {}, &Cancel::new()));
     assert_eq!(failed.map_err(|error| error.code), Err("download-failed"));
+
+    block_on(Installer.uninstall("whisper-tiny/hf", &artifacts, host.storage()))
+        .expect("uninstalled");
+    assert!(
+        !scratch.0.join("models/whisper-tiny").exists(),
+        "the folder, and the model's"
+    );
+    assert!(!blob.exists(), "the blob no folder links");
 }
 
 #[test]
@@ -173,7 +199,7 @@ fn its_directory_stores_a_tree_only_once_committed_and_finds_its_members() {
     tree.write(b"a lib").expect("written");
     tree.write(b"rary").expect("written");
     let location = tree.commit().expect("committed");
-    assert_eq!(Path::new(&location), scratch.0.join("files").join("tree"));
+    assert_eq!(Path::new(&location), scratch.0.join("blobs").join("tree"));
 
     let library = block_on(storage.find_member("tree", "lib/libfake.so"))
         .expect("found")
@@ -223,26 +249,124 @@ fn its_directory_reads_a_stored_file_back() {
 }
 
 #[test]
-#[ignore = "downloads sherpa-onnx's library for this platform (about 10 MB): CI runs it"]
-fn it_installs_a_backend_library_archive_and_hands_over_its_lib_directory() {
-    use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
+#[ignore = "downloads Kokoro v0.19's archive from the bundled catalogue (about 100 MB): CI runs it"]
+fn it_installs_a_real_archive_and_hands_over_its_members_files_and_directories_alike() {
+    use crate::catalog::{CatalogSource, ModelFile};
 
-    let scratch = Scratch::new();
-    let host = NativeHost::new(&scratch.0).expect("host");
-    let platform = crate::host::Platform::of(&host.capabilities()).expect("a known platform");
-    let artifacts =
-        crate::backend::runtime_files("sherpa-onnx", platform).expect("sherpa-onnx runs here");
+    let catalogue = crate::BundledCatalog.load().expect("the bundled catalogue");
+    let build = catalogue
+        .families
+        .iter()
+        .flat_map(|family| &family.models)
+        .flat_map(|model| &model.builds)
+        .find(|build| build.id == "kokoro-82m-v0.19/sherpa-onnx-int8")
+        .expect("an archived build");
+    let artifacts: Vec<_> = build.files.iter().map(ModelFile::artifact).collect();
     assert!(artifacts
         .iter()
         .all(|artifact| artifact.archive_path.is_some()));
 
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
     let installed =
-        block_on(Installer.install(&artifacts, &host, &|_| {}, &Cancel::new())).expect("installed");
-    let lib = Path::new(installed.file("library").expect("by key"));
-    assert!(lib.is_dir(), "{}", lib.display());
-    let c_api = lib.join(format!("{DLL_PREFIX}sherpa-onnx-c-api{DLL_SUFFIX}"));
-    assert!(c_api.is_file(), "{}", c_api.display());
-    let archive = scratch.0.join("files").join(&artifacts[0].sha256);
-    assert!(!archive.exists(), "the archive is removed once unpacked");
+        block_on(Installer.install(&build.id, &artifacts, &host, &|_| {}, &Cancel::new()))
+            .expect("installed");
+    // Each member at its path inside the archive, in the build's folder.
+    let folder = scratch
+        .0
+        .join("models")
+        .join(&build.id)
+        .join("kokoro-int8-en-v0_19");
+    let model = installed.file("kokoro.model").expect("by key");
+    assert_eq!(Path::new(model), folder.join("model.int8.onnx"));
+    assert!(Path::new(model).is_file());
+    assert!(Path::new(installed.file("kokoro.tokens").expect("by key")).is_file());
+    let data = installed.file("kokoro.data_dir").expect("by key");
+    assert_eq!(Path::new(data), folder.join("espeak-ng-data"));
+    assert!(
+        Path::new(data).join("phontab").is_file(),
+        "the directory's files with it"
+    );
+    let blobs = scratch.0.join("blobs");
+    assert!(
+        !blobs.join(&artifacts[0].sha256).exists(),
+        "the archive is removed once unpacked"
+    );
+    assert!(blobs
+        .join(format!("{}-unpacked", artifacts[0].sha256))
+        .is_dir());
     assert_eq!(entries(&scratch.0.join("partial")), 0);
+
+    block_on(Installer.uninstall(&build.id, &artifacts, host.storage())).expect("uninstalled");
+    assert_eq!(entries(&scratch.0.join("models")), 0);
+    assert_eq!(entries(&blobs), 0, "the unpacked archive no folder links");
+}
+
+#[test]
+fn its_directory_stores_a_build_folder_of_links_only_once_committed() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let storage = host.storage();
+    let mut file = block_on(storage.create("blob")).expect("writer");
+    block_on(file.write(b"weights")).expect("written");
+    block_on(file.commit()).expect("committed");
+    let mut tree = storage.create_tree("tree").expect("tree");
+    tree.file("data/a/phontab").expect("file");
+    tree.write(b"phonemes").expect("written");
+    tree.commit().expect("committed");
+
+    let mut dropped = block_on(storage.create_folder("model/build")).expect("folder");
+    block_on(dropped.link("model.onnx", "blob", None)).expect("linked");
+    drop(dropped);
+    assert_eq!(entries(&scratch.0.join("partial")), 0);
+    assert_eq!(block_on(storage.find_folder("model/build")), Ok(None));
+    assert_eq!(block_on(storage.is_linked("blob")), Ok(false));
+
+    for build in ["model/build", "model/other"] {
+        let mut folder = block_on(storage.create_folder(build)).expect("folder");
+        block_on(folder.link("model.onnx", "blob", None)).expect("a file");
+        block_on(folder.link("data", "tree", Some("data"))).expect("a directory");
+        let location = block_on(folder.commit()).expect("committed");
+        assert_eq!(Path::new(&location), scratch.0.join("models").join(build));
+    }
+    let model = block_on(storage.find_in_folder("model/build", "model.onnx")).expect("found");
+    assert_eq!(
+        std::fs::read(model.expect("a file")).expect("read"),
+        b"weights"
+    );
+    let phontab = block_on(storage.find_in_folder("model/build", "data/a/phontab")).expect("found");
+    assert_eq!(
+        std::fs::read(phontab.expect("a file")).expect("read"),
+        b"phonemes"
+    );
+    assert_eq!(block_on(storage.is_linked("blob")), Ok(true));
+    assert_eq!(block_on(storage.is_linked("tree")), Ok(true));
+
+    // A blob two folders link stays linked until both are gone; the model's directory goes with its last build.
+    block_on(storage.remove_folder("model/build")).expect("removed");
+    assert_eq!(block_on(storage.find_folder("model/build")), Ok(None));
+    assert_eq!(block_on(storage.is_linked("blob")), Ok(true));
+    block_on(storage.remove_folder("model/other")).expect("removed");
+    assert_eq!(block_on(storage.is_linked("blob")), Ok(false));
+    assert_eq!(block_on(storage.is_linked("tree")), Ok(false));
+    assert_eq!(entries(&scratch.0.join("models")), 0);
+    assert_eq!(
+        block_on(storage.remove_folder("model/other")),
+        Ok(()),
+        "nothing to remove"
+    );
+
+    for name in ["", "../escape", "a//b", "a/./b", "a b"] {
+        let refused = block_on(storage.find_folder(name)).map_err(|error| error.code);
+        assert_eq!(refused, Err("storage-name-invalid"), "{name:?}");
+    }
+    let mut folder = block_on(storage.create_folder("model/third")).expect("folder");
+    assert!(
+        block_on(folder.link("x", "missing", None)).is_err(),
+        "no such blob"
+    );
+    assert!(
+        block_on(folder.link("../x", "blob", None)).is_err(),
+        "outside the folder"
+    );
 }

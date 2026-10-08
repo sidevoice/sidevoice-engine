@@ -34,7 +34,10 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
   `pub(super)` or `pub(crate)`, and `pub` only for what consumers of the crate actually need. The public API is
   deliberate: opening something later is cheap, closing it later is a breaking change. Backends, for instance, are
   crate-private; if plugins ever need to add backends, that part of the contract is opened then, on purpose.
-- **Nothing heavy is linked into the app.** Engine libraries and models are downloaded on demand.
+- **Nothing heavy is linked into the app.** Engine libraries and models are downloaded on demand. One exception, for
+  now: the sherpa-onnx backend links the official `sherpa-onnx` crate statically (ONNX Runtime included), in native
+  builds only and behind the default `sherpa-onnx` feature, so its `backends.json` entry downloads nothing. Making it
+  load on demand again is sidevoice-engine#33; no other backend links its engine.
 
 ## Code layout
 

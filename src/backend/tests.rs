@@ -15,9 +15,15 @@ fn built_in_is_exactly_this_platforms_backends() {
     let expected: &[&str] = if cfg!(target_arch = "wasm32") {
         &["transformers-js"]
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        &["mlx", "sherpa-onnx"]
-    } else {
+        if cfg!(feature = "sherpa-onnx") {
+            &["mlx", "sherpa-onnx"]
+        } else {
+            &["mlx"]
+        }
+    } else if cfg!(feature = "sherpa-onnx") {
         &["sherpa-onnx"]
+    } else {
+        &[]
     };
     assert_eq!(ids, expected);
 }
