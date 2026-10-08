@@ -28,7 +28,9 @@
       "model": "piper-es_ES-carlfm-x_low",
       "voices": {
         "es-ES": null
-      }
+      },
+      "max_wer": 0.4,
+      "why": "The lowest-quality voice (x_low, 16 kHz). Piper samples noise, so its speech differs on every run, and Whisper base heard it at 0% to 33% WER across runs (FastConformer and Parakeet at 0% to 13%)."
     },
     {
       "model": "supertonic-3",

@@ -6,8 +6,8 @@
 //! plan names, the speech is brought to 16 kHz and each speech-to-text model the plan pairs with that language
 //! transcribes it; then each real recorded clip (downloaded once into `DIR/clips`, checked against its sha256) is
 //! transcribed by the same models. Every transcript is printed and compared with what was said by its normalised word
-//! error rate (`e2e/wer.rs`); the run fails if any is above the plan's `max_wer`, or if anything fails to install, load,
-//! speak or transcribe. The table also goes to `$GITHUB_STEP_SUMMARY` when it is set, and what each model said is kept
+//! error rate (`e2e/wer.rs`); the run fails if any is above the plan's `max_wer` (or a voice's own, given with its
+//! `why`), or if anything fails to install, load, speak or transcribe. The table also goes to `$GITHUB_STEP_SUMMARY` when it is set, and what each model said is kept
 //! as a WAV in `DIR/speech`, to be listened to.
 //!
 //! DIR is `target/e2e` unless given. It downloads about 1.5 GB the first time; nothing the second.
@@ -58,6 +58,11 @@ struct Speaker {
     model: String,
     /// By the BCP 47 tag the model is told: the voice to speak with, or `null` for the model's first.
     voices: BTreeMap<String, Option<String>>,
+    /// A higher word error rate this voice's speech may have than the plan's, and `why`, which the plan must give.
+    #[serde(default)]
+    max_wer: Option<f64>,
+    #[serde(default)]
+    why: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +85,8 @@ struct Row {
     language: String,
     said: String,
     heard: Result<String>,
+    /// The highest word error rate it may have, when it is not the plan's.
+    max_wer: Option<f64>,
 }
 
 /// `cargo xtask e2e [DIR]`.
@@ -125,7 +132,10 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             let speech = match speech {
                 Ok(speech) => speech,
                 Err(error) => {
-                    rows.push(failed(&what, &language, said, error.code));
+                    rows.push(Row {
+                        max_wer: speaker.max_wer,
+                        ..failed(&what, &language, said, error.code)
+                    });
                     continue;
                 }
             };
@@ -138,9 +148,10 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             )?;
             let pcm = audio::to_stt_rate(&speech.samples, speech.sample_rate);
             for listener in plan.stt.get(&language).into_iter().flatten() {
-                rows.push(hear(
-                    &engine, &listeners, listener, &what, &language, said, &pcm,
-                ));
+                rows.push(Row {
+                    max_wer: speaker.max_wer,
+                    ..hear(&engine, &listeners, listener, &what, &language, said, &pcm)
+                });
             }
         }
     }
@@ -178,6 +189,14 @@ fn plan(json: &str) -> Result<Plan> {
     for language in spoken {
         if !plan.sentences.contains_key(&language) {
             return Err(format!("e2e.json: no sentence in {language}"));
+        }
+    }
+    for speaker in &plan.tts {
+        if speaker.max_wer.is_some() != speaker.why.is_some() {
+            return Err(format!(
+                "e2e.json: {}: max_wer and why go together",
+                speaker.model
+            ));
         }
     }
     Ok(plan)
@@ -237,6 +256,7 @@ fn hear(
         language: language.to_owned(),
         said: said.to_owned(),
         heard,
+        max_wer: None,
     }
 }
 
@@ -247,6 +267,7 @@ fn failed(pair: &str, language: &str, said: &str, code: &str) -> Row {
         language: language.to_owned(),
         said: said.to_owned(),
         heard: Err(code.to_owned()),
+        max_wer: None,
     }
 }
 
@@ -271,16 +292,26 @@ fn fetch(clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Prints the table, writes it to `$GITHUB_STEP_SUMMARY` when set, and fails if any row failed or is above `max_wer`.
-fn report(rows: &[Row], max_wer: f64) -> Result<()> {
+/// Prints the table, writes it to `$GITHUB_STEP_SUMMARY` when set, and fails if any row failed or is above its highest
+/// word error rate: its own, or `default`.
+fn report(rows: &[Row], default: f64) -> Result<()> {
     let mut table =
         String::from("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
     let mut bad = 0;
     for row in rows {
+        let max_wer = row.max_wer.unwrap_or(default);
         let (got, wer, ok) = match &row.heard {
             Ok(heard) => {
                 let wer = wer::wer(&row.said, heard);
-                let mark = if wer <= max_wer { "" } else { " ✗" };
+                let own = match row.max_wer {
+                    Some(own) => format!(" (≤ {:.0}%)", own * 100.0),
+                    None => String::new(),
+                };
+                let mark = if wer <= max_wer {
+                    own
+                } else {
+                    format!("{own} ✗")
+                };
                 (
                     heard.clone(),
                     format!("{:.0}%{mark}", wer * 100.0),
@@ -300,10 +331,11 @@ fn report(rows: &[Row], max_wer: f64) -> Result<()> {
         ));
     }
     let verdict = format!(
-        "{} of {} within {:.0}% WER (normalised: lower case, no punctuation, vowel accents folded).",
+        "{} of {} within {:.0}% WER, or the voice's own limit where the plan gives one (normalised: lower case, no \
+         punctuation, vowel accents folded).",
         rows.len() - bad,
         rows.len(),
-        max_wer * 100.0
+        default * 100.0
     );
     println!("\n{table}\n{verdict}");
     if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {

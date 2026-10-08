@@ -77,3 +77,16 @@ fn a_plan_with_a_language_and_no_sentence_for_it_is_refused() {
     assert!(plan(json).is_err());
     assert!(plan(r#"{"max_wer": 0.2}"#).is_err(), "strict");
 }
+
+#[test]
+fn a_voice_with_its_own_limit_must_say_why() {
+    let json = |extra: &str| {
+        format!(
+            r#"{{"max_wer": 0.2, "sentences": {{"es": "hola"}}, "stt": {{}}, "clips": [],
+            "tts": [{{"model": "m", "voices": {{"es": null}}{extra}}}]}}"#
+        )
+    };
+    assert!(plan(&json("")).is_ok());
+    assert!(plan(&json(r#", "max_wer": 0.4"#)).is_err());
+    assert!(plan(&json(r#", "max_wer": 0.4, "why": "a weak voice""#)).is_ok());
+}
