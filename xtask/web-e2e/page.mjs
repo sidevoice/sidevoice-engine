@@ -134,7 +134,12 @@ try {
   await check("a loaded model cannot be uninstalled", inUse === "model-in-use", inUse);
 
   for (const clip of plan.clips) {
-    const row = { pair: `${plan.stt.model} ← clip ${clip.name}`, language: clip.language, said: clip.text };
+    const row = {
+      pair: `${plan.stt.model} ← clip ${clip.name}`,
+      language: clip.language,
+      said: clip.text,
+      maxWer: plan.stt.clips_max_wer ?? null,
+    };
     try {
       const { samples, rate } = wav(await (await fetch(clip.file)).arrayBuffer());
       start = performance.now();

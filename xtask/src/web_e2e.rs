@@ -45,6 +45,12 @@ struct Plan {
 struct Build {
     model: String,
     build: String,
+    /// A higher word error rate its transcripts of the recorded clips may have than the plan's, and `why`, which the
+    /// plan must give.
+    #[serde(default)]
+    clips_max_wer: Option<f64>,
+    #[serde(default)]
+    why: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,6 +111,12 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
         &read(&repo().join("xtask/web-e2e.json"))?,
         "xtask/web-e2e.json",
     )?;
+    if plan.stt.clips_max_wer.is_some() && plan.stt.why.is_none() {
+        return Err(format!(
+            "{}: a clips_max_wer of its own needs its why",
+            plan.stt.build
+        ));
+    }
     if let Some(speaker) = plan
         .tts
         .iter()
@@ -165,7 +177,11 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
     }
     let page_plan = json!({
         "accelerators": plan.accelerators,
-        "stt": {"model": plan.stt.model, "build": plan.stt.build},
+        "stt": {
+            "model": plan.stt.model,
+            "build": plan.stt.build,
+            "clips_max_wer": plan.stt.clips_max_wer,
+        },
         "tts": speakers,
         "clips": page_clips,
     });
