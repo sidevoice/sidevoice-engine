@@ -1,7 +1,8 @@
 //! The funnel, the same for every backend: for each build of the catalogue, is its backend compiled here, does it have
 //! an entry for this platform in `backends.json`, which of its accelerators work here (what the host reports, narrowed
-//! by `probe`, cached), is one of them an accelerator the build can take (its `requires`), does the machine meet the
-//! build's and the backend's requirements (a value the host cannot tell passes). Then, per model, a build: the
+//! by `probe`, cached), is one of them an accelerator the build can take (its `requires`), in a page does the build fit
+//! in what WebAssembly hands it (`requires.wasm_max_mb`), does the machine meet the build's and the backend's
+//! requirements (a value the host cannot tell passes). Then, per model, a build: the
 //! catalogue's builds carry no order, and ranking them is still to come (sidevoice-engine#4); until then it is the
 //! first that fits, on its backend's preferred accelerator. Every rejected build is kept with its reason.
 
@@ -10,7 +11,7 @@ use std::sync::{Mutex, PoisonError};
 
 use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
 use crate::catalog::{BuildEntry, Capability, Catalog, ModelEntry};
-use crate::host::{Accelerator, Capabilities, Platform};
+use crate::host::{Accelerator, Capabilities, Platform, Runs};
 
 mod offer;
 #[cfg(test)]
@@ -135,8 +136,19 @@ impl Resolver {
         else {
             return Err(Rejection::DoesNotFit(Reason::new("build-accelerator")));
         };
-        // The build's own needs (catalogue) are checked like the backend's. Its other `requires` are not checked yet:
-        // the host does not report WebGPU features, and the WebAssembly cap is the ranking's (sidevoice-engine#4).
+        // In a page the build runs in WebAssembly, under the cap its catalogue entry declares (`requires.wasm_max_mb`, not
+        // measured from the page): a build that needs more does not fit there, whatever the machine has.
+        if let (Runs::Page, Some(cap)) = (caps.runs, build.requires.wasm_max_mb) {
+            if build.memory.mb > cap {
+                return Err(Rejection::DoesNotFit(Reason::with_numbers(
+                    "wasm-memory",
+                    build.memory.mb,
+                    cap,
+                )));
+            }
+        }
+        // The build's own needs (catalogue) are checked like the backend's. Its WebGPU features are not checked yet: the
+        // host does not report them.
         let build_needs = MinMemoryMb(build.memory.mb);
         let requirements = std::iter::once(&build_needs as &dyn Requirement)
             .chain(spec.requirements.iter().copied());

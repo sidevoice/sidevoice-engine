@@ -1,56 +1,94 @@
-//! What every text-to-speech model here shares on top of sherpa-onnx's offline TTS: its voices named, a voice found by
-//! name, and a language told to the model in the generation's extra options. Kokoro, VITS (Piper) and Supertonic
-//! differ in the config they make it from, and in how a language reaches them.
+//! Every text-to-speech model through sherpa-onnx's offline TTS, alike: the TTS its config makes, its voices named,
+//! and a call's language told to it. Nothing here knows one model from another.
+//!
+//! A call's language reaches the model as the generation's extra option `lang`, which sherpa-onnx prefers to its
+//! config's `lang` and to the model's own (`offline-tts-kokoro-impl.h`, `offline-tts-supertonic-impl.cc`), and which a
+//! model that takes none ignores (VITS). Where the config has espeak-ng's data (a `*.data_dir` key), it is the
+//! espeak-ng voice that reads the text: the BCP 47 tag lowercased (`en-us`, `pt-br`) where espeak-ng has a voice of
+//! that name, its primary subtag (`es`) otherwise. Without espeak-ng's data, it is the primary subtag.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::fs;
 use std::path::Path;
 
 use async_trait::async_trait;
 use sherpa_onnx::{GenerationConfig, OfflineTts, OfflineTtsConfig};
 
-use super::{model_metadata, num_threads, text};
+use super::{model_metadata, text};
 use crate::backend::loaded_model::TtsModel;
 use crate::backend::BackendModel;
+use crate::install::Installed;
 use crate::{Error, Result};
 
-/// What a model is told of the language it speaks, from a BCP 47 tag: the `lang` of the generation's extra options,
-/// or `None` to tell it nothing.
-pub(super) type Language = fn(&str) -> Option<String>;
-
-/// A TTS model in memory: the TTS, its sample rate, its voices by speaker id, and how it is told a language.
+/// A TTS model in memory: the TTS, its sample rate, its voices by speaker id, and the espeak-ng voices its data has
+/// (none without espeak-ng's data).
 pub(super) struct Synthesizer {
     tts: OfflineTts,
     sample_rate: u32,
     voices: Vec<String>,
-    language: Language,
+    espeak: BTreeSet<String>,
 }
 
 impl Synthesizer {
-    /// Creates it from `config`, after setting the threads. Its voices are named by the `speaker_names` metadata of
-    /// the ONNX model at `named_by`, if any, when it has as many as the model has speakers; otherwise by speaker id,
-    /// `"0"`, `"1"`, .... Fails with `model-load-failed`.
-    pub(super) fn new(
-        mut config: OfflineTtsConfig,
-        named_by: Option<&str>,
-        language: Language,
-    ) -> Result<Self> {
-        config.model.num_threads = num_threads();
+    /// Creates the TTS from `config`, the build's `files` in it (`config.rs`). Its voices are named by the
+    /// `speaker_names` metadata of the file of a `*.model` key, when it names as many as the model has speakers;
+    /// otherwise by speaker id, `"0"`, `"1"`, .... Fails with `model-load-failed`.
+    pub(super) fn load(config: &OfflineTtsConfig, files: &Installed) -> Result<Self> {
         let failed = Error::new("model-load-failed");
-        let tts = OfflineTts::create(&config).ok_or(failed)?;
+        let tts = OfflineTts::create(config).ok_or(failed)?;
         let sample_rate = u32::try_from(tts.sample_rate()).map_err(|_| failed)?;
         let speakers = usize::try_from(tts.num_speakers()).unwrap_or_default();
-        let named = named_by
+        let named = key_ending(files, ".model")
             .and_then(|model| model_metadata::read(Path::new(model), "speaker_names"))
             .map(|names| names.split(',').map(str::to_owned).collect::<Vec<_>>())
             .filter(|names| names.len() == speakers);
         let voices = named.unwrap_or_else(|| (0..speakers).map(|id| id.to_string()).collect());
+        let espeak = key_ending(files, ".data_dir")
+            .map(|dir| espeak_voices(Path::new(dir)))
+            .unwrap_or_default();
         Ok(Self {
             tts,
             sample_rate,
             voices,
-            language,
+            espeak,
         })
     }
+}
+
+/// The installed file of the first key that ends in `suffix`.
+fn key_ending<'a>(files: &'a Installed, suffix: &str) -> Option<&'a str> {
+    files
+        .files
+        .iter()
+        .find(|(key, _)| key.ends_with(suffix))
+        .map(|(_, path)| path.as_str())
+}
+
+/// The names of the voices espeak-ng's data in `data_dir` has (its `lang/` files, `lang/roa/es-419`), lowercased.
+fn espeak_voices(data_dir: &Path) -> BTreeSet<String> {
+    fn walk(dir: &Path, names: &mut BTreeSet<String>) {
+        for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, names);
+            } else {
+                names.insert(entry.file_name().to_string_lossy().to_ascii_lowercase());
+            }
+        }
+    }
+    let mut names = BTreeSet::new();
+    walk(&data_dir.join("lang"), &mut names);
+    names
+}
+
+/// The espeak-ng voice that reads the BCP 47 tag `tag`, among `voices`: the tag lowercased if there is one of that
+/// name, its primary subtag otherwise.
+pub(super) fn espeak_voice(tag: &str, voices: &BTreeSet<String>) -> String {
+    let lowered = tag.replace('_', "-").to_ascii_lowercase();
+    if voices.contains(&lowered) {
+        return lowered;
+    }
+    lowered.split('-').next().unwrap_or_default().to_owned()
 }
 
 impl BackendModel for Synthesizer {
@@ -89,9 +127,9 @@ impl TtsModel for Synthesizer {
             .iter()
             .position(|name| name == voice)
             .ok_or(Error::new("unknown-voice"))?;
-        let extra = language
-            .and_then(self.language)
-            .map(|lang| HashMap::from([("lang".to_owned(), serde_json::Value::String(lang))]));
+        let lang = language.map(|tag| espeak_voice(tag, &self.espeak));
+        let extra =
+            lang.map(|lang| HashMap::from([("lang".to_owned(), serde_json::Value::String(lang))]));
         let config = GenerationConfig {
             sid: i32::try_from(sid).map_err(|_| failed)?,
             speed,
