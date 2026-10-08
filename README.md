@@ -179,7 +179,11 @@ You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C com
 crypto). A native build compiles whisper.cpp and ggml from the sources `whisper-rs-sys` bundles, so it needs CMake, a
 C++ compiler and libclang (for `bindgen`, which writes the bindings), and links them statically; whisper.cpp tunes
 ggml for the building machine's CPU unless `GGML_NATIVE=OFF` is set in the build's environment, which an app that
-ships its binary to other machines should set. It links sherpa-onnx statically too: the `sherpa-onnx-sys` build script downloads its
+ships its binary to other machines should set. On Linux x86_64, sherpa-onnx's static libraries use libstdc++'s old
+string ABI, so whisper.cpp must be compiled with it too, or the two copies of `std::regex`'s internals the linker merges
+disagree and ONNX Runtime aborts (`free(): invalid pointer`): this repository's `.cargo/config.toml` sets
+`CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"`, and an app that links both backends there needs
+the same in its own. It links sherpa-onnx statically too: the `sherpa-onnx-sys` build script downloads its
 prebuilt static libraries for the target from sherpa-onnx's GitHub release (about 22 MB on Linux and macOS, kept in
 `target/sherpa-onnx-prebuilt/`; `SHERPA_ONNX_ARCHIVE_DIR` points it at archives you already have), and they need the
 C++ standard library the platform's C++ toolchain provides (libstdc++ on Linux). `--no-default-features` leaves both

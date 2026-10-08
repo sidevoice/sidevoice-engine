@@ -69,6 +69,8 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # whisper.cpp and ggml with CMake and a C++ compiler, for the CPU (Metal is added on Apple silicon, above). Loading it
 # on demand instead is sidevoice-engine#33. Never on wasm32. whisper.cpp tunes ggml for the building machine's CPU
 # unless the build's environment sets GGML_NATIVE=OFF, as an app shipping its binary to other machines should (README).
+# With sherpa-onnx on Linux x86_64, whisper.cpp must use libstdc++'s old string ABI, as sherpa's libraries do
+# (.cargo/config.toml, README).
 whisper-rs = { version = "=0.16.0", optional = true }
 
 # The native tests run the engine's futures on one multi-threaded Tokio runtime, as an app does (src/test_support.rs).
