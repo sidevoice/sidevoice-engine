@@ -204,11 +204,12 @@ fn object(properties: &[(&str, JsValue)]) -> JsValue {
 }
 
 /// Calls `function` (a function, or a callable object such as a pipeline) on `this` with `args`, and waits for what
-/// it returns when that is a promise.
+/// it returns when that is a promise. Through `Reflect.apply`: transformers.js's callables (pipelines, tokenizers, models) are
+/// callable without inheriting `Function.prototype`, so they have no `apply` of their own.
 async fn call(function: &JsValue, this: &JsValue, args: &[JsValue]) -> Result<JsValue, JsValue> {
     let function: &Function = function.unchecked_ref();
     let args: js_sys::Array = args.iter().collect();
-    let returned = function.apply(this, &args)?;
+    let returned = Reflect::apply(function, this, &args)?;
     match returned.dyn_into::<Promise>() {
         Ok(promise) => JsFuture::from(promise).await,
         Err(value) => Ok(value),
