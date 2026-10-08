@@ -1,6 +1,7 @@
 //! Unpacking an archive the installer has downloaded and checked against its digest: a tar, compressed with bzip2 or
-//! not, told apart by its first bytes (never by its URL), read back from storage a part at a time and written into a
-//! storage tree.
+//! not, told apart by its first bytes (never by its URL), read synchronously from storage by `tar` and written into a
+//! storage tree. Native builds only: archives come only with native-only builds (sherpa-onnx's release assets), and
+//! the web build refuses them before downloading (`archive-unsupported`, in the installer).
 //!
 //! What comes out is checked, whatever the archive says:
 //!
@@ -9,15 +10,16 @@
 //! - each path is relative and stays inside: an absolute path, a `..` segment, a backslash, a colon or a control
 //!   character fails with `archive-entry-unsupported` (`.` and empty segments are dropped);
 //! - the total size and the number of entries are bounded ([`Limits`]), `archive-too-large` beyond;
-//! - a header whose checksum is wrong, or an archive cut short, fails with `archive-corrupt`.
+//! - a header whose checksum is wrong, an archive cut short, or one that does not decompress, fails with
+//!   `archive-corrupt`.
 //!
-//! The tar reader takes bytes as they come (it is fed, it does not read), because storage hands them over
-//! asynchronously; it understands ustar and GNU headers, GNU long names and pax `path` and `size` records.
+//! `tar` reads ustar and GNU headers, GNU long names and pax extended headers; the paths it reports are checked here.
 
-use std::io::Write;
+use std::cell::Cell;
+use std::io::{self, Read};
 
-use crate::host::{Download, TreeWriter};
-use crate::install::Cancel;
+use super::member_path;
+use crate::host::TreeWriter;
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -40,396 +42,126 @@ impl Limits {
     };
 }
 
-/// Unpacks `archive` into `tree`, checking for `cancel` between parts. `tree` is left uncommitted.
-pub(super) async fn unpack(
-    mut archive: Box<dyn Download>,
+/// The size of the parts a file is copied in.
+const PART: usize = 64 * 1024;
+
+/// Unpacks `archive` into `tree`, asking `check` (cancellation) between parts. `tree` is left uncommitted. Blocks:
+/// run it on a thread that may.
+pub(super) fn unpack(
+    archive: impl Read,
     tree: &mut dyn TreeWriter,
     limits: Limits,
-    cancel: &Cancel,
+    check: &dyn Fn() -> Result<()>,
 ) -> Result<()> {
-    let mut decoder = Decoder::Undecided(Vec::new());
-    let mut tar = Tar::new(limits);
-    while let Some(part) = archive.chunk().await? {
-        cancel.check()?;
-        let bytes = decoder.feed(&part)?;
-        for entry in tar.feed(&bytes)? {
-            apply(tree, entry).await?;
-        }
-    }
-    let rest = decoder.finish()?;
-    for entry in tar.feed(&rest)? {
-        apply(tree, entry).await?;
-    }
-    tar.finish()
-}
-
-async fn apply(tree: &mut dyn TreeWriter, entry: Entry) -> Result<()> {
-    match entry {
-        Entry::Directory(path) => tree.directory(&path).await,
-        Entry::File(path) => tree.file(&path).await,
-        Entry::Bytes(bytes) => tree.write(&bytes).await,
-    }
-}
-
-/// `path` as a path inside a tree, if it is one: relative, `/`-separated, with `.` and empty segments dropped and no
-/// `..`, backslash, colon or control character; `None` otherwise, or if nothing is left. Also what an artifact's
-/// `archive_path` must be.
-pub(super) fn member_path(path: &str) -> Option<String> {
-    if path.starts_with('/') || path.len() > 4096 {
-        return None;
-    }
-    let mut segments = Vec::new();
-    for segment in path.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => return None,
-            _ if segment
-                .chars()
-                .any(|c| c == '\\' || c == ':' || c.is_control()) =>
-            {
-                return None
-            }
-            _ => segments.push(segment),
-        }
-    }
-    (!segments.is_empty() && segments.len() <= 64).then(|| segments.join("/"))
-}
-
-/// What the tar reader finds, in order: a directory, the start of a file, or the next bytes of the file started last.
-#[derive(Debug, PartialEq, Eq)]
-enum Entry {
-    Directory(String),
-    File(String),
-    Bytes(Vec<u8>),
-}
-
-/// The archive's compression, decided by its first bytes.
-enum Decoder {
-    /// Fewer than three bytes seen yet.
-    Undecided(Vec<u8>),
-    Plain,
-    Bzip2(Box<bzip2::write::BzDecoder<Vec<u8>>>),
-}
-
-impl Decoder {
-    /// The tar bytes `bytes` decompress to, so far.
-    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<u8>> {
-        if let Self::Undecided(head) = self {
-            head.extend_from_slice(bytes);
-            if head.len() < 3 {
-                return Ok(Vec::new());
-            }
-            let head = std::mem::take(head);
-            *self = if head.starts_with(b"BZh") {
-                Self::Bzip2(Box::new(bzip2::write::BzDecoder::new(Vec::new())))
-            } else {
-                Self::Plain
-            };
-            return self.feed(&head);
-        }
-        match self {
-            Self::Undecided(_) => unreachable!("decided above"),
-            Self::Plain => Ok(bytes.to_vec()),
-            Self::Bzip2(decoder) => {
-                decoder.write_all(bytes).map_err(|_| corrupt())?;
-                Ok(std::mem::take(decoder.get_mut()))
-            }
-        }
-    }
-
-    /// What is left once every byte has been fed.
-    fn finish(self) -> Result<Vec<u8>> {
-        match self {
-            Self::Undecided(head) => Ok(head),
-            Self::Plain => Ok(Vec::new()),
-            Self::Bzip2(mut decoder) => decoder.finish().map_err(|_| corrupt()),
-        }
-    }
-}
-
-const BLOCK: usize = 512;
-/// The most a GNU long name or a pax header may take.
-const MAX_HEADER_DATA: u64 = 1 << 20;
-
-/// A tar reader that is fed bytes.
-struct Tar {
-    limits: Limits,
-    /// Bytes of a header not complete yet, or of a long name or pax header being collected.
-    pending: Vec<u8>,
-    state: State,
-    entries: usize,
-    bytes: u64,
-    /// The path the next header names, from a GNU long name or a pax header.
-    next_path: Option<String>,
-    /// The size of the next entry, from a pax header.
-    next_size: Option<u64>,
-    /// Seen the end-of-archive block: everything after it is ignored.
-    ended: bool,
-}
-
-enum State {
-    Header,
-    /// `remaining` bytes of the entry's content, then `padding` up to the next block.
-    Content {
-        remaining: u64,
-        padding: u64,
-        content: Content,
-    },
-}
-
-enum Content {
-    /// A file's bytes, handed on.
-    File,
-    /// A GNU long name.
-    LongName,
-    /// A pax extended header for the next entry.
-    Pax,
-    /// Something to skip (a pax global header).
-    Skip,
-}
-
-impl Tar {
-    fn new(limits: Limits) -> Self {
-        Self {
-            limits,
-            pending: Vec::new(),
-            state: State::Header,
-            entries: 0,
-            bytes: 0,
-            next_path: None,
-            next_size: None,
-            ended: false,
-        }
-    }
-
-    /// The entries `bytes` completes.
-    fn feed(&mut self, mut bytes: &[u8]) -> Result<Vec<Entry>> {
-        let mut entries = Vec::new();
-        while !bytes.is_empty() && !self.ended {
-            match &mut self.state {
-                State::Header => {
-                    let take = (BLOCK - self.pending.len()).min(bytes.len());
-                    self.pending.extend_from_slice(&bytes[..take]);
-                    bytes = &bytes[take..];
-                    if self.pending.len() == BLOCK {
-                        let header = std::mem::take(&mut self.pending);
-                        self.header(&header, &mut entries)?;
-                    }
-                }
-                State::Content {
-                    remaining,
-                    padding,
-                    content,
-                } => {
-                    if *remaining > 0 {
-                        let take = usize::try_from(*remaining)
-                            .unwrap_or(usize::MAX)
-                            .min(bytes.len());
-                        match content {
-                            Content::File => entries.push(Entry::Bytes(bytes[..take].to_vec())),
-                            Content::LongName | Content::Pax => {
-                                self.pending.extend_from_slice(&bytes[..take]);
-                            }
-                            Content::Skip => {}
-                        }
-                        *remaining -= take as u64;
-                        bytes = &bytes[take..];
-                    } else if *padding > 0 {
-                        let take = usize::try_from(*padding)
-                            .unwrap_or(usize::MAX)
-                            .min(bytes.len());
-                        *padding -= take as u64;
-                        bytes = &bytes[take..];
-                    }
-                    if let State::Content {
-                        remaining: 0,
-                        padding: 0,
-                        ..
-                    } = self.state
-                    {
-                        self.end_of_content()?;
-                    }
-                }
-            }
-        }
-        Ok(entries)
-    }
-
-    /// Fails unless the archive ended where an entry did.
-    fn finish(self) -> Result<()> {
-        if self.ended || (self.pending.is_empty() && matches!(self.state, State::Header)) {
-            Ok(())
+    // Storage failing is not the archive's fault: told apart from what `tar` or bzip2 make of the bytes.
+    let failed = Cell::new(false);
+    let mut archive = Source {
+        inner: archive,
+        failed: &failed,
+    };
+    let read_error = |_| {
+        if failed.get() {
+            Error::new("storage-failed")
         } else {
-            Err(corrupt())
+            corrupt()
         }
-    }
+    };
+    let mut head = Vec::with_capacity(3);
+    (&mut archive)
+        .take(3)
+        .read_to_end(&mut head)
+        .map_err(read_error)?;
+    let bzip2 = head.starts_with(b"BZh");
+    let archive = io::Cursor::new(head).chain(archive);
+    let archive: Box<dyn Read + '_> = if bzip2 {
+        Box::new(bzip2::read::MultiBzDecoder::new(archive))
+    } else {
+        Box::new(archive)
+    };
 
-    fn header(&mut self, header: &[u8], entries: &mut Vec<Entry>) -> Result<()> {
-        if header.iter().all(|&byte| byte == 0) {
-            self.ended = true;
-            return Ok(());
-        }
-        let stored = octal(&header[148..156]).ok_or_else(corrupt)?;
-        let sum: u64 = header
-            .iter()
-            .enumerate()
-            .map(|(i, &byte)| {
-                if (148..156).contains(&i) {
-                    32
-                } else {
-                    u64::from(byte)
-                }
-            })
-            .sum();
-        if sum != stored {
-            return Err(corrupt());
-        }
-        let size = match self.next_size.take() {
-            Some(size) => size,
-            None => number(&header[124..136]).ok_or_else(corrupt)?,
-        };
-        let path = match self.next_path.take() {
-            Some(path) => path,
-            None => header_path(header)?,
-        };
-        let content = match header[156] {
-            b'0' | b'\0' | b'7' => {
-                self.count(size)?;
-                entries.push(Entry::File(member_path(&path).ok_or_else(unsupported)?));
-                Content::File
-            }
-            b'5' => {
-                self.count(0)?;
-                // The archive's root ("./") names nothing to create.
-                if let Some(path) = member_path(&path) {
-                    entries.push(Entry::Directory(path));
-                } else if !path.split('/').all(|segment| matches!(segment, "" | ".")) {
-                    return Err(unsupported());
-                }
-                Content::Skip
-            }
-            b'L' | b'x' if size > MAX_HEADER_DATA => return Err(corrupt()),
-            b'L' => Content::LongName,
-            b'x' => Content::Pax,
-            b'g' => Content::Skip,
-            _ => return Err(unsupported()),
-        };
-        self.state = State::Content {
-            remaining: size,
-            padding: (BLOCK as u64 - size % BLOCK as u64) % BLOCK as u64,
-            content,
-        };
-        if size == 0 {
-            self.end_of_content()?;
-        }
-        Ok(())
-    }
-
-    /// Counts one entry of `size` bytes against the limits.
-    fn count(&mut self, size: u64) -> Result<()> {
-        self.entries += 1;
-        self.bytes = self.bytes.saturating_add(size);
-        if self.entries > self.limits.entries || self.bytes > self.limits.bytes {
+    let mut archive = tar::Archive::new(archive);
+    let (mut entries, mut bytes) = (0, 0_u64);
+    let mut count = |size: u64| {
+        entries += 1;
+        bytes = bytes.saturating_add(size);
+        if entries > limits.entries || bytes > limits.bytes {
             return Err(Error::new("archive-too-large"));
         }
         Ok(())
-    }
-
-    /// An entry's content and padding are over: what was collected applies to the next header.
-    fn end_of_content(&mut self) -> Result<()> {
-        let State::Content { content, .. } = std::mem::replace(&mut self.state, State::Header)
-        else {
-            return Ok(());
-        };
-        let data = std::mem::take(&mut self.pending);
-        match content {
-            Content::LongName => {
-                let name = data.split(|&byte| byte == 0).next().unwrap_or_default();
-                self.next_path = Some(text(name)?);
+    };
+    for entry in archive.entries().map_err(read_error)? {
+        check()?;
+        let mut entry = entry.map_err(read_error)?;
+        let path = String::from_utf8(entry.path_bytes().into_owned()).map_err(|_| unsupported())?;
+        match entry.header().entry_type() {
+            tar::EntryType::Regular | tar::EntryType::Continuous => {
+                let size = entry.size();
+                count(size)?;
+                tree.file(&member_path(&path).ok_or_else(unsupported)?)?;
+                copy(&mut entry, size, tree, check).map_err(|error| match error {
+                    Copy::Read(error) => read_error(error),
+                    Copy::Other(error) => error,
+                })?;
             }
-            Content::Pax => {
-                for (key, value) in pax_records(&data)? {
-                    match key {
-                        "path" => self.next_path = Some(value.to_owned()),
-                        "size" => self.next_size = Some(value.parse().map_err(|_| corrupt())?),
-                        _ => {}
-                    }
+            tar::EntryType::Directory => {
+                count(0)?;
+                // The archive's root ("./") names nothing to create.
+                if let Some(path) = member_path(&path) {
+                    tree.directory(&path)?;
+                } else if !path.split('/').all(|segment| matches!(segment, "" | ".")) {
+                    return Err(unsupported());
                 }
             }
-            Content::File | Content::Skip => {}
-        }
-        Ok(())
-    }
-}
-
-/// The path a header names: ustar's `prefix/name`, or GNU's and old tar's `name`.
-fn header_path(header: &[u8]) -> Result<String> {
-    let field = |range: std::ops::Range<usize>| {
-        let field = &header[range];
-        let end = field
-            .iter()
-            .position(|&byte| byte == 0)
-            .unwrap_or(field.len());
-        text(&field[..end])
-    };
-    let name = field(0..100)?;
-    if &header[257..263] == b"ustar\0" {
-        let prefix = field(345..500)?;
-        if !prefix.is_empty() {
-            return Ok(format!("{prefix}/{name}"));
+            tar::EntryType::XGlobalHeader => {}
+            _ => return Err(unsupported()),
         }
     }
-    Ok(name)
+    Ok(())
 }
 
-/// A pax header's `<length> <key>=<value>\n` records.
-fn pax_records(data: &[u8]) -> Result<Vec<(&str, &str)>> {
-    let mut records = Vec::new();
-    let mut rest = data;
-    while !rest.is_empty() {
-        let space = rest
-            .iter()
-            .position(|&byte| byte == b' ')
-            .ok_or_else(corrupt)?;
-        let length: usize = std::str::from_utf8(&rest[..space])
-            .ok()
-            .and_then(|length| length.parse().ok())
-            .ok_or_else(corrupt)?;
-        if length <= space + 1 || length > rest.len() || rest[length - 1] != b'\n' {
-            return Err(corrupt());
-        }
-        let record = std::str::from_utf8(&rest[space + 1..length - 1]).map_err(|_| corrupt())?;
-        let (key, value) = record.split_once('=').ok_or_else(corrupt)?;
-        records.push((key, value));
-        rest = &rest[length..];
+/// Why copying a file failed: reading it, or anything else (the tree, cancellation).
+enum Copy {
+    Read(io::Error),
+    Other(Error),
+}
+
+/// Copies `size` bytes of `entry` into the file started last in `tree`; an entry that ends before is cut short.
+fn copy(
+    entry: &mut impl Read,
+    size: u64,
+    tree: &mut dyn TreeWriter,
+    check: &dyn Fn() -> Result<()>,
+) -> std::result::Result<(), Copy> {
+    let mut part = vec![0; PART];
+    let mut left = size;
+    while left > 0 {
+        check().map_err(Copy::Other)?;
+        let read = match entry.read(&mut part) {
+            Ok(0) => return Err(Copy::Read(io::ErrorKind::UnexpectedEof.into())),
+            Ok(read) => read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(Copy::Read(error)),
+        };
+        tree.write(&part[..read]).map_err(Copy::Other)?;
+        left = left.saturating_sub(read as u64);
     }
-    Ok(records)
+    Ok(())
 }
 
-/// A header's number: octal digits (space or NUL padded), or GNU's base-256 for large ones.
-fn number(field: &[u8]) -> Option<u64> {
-    if field.first().is_some_and(|&byte| byte & 0x80 != 0) {
-        let mut value: u64 = u64::from(field[0] & 0x7f);
-        for &byte in &field[1..] {
-            value = value.checked_mul(256)?.checked_add(u64::from(byte))?;
-        }
-        return Some(value);
+/// The stored archive, noting in `failed` whether reading it failed.
+struct Source<'a, R> {
+    inner: R,
+    failed: &'a Cell<bool>,
+}
+
+impl<R: Read> Read for Source<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf).inspect_err(|error| {
+            if error.kind() != io::ErrorKind::Interrupted {
+                self.failed.set(true);
+            }
+        })
     }
-    octal(field)
-}
-
-fn octal(field: &[u8]) -> Option<u64> {
-    let digits = std::str::from_utf8(field)
-        .ok()?
-        .trim_matches(|c: char| c == ' ' || c == '\0');
-    if digits.is_empty() {
-        return Some(0);
-    }
-    u64::from_str_radix(digits, 8).ok()
-}
-
-fn text(bytes: &[u8]) -> Result<String> {
-    String::from_utf8(bytes.to_vec()).map_err(|_| unsupported())
 }
 
 fn corrupt() -> Error {

@@ -19,6 +19,8 @@
 //! - `digest-invalid`: a file's digest is not a SHA-256 in lowercase hex.
 //! - `artifact-key-conflict`: two files of the build have the same name.
 //! - `archive-path-invalid`: a file's path inside its archive is not a plain relative path.
+//! - `archive-unsupported`: this build cannot unpack archives (the web build: archives come only with native-only
+//!   builds).
 //! - `digest-mismatch`: a downloaded file is not the one expected.
 //! - `archive-corrupt`: an archive could not be read.
 //! - `archive-entry-unsupported`: an archive holds something that is not a plain file or directory inside it.
@@ -29,13 +31,14 @@
 //!   stored).
 //!
 //! Inside: `progress` (what the installer reports as it goes), `cancel` (how it is stopped), `digest` (SHA-256) and
-//! `archive` (unpacking, safely).
+//! `archive` (unpacking, safely, in native builds).
 
 use std::collections::BTreeMap;
 
 use crate::host::{Host, Storage};
 use crate::{Error, Result};
 
+#[cfg(native)]
 mod archive;
 mod cancel;
 mod digest;
@@ -100,8 +103,8 @@ impl Installer {
     ///
     /// # Errors
     ///
-    /// The codes listed above. `digest-invalid`, `artifact-key-conflict` and `archive-path-invalid` are found before
-    /// anything is downloaded.
+    /// The codes listed above. `digest-invalid`, `artifact-key-conflict`, `archive-path-invalid` and
+    /// `archive-unsupported` are found before anything is downloaded.
     pub(crate) async fn install(
         &self,
         artifacts: &[Artifact],
@@ -152,7 +155,8 @@ impl Installer {
     }
 }
 
-/// Every digest well formed, every archive path a plain relative path, and no key naming two different things.
+/// Every digest well formed, every archive path a plain relative path (and archives only where they can be unpacked),
+/// and no key naming two different things.
 /// Returns each artifact's archive path, normalised.
 fn check(artifacts: &[Artifact]) -> Result<Vec<Option<String>>> {
     let mut keys = BTreeMap::new();
@@ -164,7 +168,10 @@ fn check(artifacts: &[Artifact]) -> Result<Vec<Option<String>>> {
         let member = match &artifact.archive_path {
             None => None,
             Some(path) => {
-                Some(archive::member_path(path).ok_or(Error::new("archive-path-invalid"))?)
+                if cfg!(web) {
+                    return Err(Error::new("archive-unsupported"));
+                }
+                Some(member_path(path).ok_or(Error::new("archive-path-invalid"))?)
             }
         };
         let named = (artifact.sha256.as_str(), member.clone());
@@ -213,12 +220,42 @@ fn unpacked(sha256: &str) -> String {
     format!("{sha256}-unpacked")
 }
 
-/// Unpacks the stored archive `sha256` into its tree.
+/// Unpacks the stored archive `sha256` into its tree, on one of Tokio's blocking threads: `tar` reads synchronously.
+/// Dropping the future stops the unpacking at its next part, and the tree is discarded.
+#[cfg(native)]
 async fn unpack(storage: &dyn Storage, sha256: &str, cancel: &Cancel) -> Result<()> {
-    let archive = storage.read(sha256).await?;
-    let mut tree = storage.create_tree(&unpacked(sha256)).await?;
-    archive::unpack(archive, tree.as_mut(), archive::Limits::DEFAULT, cancel).await?;
-    tree.commit().await.map(drop)
+    /// Stops the unpacking when the future that waits for it is dropped.
+    struct StopOnDrop(Cancel);
+    impl Drop for StopOnDrop {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+
+    let archive = storage.open(sha256)?;
+    let mut tree = storage.create_tree(&unpacked(sha256))?;
+    let cancel = cancel.clone();
+    let stop = StopOnDrop(Cancel::new());
+    let stopped = stop.0.clone();
+    let unpacking = tokio::task::spawn_blocking(move || {
+        let check = || cancel.check().and_then(|()| stopped.check());
+        archive::unpack(archive, tree.as_mut(), archive::Limits::DEFAULT, &check)?;
+        tree.commit().map(drop)
+    });
+    let unpacked = match unpacking.await {
+        Ok(unpacked) => unpacked,
+        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+        // The runtime is shutting down.
+        Err(_) => Err(Error::new("cancelled")),
+    };
+    drop(stop);
+    unpacked
+}
+
+/// Archives are refused before anything is downloaded ([`check`]).
+#[cfg(web)]
+async fn unpack(_storage: &dyn Storage, _sha256: &str, _cancel: &Cancel) -> Result<()> {
+    Err(Error::new("archive-unsupported"))
 }
 
 /// Downloads `wanted` into storage under its digest. `report` is the progress so far, before this file.
@@ -246,4 +283,28 @@ async fn download(
         return Err(Error::new("digest-mismatch"));
     }
     file.commit().await.map(drop)
+}
+
+/// `path` as a path inside a tree, if it is one: relative, `/`-separated, with `.` and empty segments dropped and no
+/// `..`, backslash, colon or control character; `None` otherwise, or if nothing is left. What an artifact's
+/// `archive_path` must be, and what an archive's entries must be named (`archive`).
+fn member_path(path: &str) -> Option<String> {
+    if path.starts_with('/') || path.len() > 4096 {
+        return None;
+    }
+    let mut segments = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => return None,
+            _ if segment
+                .chars()
+                .any(|c| c == '\\' || c == ':' || c.is_control()) =>
+            {
+                return None
+            }
+            _ => segments.push(segment),
+        }
+    }
+    (!segments.is_empty() && segments.len() <= 64).then(|| segments.join("/"))
 }
