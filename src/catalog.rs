@@ -7,7 +7,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::backend;
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
 
@@ -19,7 +18,9 @@ mod tests;
 
 pub use bundled::BundledCatalog;
 pub use family::Family;
-pub use model::{Build, Capability, Memory, MemorySource, Model, ModelFile, Requires};
+pub use model::{
+    BuildEntry, Capability, Gender, Memory, MemorySource, ModelEntry, ModelFile, Requires, Voice,
+};
 
 /// Where catalogue entries come from: the catalogue bundled in the engine, a remote one pinned by digest, the
 /// user's own models.
@@ -113,6 +114,20 @@ pub enum Problem {
         /// The key of the file that disagrees with an earlier one.
         key: String,
     },
+    /// A language of a model or of one of its voices that is not a BCP 47 tag ("multi", "spanish", "es_ES").
+    InvalidLanguage {
+        /// The model.
+        model: String,
+        /// The tag as written.
+        tag: String,
+    },
+    /// Two voices of one model with this id.
+    DuplicateVoice {
+        /// The model.
+        model: String,
+        /// The repeated id.
+        voice: String,
+    },
 }
 
 impl Catalog {
@@ -125,17 +140,22 @@ impl Catalog {
         Ok(Self { families })
     }
 
+    /// Every model, in catalogue order.
+    pub(crate) fn entries(&self) -> impl Iterator<Item = &ModelEntry> {
+        self.families.iter().flat_map(|family| &family.models)
+    }
+
     /// The models that can do `capability`, in catalogue order.
-    pub(crate) fn models(&self, capability: Capability) -> impl Iterator<Item = &Model> {
+    pub(crate) fn models(&self, capability: Capability) -> impl Iterator<Item = &ModelEntry> {
         self.families
             .iter()
             .flat_map(|family| &family.models)
             .filter(move |model| model.capabilities.contains(&capability))
     }
 
-    /// What is wrong with the merged catalogue; empty if nothing is.
+    /// What is wrong with the merged catalogue, given which backend ids are `known`; empty if nothing is.
     #[must_use]
-    pub(crate) fn check(&self) -> Vec<Problem> {
+    pub(crate) fn check(&self, known: &dyn Fn(&str) -> bool) -> Vec<Problem> {
         let mut problems = Vec::new();
         let (mut families, mut models, mut builds) =
             (HashSet::new(), HashSet::new(), HashSet::new());
@@ -166,13 +186,14 @@ impl Catalog {
                         model: model.id.clone(),
                     });
                 }
+                check_languages(model, &mut problems);
                 for build in &model.builds {
                     if !builds.insert(&build.id) {
                         problems.push(Problem::DuplicateBuild {
                             build: build.id.clone(),
                         });
                     }
-                    check_build(build, &mut problems);
+                    check_build(build, known, &mut problems);
                 }
             }
         }
@@ -181,8 +202,8 @@ impl Catalog {
 }
 
 /// A build's own problems: its backend and its files.
-fn check_build(build: &Build, problems: &mut Vec<Problem>) {
-    if !backend::is_known(&build.backend) {
+fn check_build(build: &BuildEntry, known: &dyn Fn(&str) -> bool, problems: &mut Vec<Problem>) {
+    if !known(&build.backend) {
         problems.push(Problem::UnknownBackend {
             build: build.id.clone(),
             backend: build.backend.clone(),
@@ -217,4 +238,39 @@ fn check_build(build: &Build, problems: &mut Vec<Problem>) {
             });
         }
     }
+}
+
+/// A model's languages, and its voices' ids and languages.
+fn check_languages(model: &ModelEntry, problems: &mut Vec<Problem>) {
+    let voices = model.voices.iter().flat_map(|voice| &voice.languages);
+    for tag in model.languages.iter().chain(voices) {
+        if !is_bcp47(tag) {
+            problems.push(Problem::InvalidLanguage {
+                model: model.id.clone(),
+                tag: tag.clone(),
+            });
+        }
+    }
+    let mut ids = HashSet::new();
+    for voice in &model.voices {
+        if !ids.insert(&voice.id) {
+            problems.push(Problem::DuplicateVoice {
+                model: model.id.clone(),
+                voice: voice.id.clone(),
+            });
+        }
+    }
+}
+
+/// Whether `tag` has the shape of a BCP 47 language tag: a primary language subtag of two or three lowercase letters,
+/// then subtags of two to eight letters or digits ("es", "en-US", "pt-BR", "yue", "zh-Hant").
+fn is_bcp47(tag: &str) -> bool {
+    let mut subtags = tag.split('-');
+    let primary = subtags.next().unwrap_or_default();
+    (2..=3).contains(&primary.len())
+        && primary.bytes().all(|byte| byte.is_ascii_lowercase())
+        && subtags.all(|subtag| {
+            (2..=8).contains(&subtag.len())
+                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
 }

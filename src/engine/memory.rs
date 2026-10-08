@@ -1,144 +1,47 @@
-//! What the engine holds in memory: each loaded model with the library of its backend it was loaded with, and when it
-//! was last used. A model unused for the idle time is unloaded; a backend's library is shared by its models (counted
-//! by `Arc`) and closed when the last of them is unloaded. Unloading frees memory only: the files stay installed.
-//!
-//! There is no timer here (the engine has no runtime of its own): idle models are unloaded when [`Memory::unload_idle`]
-//! is called, which the engine does on each `prepare` and the app on its own schedule (`Engine::unload_idle`).
+//! What the engine knows of memory, without holding it: weak references to each backend's open library and to each
+//! build's model in memory. The app's [`LoadedModel`](crate::LoadedModel)s hold them; the engine only finds them again,
+//! so that a backend's models share one library and a build loaded twice is one model in memory. There is no clock and
+//! no unloading here: what nothing holds is gone.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 
-use crate::backend::{Library, LoadedModel};
-use crate::engine::Handle;
+use super::loaded::Resident;
+use crate::backend::{BackendId, Library};
 
 #[cfg(test)]
 mod tests;
 
-/// The loaded models and their backends' libraries.
+/// Each backend's library and each build's model, while something holds them.
+#[derive(Default)]
 pub(super) struct Memory {
-    models: BTreeMap<Handle, Resident>,
-    /// Each backend's open library, while some model holds it.
-    libraries: BTreeMap<String, Weak<dyn Library>>,
-    next: usize,
-    idle: Duration,
-    clock: fn() -> Duration,
-}
-
-/// A loaded model. Fields drop in order: the model before its library.
-struct Resident {
-    build: String,
-    #[allow(
-        dead_code,
-        reason = "held until unloaded: the engine does not use models yet"
-    )]
-    model: Box<dyn LoadedModel>,
-    #[allow(
-        dead_code,
-        reason = "held: it keeps the library open while the model is loaded"
-    )]
-    library: Arc<dyn Library>,
-    used: Duration,
+    libraries: BTreeMap<BackendId, Weak<dyn Library>>,
+    models: BTreeMap<String, Weak<Resident>>,
 }
 
 impl Memory {
-    /// Nothing loaded; models unused for `idle` are unloaded.
-    pub(super) fn new(idle: Duration) -> Self {
-        Self::with_clock(idle, now)
-    }
-
-    /// Nothing loaded, on `clock` (a monotonic time from any origin).
-    pub(super) fn with_clock(idle: Duration, clock: fn() -> Duration) -> Self {
-        Self {
-            models: BTreeMap::new(),
-            libraries: BTreeMap::new(),
-            next: 0,
-            idle,
-            clock,
-        }
-    }
-
-    /// How long a model may go unused before it is unloaded.
-    pub(super) fn set_idle(&mut self, idle: Duration) {
-        self.idle = idle;
-    }
-
-    /// The handle of `build`, if it is loaded, which counts as using it.
-    pub(super) fn handle(&mut self, build: &str) -> Option<Handle> {
-        let now = (self.clock)();
-        let (handle, resident) = self
-            .models
-            .iter_mut()
-            .find(|(_, resident)| resident.build == build)?;
-        resident.used = now;
-        Some(*handle)
-    }
-
-    /// Whether `build` is loaded.
-    pub(super) fn is_loaded(&self, build: &str) -> bool {
-        self.models.values().any(|resident| resident.build == build)
-    }
-
-    /// `backend`'s library, if it is open: some model loaded with it is still in memory.
-    pub(super) fn library(&self, backend: &str) -> Option<Arc<dyn Library>> {
+    /// `backend`'s library, if a model loaded with it is still in memory.
+    pub(super) fn library(&self, backend: BackendId) -> Option<Arc<dyn Library>> {
         self.libraries.get(backend).and_then(Weak::upgrade)
     }
 
-    /// Keeps `model`, of `build`, loaded with `library`, `backend`'s; it holds the library open until it is unloaded.
-    pub(super) fn insert(
-        &mut self,
-        build: &str,
-        backend: &str,
-        library: Arc<dyn Library>,
-        model: Box<dyn LoadedModel>,
-    ) -> Handle {
-        let handle = Handle(self.next);
-        self.next += 1;
-        self.libraries
-            .insert(backend.to_owned(), Arc::downgrade(&library));
-        let resident = Resident {
-            build: build.to_owned(),
-            model,
-            library,
-            used: (self.clock)(),
-        };
-        self.models.insert(handle, resident);
-        handle
+    /// `build`'s model, if it is in memory.
+    pub(super) fn model(&self, build: &str) -> Option<Arc<Resident>> {
+        self.models.get(build).and_then(Weak::upgrade)
     }
 
-    /// Unloads every model unused for the idle time, and closes the libraries no model holds any more.
-    pub(super) fn unload_idle(&mut self) {
-        let now = (self.clock)();
-        let idle = self.idle;
-        self.models
-            .retain(|_, resident| now.saturating_sub(resident.used) < idle);
+    /// Remembers `library`, `backend`'s, and `model`, `build`'s, and forgets what nothing holds any more.
+    pub(super) fn remember(
+        &mut self,
+        backend: BackendId,
+        library: &Arc<dyn Library>,
+        build: &str,
+        model: &Arc<Resident>,
+    ) {
         self.libraries
             .retain(|_, library| library.strong_count() > 0);
+        self.models.retain(|_, model| model.strong_count() > 0);
+        self.libraries.insert(backend, Arc::downgrade(library));
+        self.models.insert(build.to_owned(), Arc::downgrade(model));
     }
-
-    /// How many libraries are open.
-    #[cfg(test)]
-    pub(super) fn open_libraries(&self) -> usize {
-        self.libraries
-            .values()
-            .filter(|library| library.strong_count() > 0)
-            .count()
-    }
-}
-
-/// Monotonic time since the first time it was asked.
-#[cfg(native)]
-fn now() -> Duration {
-    use std::sync::OnceLock;
-    use std::time::Instant;
-
-    static START: OnceLock<Instant> = OnceLock::new();
-    START.get_or_init(Instant::now).elapsed()
-}
-
-/// The page's clock (`Instant` panics on wasm32). It is wall time: when the clock is set, an idle model may be
-/// unloaded a little early or late.
-#[cfg(web)]
-fn now() -> Duration {
-    Duration::from_secs_f64((js_sys::Date::now() / 1000.0).max(0.0))
 }

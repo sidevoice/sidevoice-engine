@@ -10,7 +10,7 @@ use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
 
 use super::synthesizer::espeak_voice;
 use super::{config, model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
-use crate::backend::{Backend, LoadedModel};
+use crate::backend::{Backend, BackendModel};
 use crate::catalog::{BundledCatalog, Capability, CatalogSource};
 use crate::host::Accelerator;
 use crate::install::Installed;
@@ -144,7 +144,7 @@ fn a_language_reaches_espeak_ng_as_its_voice_or_its_primary_subtag() {
     assert_eq!(espeak_voice("fr-CA", &BTreeSet::new()), "fr");
 }
 
-fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn LoadedModel>> {
+fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn BackendModel>> {
     let files = installed(files);
     let library = ready(SherpaOnnx.open(&files))?;
     ready(library.load(&build("test", "sherpa-onnx", 0), accelerator, &files))
@@ -152,7 +152,7 @@ fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn Load
 
 #[test]
 fn a_model_missing_a_file_does_not_load() {
-    let code = |result: Result<Box<dyn LoadedModel>>| result.map(|_| ()).unwrap_err().code;
+    let code = |result: Result<Box<dyn BackendModel>>| result.map(|_| ()).unwrap_err().code;
     // sherpa-onnx checks its config before it creates anything, and refuses one whose files are not there.
     assert_eq!(
         code(load(Accelerator::Cpu, &[("whisper.encoder", "e.onnx")])),

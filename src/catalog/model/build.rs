@@ -8,7 +8,7 @@ use crate::install::Artifact;
 /// in `requires`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Build {
+pub struct BuildEntry {
     /// Its stable id, unique in the catalogue: "whisper-small/sherpa-onnx-int8", ... Editorial data and benchmarks
     /// are keyed by it, outside the catalogue.
     pub id: String,

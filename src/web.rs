@@ -7,7 +7,8 @@
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::prelude::*;
 
-use crate::{BundledCatalog, Capability, Engine, Offer, Rejection};
+use crate::resolver::{Offer, Rejection};
+use crate::{BundledCatalog, Capability, Engine};
 
 mod host;
 #[cfg(test)]

@@ -43,8 +43,8 @@
 
 use async_trait::async_trait;
 
-use crate::backend::{Backend, BackendFactory, BackendSpec, Library, LoadedModel};
-use crate::catalog::Build;
+use crate::backend::{Backend, BackendFactory, BackendModel, BackendSpec, Library};
+use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
@@ -93,10 +93,10 @@ struct Linked;
 impl Library for Linked {
     async fn load(
         &self,
-        _build: &Build,
+        _build: &BuildEntry,
         accelerator: Accelerator,
         files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
+    ) -> Result<Box<dyn BackendModel>> {
         let kind = Kind::of(files)?;
         let provider = provider(accelerator)?;
         Ok(match kind {

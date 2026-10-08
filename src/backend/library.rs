@@ -4,8 +4,8 @@
 
 use async_trait::async_trait;
 
-use crate::backend::LoadedModel;
-use crate::catalog::Build;
+use crate::backend::BackendModel;
+use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::maybe_send::{MaybeSend, MaybeSync};
@@ -21,8 +21,8 @@ pub(crate) trait Library: MaybeSend + MaybeSync {
     /// `files`, keeps nothing, and fails with a stable code (see *`open` and `load`* in `backend.rs`).
     async fn load(
         &self,
-        build: &Build,
+        build: &BuildEntry,
         accelerator: Accelerator,
         files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>>;
+    ) -> Result<Box<dyn BackendModel>>;
 }

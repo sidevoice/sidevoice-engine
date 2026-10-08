@@ -370,3 +370,27 @@ fn its_directory_stores_a_build_folder_of_links_only_once_committed() {
         "outside the folder"
     );
 }
+
+#[test]
+fn a_name_stored_twice_is_stored_once_and_leaves_nothing_partial_whether_file_or_tree() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let storage = host.storage();
+    let partial = scratch.0.join("partial");
+
+    for _ in 0..2 {
+        let mut file = block_on(storage.create("same")).expect("writer");
+        block_on(file.write(b"bytes")).expect("written");
+        block_on(file.commit()).expect("committed, the second time too");
+        let mut tree = storage.create_tree("same-unpacked").expect("tree");
+        tree.file("a/b").expect("file");
+        tree.write(b"member").expect("written");
+        tree.commit().expect("committed, the second time too");
+    }
+    assert_eq!(entries(&partial), 0);
+    let member = block_on(storage.find_member("same-unpacked", "a/b")).expect("found");
+    assert_eq!(
+        std::fs::read(member.expect("a member")).expect("read"),
+        b"member"
+    );
+}
