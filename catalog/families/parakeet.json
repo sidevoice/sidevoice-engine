@@ -73,6 +73,30 @@
             "source": "estimated",
             "basis": "weights size + 30%"
           }
+        },
+        {
+          "id": "parakeet-tdt-0.6b-v3/mlx-fp32",
+          "backend": "mlx",
+          "precision": "fp32",
+          "files": [
+            {
+              "key": "weights",
+              "url": "https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/model.safetensors",
+              "sha256": "05e01c7f396c298cf7d23f61da7b504adeab698f0aaeafd9c82d198625464592",
+              "bytes": 2508288736
+            },
+            {
+              "key": "config",
+              "url": "https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/config.json",
+              "sha256": "f320f1292511f34ec47f513755fe20fd01dbfc09a925d42730e66059a6e1ef4c",
+              "bytes": 244093
+            }
+          ],
+          "memory": {
+            "mb": 3110,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
         }
       ]
     }
