@@ -14,8 +14,10 @@ pub struct Build {
     pub id: String,
     /// The id of the backend that runs it ([`Engine::backends`](crate::Engine::backends), `backends.json`).
     pub backend: String,
-    /// The precision of its weights.
-    pub precision: Precision,
+    /// The format's own name for its precision, as its backend uses it: "int8", "q8", "fp16", "q5_1", "4bit", ....
+    /// Informational only, to tell builds apart (the transformers.js loader may pass it on as its `dtype`): nothing
+    /// else interprets it.
+    pub precision: String,
     /// Hard constraints only; absent, there are none.
     #[serde(default)]
     pub requires: Requires,
@@ -23,23 +25,6 @@ pub struct Build {
     pub memory: Memory,
     /// Every file the backend needs to load it, configuration and tokenizer included.
     pub files: Vec<ModelFile>,
-}
-
-/// The precision of a build's weights, from a fixed vocabulary: never read from file names. Adding one is a change to
-/// the engine; it is `#[non_exhaustive]`, so that is not a breaking change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum Precision {
-    /// 16-bit floating point.
-    Fp16,
-    /// 8-bit integers (ONNX dynamic quantisation, as sherpa-onnx exports it).
-    Int8,
-    /// 8-bit quantisation, as transformers.js names it (`dtype: "q8"`).
-    Q8,
-    /// ggml's 5-bit quantisation, type 1 (whisper.cpp).
-    #[serde(rename = "q5_1")]
-    Q5_1,
 }
 
 /// What a build strictly needs beyond its backend and its memory: only constraints that make it unusable when not

@@ -19,7 +19,7 @@ mod tests;
 
 pub use bundled::BundledCatalog;
 pub use family::Family;
-pub use model::{Build, Capability, Memory, MemorySource, Model, ModelFile, Precision, Requires};
+pub use model::{Build, Capability, Memory, MemorySource, Model, ModelFile, Requires};
 
 /// Where catalogue entries come from: the catalogue bundled in the engine, a remote one pinned by digest, the
 /// user's own models.

@@ -4,8 +4,7 @@
 
 use crate::{
     async_trait, Accelerator, Build, Capabilities, Capability, CatalogFragment, CatalogSource,
-    Family, Fetcher, Host, Memory, MemorySource, Model, ModelFile, Precision, Requires, Result,
-    Runs, Storage,
+    Family, Fetcher, Host, Memory, MemorySource, Model, ModelFile, Requires, Result, Runs, Storage,
 };
 
 pub(crate) struct FakeHost;
@@ -58,7 +57,7 @@ pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> Build {
     Build {
         id: id.to_owned(),
         backend: backend.to_owned(),
-        precision: Precision::Int8,
+        precision: "int8".to_owned(),
         requires: Requires::default(),
         memory: Memory {
             mb: memory_mb,
