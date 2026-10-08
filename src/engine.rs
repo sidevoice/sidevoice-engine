@@ -9,11 +9,11 @@
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::backend::{self, Backend, BackendId};
+use crate::backend::{self, Backend, BackendInfo};
 use crate::catalog::{BuildEntry, Catalog, CatalogSource, ModelEntry, ModelFile};
-use crate::host::{Accelerator, Host, Platform};
+use crate::host::{Accelerator, Host};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
-use crate::resolver::{Offer, Reason, Rejection, Resolver, RuntimeFiles};
+use crate::resolver::{Offer, Reason, Rejection, Resolver};
 use crate::{Capability, Error, Result};
 
 mod audio;
@@ -40,7 +40,6 @@ pub struct Engine {
     host: Box<dyn Host>,
     catalog: Catalog,
     backends: Vec<Box<dyn Backend>>,
-    runtime_files: RuntimeFiles,
     resolver: Resolver,
     installer: Installer,
     memory: Mutex<Memory>,
@@ -70,15 +69,14 @@ impl Engine {
         host: Box<dyn Host>,
         sources: Vec<Box<dyn CatalogSource>>,
     ) -> Result<Self, ConfigError> {
-        Self::with_backends(host, sources, backend::built_in(), backend::runtime_files)
+        Self::with_backends(host, sources, backend::built_in())
     }
 
-    /// An engine with these backends, whose library files are `runtime_files`'s to say.
+    /// An engine with these backends.
     pub(crate) fn with_backends(
         host: Box<dyn Host>,
         sources: Vec<Box<dyn CatalogSource>>,
         backends: Vec<Box<dyn Backend>>,
-        runtime_files: RuntimeFiles,
     ) -> Result<Self, ConfigError> {
         let catalog = Catalog::merge(&sources).map_err(ConfigError::Source)?;
         let compiled: Vec<_> = backends.iter().map(|backend| backend.spec().id).collect();
@@ -90,20 +88,19 @@ impl Engine {
             host,
             catalog,
             backends,
-            runtime_files,
-            resolver: Resolver::new(runtime_files),
+            resolver: Resolver::default(),
             installer: Installer,
             memory: Mutex::default(),
             loading: async_lock::Mutex::new(()),
         })
     }
 
-    /// The ids of the backends compiled into this build.
+    /// The backends compiled into this build: each one's id, name, description and upstream.
     #[must_use]
-    pub fn backends(&self) -> Vec<BackendId> {
+    pub fn backends(&self) -> Vec<BackendInfo> {
         self.backends
             .iter()
-            .map(|backend| backend.spec().id)
+            .map(|backend| BackendInfo::of(backend.spec()))
             .collect()
     }
 
@@ -337,15 +334,12 @@ impl Engine {
         Ok((entry, build, accelerator))
     }
 
-    /// `build`'s backend, and every file it needs here: the model's, then the backend's for this platform.
+    /// `build`'s backend, and the files it needs: the model's. Backends download nothing of their own: they are linked
+    /// for now (sidevoice-engine#33).
     fn artifacts(&self, build: &BuildEntry) -> Result<(&dyn Backend, Vec<Artifact>)> {
         let backend = backend::find(&self.backends, &build.backend)
             .ok_or(Error::new("backend-not-in-this-build"))?;
-        let runtime = Platform::of(&self.host.capabilities())
-            .and_then(|platform| (self.runtime_files)(backend.spec().id, platform))
-            .ok_or(Error::new("no-runtime-for-platform"))?;
-        let mut artifacts: Vec<_> = build.files.iter().map(ModelFile::artifact).collect();
-        artifacts.extend(runtime);
+        let artifacts = build.files.iter().map(ModelFile::artifact).collect();
         Ok((backend, artifacts))
     }
 }

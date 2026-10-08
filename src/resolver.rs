@@ -1,5 +1,5 @@
-//! The funnel, the same for every backend: for each build of the catalogue, is its backend compiled here, does it have
-//! an entry for this platform in `backends.json`, which of its accelerators work here (what the host reports, narrowed
+//! The funnel, the same for every backend: for each build of the catalogue, is its backend compiled here (which
+//! backends a build of the engine has is decided when it is compiled), which of its accelerators work here (what the host reports, narrowed
 //! by `probe`, cached), is one of them an accelerator the build can take (its `requires`), does the machine meet the
 //! build's and the backend's requirements (a value the host cannot tell passes). Then, per model, a build: the
 //! catalogue's builds carry no order, and ranking them is still to come (sidevoice-engine#4); until then it is the
@@ -10,7 +10,7 @@ use std::sync::{Mutex, PoisonError};
 
 use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
 use crate::catalog::{BuildEntry, Capability, Catalog, ModelEntry};
-use crate::host::{Accelerator, Capabilities, Platform};
+use crate::host::{Accelerator, Capabilities};
 
 mod offer;
 #[cfg(test)]
@@ -19,32 +19,13 @@ mod tests;
 pub use offer::Reason;
 pub(crate) use offer::{Offer, Rejection};
 
-/// The library files a backend needs on a platform (`backends.json`, or a test's own); `None` where it does not run.
-pub(crate) type RuntimeFiles = fn(&str, Platform) -> Option<Vec<crate::install::Artifact>>;
-
 /// The funnel, remembering each backend's probe.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Resolver {
     probes: Mutex<HashMap<BackendId, Vec<Accelerator>>>,
-    runtime_files: RuntimeFiles,
-}
-
-impl Default for Resolver {
-    /// The funnel over `backends.json`.
-    fn default() -> Self {
-        Self::new(backend::runtime_files)
-    }
 }
 
 impl Resolver {
-    /// The funnel, with each backend's files for a platform from `runtime_files`.
-    pub(crate) fn new(runtime_files: RuntimeFiles) -> Self {
-        Self {
-            probes: Mutex::default(),
-            runtime_files,
-        }
-    }
-
     /// Every build of `model`, ranked, each with the accelerator it runs on here or why it cannot run here: the builds
     /// that fit first, then the rest, each group in catalogue order. Ranking is still the first that fits
     /// (sidevoice-engine#4).
@@ -107,15 +88,6 @@ impl Resolver {
         backend: &dyn Backend,
         caps: &Capabilities,
     ) -> Result<Accelerator, Rejection> {
-        // Data, not backend code: a backend with no entry for this platform in backends.json cannot run here.
-        if Platform::of(caps)
-            .and_then(|platform| (self.runtime_files)(backend.spec().id, platform))
-            .is_none()
-        {
-            return Err(Rejection::BackendUnavailable(Reason::new(
-                "no-runtime-for-platform",
-            )));
-        }
         let spec = backend.spec();
         let probed = self.probe(backend, caps);
         // A probe narrows what the host reports, never widens it.

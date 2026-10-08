@@ -36,8 +36,8 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
   crate-private; if plugins ever need to add backends, that part of the contract is opened then, on purpose.
 - **Nothing heavy is linked into the app.** Engine libraries and models are downloaded on demand. One exception, for
   now: the sherpa-onnx backend links the official `sherpa-onnx` crate statically (ONNX Runtime included), in native
-  builds only and behind the default `sherpa-onnx` feature, so its `backends.json` entry downloads nothing. Making it
-  load on demand again is sidevoice-engine#33; no other backend links its engine.
+  builds only and behind the default `sherpa-onnx` feature, so it downloads nothing of its own. Making it load on
+  demand again is sidevoice-engine#33; no other backend links its engine.
 
 ## Code layout
 
@@ -48,8 +48,8 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
 - **A file is one concept**, and it keeps that concept's closely related types together, even when other modules use
   them: as `std::io::Error` lives with `ErrorKind`, `Offer` lives with `Rejection` and `Reason`, and `Backend` with
   `BackendSpec`. A type gets its own file only when it is a concept of its own, not a part or a detail of another
-  (`Accelerator`, `Build`, `Platform`). Split by cohesion and size, never one type per file: the module is the unit.
-- **Names say what a thing is**: `runtime.rs` (the library files a backend needs), not `downloads.rs`;
+  (`Accelerator`, `BuildEntry`, `Voice`). Split by cohesion and size, never one type per file: the module is the unit.
+- **Names say what a thing is**: `requirement.rs` (what the machine must meet), not `checks.rs`;
   `loaded_model.rs`; `SttModel` and `TtsModel`, after the catalogue's `Capability`. Name by role, never by state:
   `WebStorage`, not `Unimplemented`; that something is not implemented yet, a stub or a placeholder is said in its
   docs and its `not-implemented` error code, not in its name.
@@ -61,8 +61,8 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
   that checks the aliases themselves. A crate-level module's condition goes on its declaration (`#[cfg(web)] mod web;`);
   a backend file carries its own `#![cfg]`.
 - **Closed by default**, as above.
-- **What is data stays data**: versions, URLs and digests live in `backends.json` and the catalogue, not in code, and
-  are validated strictly when read: an unknown or a missing key is an error.
+- **What is data stays data**: versions, URLs and digests live in the catalogue, not in code, and are validated strictly
+  when read: an unknown or a missing key is an error.
 
 ## How work lands
 

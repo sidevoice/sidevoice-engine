@@ -15,8 +15,7 @@ pub use accelerator::Accelerator;
 /// Unknown values: `memory_mb` and `cores` are `None` when the host cannot tell (a page cannot read memory reliably),
 /// and a requirement on an unknown value passes: the engine does not reject a build on a guess, and loading is what
 /// finds out. An accelerator the host is unsure of is left out: it is absent, and nothing runs on it. `os` and `arch`
-/// are always given: natively they name the platform whose `backends.json` entry is read (`Platform`), and a pair the
-/// engine does not know leaves every backend without a runtime (`no-runtime-for-platform`).
+/// are always given.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capabilities {
     /// A native process or a page.

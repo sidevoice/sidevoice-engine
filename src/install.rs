@@ -1,7 +1,6 @@
-//! Installing a build: one installer for every backend, which does not know what a file is. It gets one list of
-//! [`Artifact`]s, the build's model files (catalogue) and its backend's files for this platform (`backends.json`)
-//! alike, downloads each through the host's `Fetcher`, checks it against its SHA-256 as it arrives, and stores it
-//! through the host's `Storage`.
+//! Installing a build: one installer for every backend, which does not know what a file is. It gets the build's list
+//! of [`Artifact`]s, its model files from the catalogue, downloads each through the host's `Fetcher`, checks it
+//! against its SHA-256 as it arrives, and stores it through the host's `Storage`.
 //!
 //! Storage is content-addressed: each file is stored under its digest, and an artifact's `key` is only the name `load`
 //! finds it by in [`Installed`]. So two backends, or two versions of one, never write the same name; a file shared by
@@ -56,8 +55,8 @@ pub use progress::{Progress, ProgressSink};
 /// it by.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Artifact {
-    /// The name the backend's `load` finds it by: its key in the catalogue, or its `name` in `backends.json`. Not its
-    /// name in [`Storage`](crate::Storage), which is its digest.
+    /// The name the backend's `load` finds it by: its key in the catalogue. Not its name in
+    /// [`Storage`](crate::Storage), which is its digest.
     pub key: String,
     /// Where it is downloaded from: the file, or the archive it is in.
     pub url: String,
@@ -69,7 +68,7 @@ pub struct Artifact {
 }
 
 /// A build whose files are in storage: each artifact's key, and where the host keeps it (a path, an OPFS name, ...):
-/// the file, or the member of the unpacked archive. A backend file's key is its name in `backends.json`.
+/// the file, or the member of the unpacked archive.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Installed {
     pub(crate) files: BTreeMap<String, String>,

@@ -80,7 +80,7 @@ pub enum Problem {
         /// The repeated id.
         build: String,
     },
-    /// A build whose backend no build of the engine has (it is not in `backends.json`).
+    /// A build whose backend no build of the engine has (its id is not one of the backends the engine knows).
     UnknownBackend {
         /// The build.
         build: String,

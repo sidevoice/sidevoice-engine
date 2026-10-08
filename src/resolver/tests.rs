@@ -15,8 +15,7 @@ use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
 /// A backend that runs on CoreML or the CPU, needs 4 cores, and whose probe confirms `probe`. It borrows the id
-/// "sherpa-onnx" for its entry in `backends.json` on the test host's platform (linux-x86_64), which the funnel
-/// checks first.
+/// "sherpa-onnx", a known one.
 struct FixedProbeBackend {
     spec: BackendSpec,
     probe: &'static [Accelerator],
@@ -27,6 +26,9 @@ impl FixedProbeBackend {
         Box::new(Self {
             spec: BackendSpec {
                 id: "sherpa-onnx",
+                name: "a backend that probes as told",
+                description: "A test double.",
+                upstream: "https://example.com",
                 accelerators: &[Accelerator::CoreMl, Accelerator::Cpu],
                 requirements: &[&MinCores(4)],
             },

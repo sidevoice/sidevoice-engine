@@ -11,14 +11,12 @@ mod capabilities;
 mod fetcher;
 #[cfg(native)]
 mod native;
-mod platform;
 mod storage;
 
 pub use capabilities::{Accelerator, Capabilities, Runs};
 pub use fetcher::{Download, Fetcher};
 #[cfg(native)]
 pub use native::NativeHost;
-pub(crate) use platform::Platform;
 #[cfg(native)]
 pub use storage::TreeWriter;
 pub use storage::{Storage, StorageWriter};

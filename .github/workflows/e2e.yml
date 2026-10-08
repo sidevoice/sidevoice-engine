@@ -10,7 +10,6 @@ on:
     paths:
       - src/**
       - catalog/**
-      - backends.json
       - xtask/**
       - Cargo.toml
       - Cargo.lock
@@ -45,7 +44,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/e2e
-          key: e2e-${{ matrix.target }}-${{ hashFiles('catalog/families/*.json', 'backends.json', 'xtask/e2e.json') }}
+          key: e2e-${{ matrix.target }}-${{ hashFiles('catalog/families/*.json', 'xtask/e2e.json') }}
           restore-keys: e2e-${{ matrix.target }}-
       - run: cargo xtask e2e "$RUNNER_TEMP/e2e"
       - if: always() && steps.models.outputs.cache-hit != 'true'

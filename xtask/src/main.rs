@@ -8,8 +8,6 @@
 //!   the nightly) and `SHA256SUMS` written over DIR (xtask/src/release.rs).
 //! - `publish DIR TAG`: DIR attached to the GitHub Release TAG, read back, verified, and the Release published.
 //! - `npm-publish TAG`: the tarball of the Release TAG (a `vX.Y.Z`), verified, published to npm.
-//! - `pin-backends [--check]`: every file in `backends.json` downloaded at its pinned version and its `sha256` written
-//!   (or, with `--check`, checked) (xtask/src/backends.rs).
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
 //! - `e2e [DIR]`: the voice loop for real through the engine's public API: text to speech to text, and recorded clips
@@ -18,7 +16,6 @@
 //! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
 //!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
 
-mod backends;
 mod catalog;
 #[cfg(feature = "e2e")]
 mod e2e;
@@ -36,7 +33,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR] | link-size";
+     | pin-catalog [--check] | e2e [DIR] | link-size";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -48,8 +45,6 @@ fn main() -> ExitCode {
         ["manifest", dir, "--tag", tag] => release::manifest(Path::new(dir), Some(tag)),
         ["publish", dir, tag] => release::publish(Path::new(dir), tag),
         ["npm-publish", tag] => npm::publish(tag),
-        ["pin-backends"] => backends::pin(false),
-        ["pin-backends", "--check"] => backends::pin(true),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
         #[cfg(feature = "e2e")]

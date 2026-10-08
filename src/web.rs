@@ -41,7 +41,7 @@ impl WebEngine {
         self.engine
             .backends()
             .into_iter()
-            .map(str::to_owned)
+            .map(|backend| backend.id.to_owned())
             .collect()
     }
 
