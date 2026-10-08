@@ -180,8 +180,8 @@ fn a_family_file_is_read_strictly() {
     fails("an unknown capability", &|family| {
         family["models"][0]["capabilities"] = serde_json::json!(["llm"]);
     });
-    fails("an unknown precision", &|family| {
-        family["models"][0]["builds"][0]["precision"] = "q4f16".into();
+    fails("a precision that is not a name", &|family| {
+        family["models"][0]["builds"][0]["precision"] = serde_json::json!({"name": "q5_1"});
     });
     fails("an unknown memory source", &|family| {
         family["models"][0]["builds"][0]["memory"]["source"] = "guessed".into();

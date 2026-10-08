@@ -6,7 +6,7 @@ use serde::Deserialize;
 mod build;
 mod capability;
 
-pub use build::{Build, Memory, MemorySource, ModelFile, Precision, Requires};
+pub use build::{Build, Memory, MemorySource, ModelFile, Requires};
 pub use capability::Capability;
 
 /// A model, with every build of it the catalogue knows. Languages and licence are the model's, not its family's: they

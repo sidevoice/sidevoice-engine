@@ -200,7 +200,8 @@ cargo xtask pin-backends --check   # what CI runs when backends.json changes
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
 (`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
 model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and `license`; a build, its `id`, the
-`backend` that runs it, its `precision`, `requires` (hard constraints only, and optional: the only `accelerators` it
+`backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
+`requires` (hard constraints only, and optional: the only `accelerators` it
 can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `source` of the figure, `estimated`,
 `declared` or `measured`, and its `basis`), and its `files`. Each file has the `key` the backend finds it by, a `url`,
 its `sha256` and its `bytes`; when the url is an archive, `archive_path` names the file or directory inside it, and
