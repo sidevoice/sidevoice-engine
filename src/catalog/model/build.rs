@@ -39,8 +39,11 @@ pub struct Requires {
     /// WebGPU features the adapter must have, as WebGPU names them: "shader-f16", ...
     #[serde(default)]
     pub webgpu_features: Vec<String>,
-    /// On WebAssembly, the most memory it may take, in MB: wasm32 cannot hand out more than about 2 GiB at once. In a page,
-    /// a build whose `memory` is more is rejected (`wasm-memory`).
+    /// On WebAssembly, the most memory it may take, in MB: a cap declared for the build, not measured from the page.
+    /// wasm32's linear memory tops out at 4 GiB (what Chrome allows; mobile browsers give a page far less), and a model
+    /// fits in less than that: ONNX Runtime Web reads its weights into ArrayBuffers (at most about 2 GB each in Chrome),
+    /// and an ONNX file over 2 GB needs external data. Today's transformers.js builds declare 2048. In a page, a build
+    /// whose `memory` is more is rejected (`wasm-memory`).
     pub wasm_max_mb: Option<u32>,
 }
 
