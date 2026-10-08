@@ -38,8 +38,8 @@
 //! either.
 //!
 //! Kokoro must stay off Core ML whatever the libraries: creating its TTS on Core ML throws a C++ exception that the
-//! C API does not catch, and an exception that reaches Rust aborts the process. `load` refuses it (a build with `kokoro.`
-//! keys) with `unsupported-accelerator` before creating it, and Kokoro's catalogue builds accept the CPU only.
+//! C API does not catch, and an exception that reaches Rust aborts the process. That is data, not code: Kokoro's
+//! catalogue builds require the CPU (`requires.accelerators`), so the resolver never offers one on Core ML.
 
 use async_trait::async_trait;
 
@@ -98,7 +98,7 @@ impl Library for Linked {
         files: &Installed,
     ) -> Result<Box<dyn LoadedModel>> {
         let kind = Kind::of(files)?;
-        let provider = provider_for(files, accelerator)?;
+        let provider = provider(accelerator)?;
         Ok(match kind {
             Kind::Stt => Box::new(Recognizer::load(&config::recognizer(files, provider)?)?),
             Kind::Tts => Box::new(Synthesizer::load(&config::tts(files, provider)?, files)?),
@@ -130,17 +130,6 @@ impl Kind {
             Err(Error::new("unsupported-model"))
         }
     }
-}
-
-/// The execution provider `files`' model runs on with `accelerator`, or `unsupported-accelerator`, checked before the
-/// model is created: a Kokoro model (`kokoro.` keys) on Core ML throws from inside the library, which aborts the
-/// process (see *Accelerators*).
-fn provider_for(files: &Installed, accelerator: Accelerator) -> Result<&'static str> {
-    let kokoro = files.files.keys().any(|key| key.starts_with("kokoro."));
-    if kokoro && accelerator != Accelerator::Cpu {
-        return Err(Error::new("unsupported-accelerator"));
-    }
-    provider(accelerator)
 }
 
 /// ONNX Runtime's name for `accelerator`'s execution provider, or `unsupported-accelerator` for one this backend does

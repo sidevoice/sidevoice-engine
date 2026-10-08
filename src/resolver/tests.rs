@@ -174,3 +174,35 @@ fn a_build_runs_only_on_accelerators_it_requires_in_the_backends_order() {
         build_accelerator
     );
 }
+
+/// Kokoro on Core ML aborts the process (sherpa-onnx's library throws where its C API catches nothing): the bundled
+/// catalogue's Kokoro builds require the CPU, so even a sherpa-onnx that offered Core ML runs them on the CPU.
+#[test]
+fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
+    let source = crate::BundledCatalog;
+    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let offers = Resolver::default().offers(
+        &catalog,
+        &[FixedProbeBackend::probing(COREML_AND_CPU)],
+        &caps(COREML_AND_CPU, Some(16_384), Some(8)),
+        Capability::Tts,
+    );
+    let kokoro: Vec<_> = offers
+        .iter()
+        .filter_map(|offer| match offer {
+            Offer::Offered {
+                model,
+                build,
+                accelerator,
+                ..
+            } if model.id.starts_with("kokoro") && build.backend == "sherpa-onnx" => {
+                Some(*accelerator)
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(!kokoro.is_empty(), "a Kokoro build on sherpa-onnx");
+    assert!(kokoro
+        .iter()
+        .all(|accelerator| *accelerator == Accelerator::Cpu));
+}

@@ -22,6 +22,7 @@ mod catalog;
 mod link_size;
 mod npm;
 mod release;
+mod sherpa_fields;
 mod sherpa_libs;
 
 use std::path::{Path, PathBuf};
