@@ -113,6 +113,149 @@
           }
         }
       ]
+    },
+    {
+      "id": "supertonic-2",
+      "capabilities": [
+        "tts"
+      ],
+      "parameters_m": 66,
+      "languages": [
+        "en",
+        "ko",
+        "es",
+        "pt",
+        "fr"
+      ],
+      "license": "OpenRAIL-M",
+      "builds": [
+        {
+          "id": "supertonic-2/transformers-js-fp32",
+          "backend": "transformers-js",
+          "precision": "fp32",
+          "files": [
+            {
+              "key": "config",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/config.json",
+              "sha256": "37cdafab327b4360e0d6911956bfb3ca3d7254b53749e06ca41ab422d7686259",
+              "bytes": 247
+            },
+            {
+              "key": "tokenizer",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/tokenizer.json",
+              "sha256": "b9710df13c8902143c0eb4329e6be9fe0baf61b84f5d5c9d83a3dc1eb88fad0c",
+              "bytes": 5658
+            },
+            {
+              "key": "tokenizer_config",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/tokenizer_config.json",
+              "sha256": "87dad35dfef4b41ef8bb92723e2fc040b91d3fdf770ee5f4716fa5d4896f7a68",
+              "bytes": 119
+            },
+            {
+              "key": "text_encoder",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/onnx/text_encoder.onnx",
+              "sha256": "3a53aa40a2073a7f25a8dd98dddcebff38f25d3aad9c112f5bd750f4cc7c2167",
+              "bytes": 433173
+            },
+            {
+              "key": "text_encoder_data",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/onnx/text_encoder.onnx_data",
+              "sha256": "8cea29265492576cc96bc9ebcd3ff9b4b8c5780dcbe09b57e937f5775e679354",
+              "bytes": 28530432
+            },
+            {
+              "key": "latent_denoiser",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/onnx/latent_denoiser.onnx",
+              "sha256": "da03dd73010f771ec5803135ac3ffa2521c507245524c9d8c590e9b64446c3fa",
+              "bytes": 397050
+            },
+            {
+              "key": "latent_denoiser_data",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/onnx/latent_denoiser.onnx_data",
+              "sha256": "46a4928912fb925d49f5bea6db9c5b293f09ebf6317a9ad7a77792fd6b9bffef",
+              "bytes": 132098880
+            },
+            {
+              "key": "voice_decoder",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/onnx/voice_decoder.onnx",
+              "sha256": "6f160a42ce339c00a31e616200c81fe5763713319913e7013162facdf12411d6",
+              "bytes": 59730
+            },
+            {
+              "key": "voice_decoder_data",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/onnx/voice_decoder.onnx_data",
+              "sha256": "2c5bd8856cb31934008e6b8e60e410e46f1fa1c0d112dec7f5dfd60bb78338f3",
+              "bytes": 101353472
+            },
+            {
+              "key": "voices/F1",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F1.bin",
+              "sha256": "29996535c3f45e4a7817a77a95146aa7adca23a9441fdf96dcb494fa3001ced2",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/F2",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F2.bin",
+              "sha256": "741a38f11c88170435f0eea3273dfe545550a05121d66510b3daf79c1cb671ed",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/F3",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F3.bin",
+              "sha256": "d5e253074af8408fda21740f2f28cac5071ca7afd4ef5bc25964d7c037e44817",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/F4",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F4.bin",
+              "sha256": "51883eb879138c774b845bfb7f45ec9f1ca2329851f2a55921700d1f4fbd336e",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/F5",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F5.bin",
+              "sha256": "e7a5f1d98c34d5ccf98f6630647fa34d0977e2eaff3f21e417db38add593067f",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/M1",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M1.bin",
+              "sha256": "a8060d77a1b44decd3d594655bc54fd8ecc6c894e7072d031b05f0d1047d5492",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/M2",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M2.bin",
+              "sha256": "67566aa5c0c027b323c5dcaf1ffaf0d7f0ac465718b40e505b8d6aae7d3b5ca8",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/M3",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M3.bin",
+              "sha256": "59346499e139d9274ba1c5f0fc613e3ece97573d80d85503105f383abd9beea0",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/M4",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M4.bin",
+              "sha256": "4a87edec2d5f772ca947f14a1d70f06c3f4f00767db61eef0272cc040842393d",
+              "bytes": 51712
+            },
+            {
+              "key": "voices/M5",
+              "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M5.bin",
+              "sha256": "d1cd16f1c7c14775450302a28a735ee7f92d37be8c83522806932196189be431",
+              "bytes": 51712
+            }
+          ],
+          "memory": {
+            "mb": 330,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        }
+      ]
     }
   ]
 }
