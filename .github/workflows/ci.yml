@@ -8,8 +8,8 @@ name: ci
 # on every native target through the sherpa-onnx backend (test-inference), and what linking it costs is measured
 # (link-size).
 on:
+  # Into any branch, so a pull request stacked on another is checked before its base merges.
   pull_request:
-    branches: [main]
   # release-please.yml dispatches it on the release PR, whose pushes start no workflow.
   workflow_dispatch:
 
