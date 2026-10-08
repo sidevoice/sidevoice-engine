@@ -15,7 +15,7 @@ use sha2::Digest;
 use crate::{
     async_trait, Accelerator, Artifact, Build, Capabilities, Capability, CatalogFragment,
     CatalogSource, Download, Error, Family, Fetcher, Host, Memory, MemorySource, Model, ModelFile,
-    Precision, Requires, Result, Runs, Storage, StorageWriter, TreeWriter,
+    Requires, Result, Runs, Storage, StorageWriter, TreeWriter,
 };
 
 pub(crate) struct FakeHost;
@@ -422,7 +422,7 @@ pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> Build {
     Build {
         id: id.to_owned(),
         backend: backend.to_owned(),
-        precision: Precision::Int8,
+        precision: "int8".to_owned(),
         requires: Requires::default(),
         memory: Memory {
             mb: memory_mb,
