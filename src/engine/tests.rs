@@ -184,7 +184,7 @@ impl Backend for FakeBackend {
     }
 
     async fn open(&self, files: &Installed) -> Result<Box<dyn Library>> {
-        // In the build's folder, under the last segment of its URL.
+        // In the build's folder, under the name its URL gives it.
         let library = files.file("library").expect("the library");
         assert!(
             library.starts_with("memory:models/") && library.ends_with("/library"),

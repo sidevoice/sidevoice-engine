@@ -4,7 +4,7 @@
 
 use std::sync::Mutex;
 
-use super::{file_name, member_path, Artifact, Cancel, Installed, Installer, Progress};
+use super::{file_path, member_path, Artifact, Cancel, Installed, Installer, Progress};
 use crate::test_support::{artifact, block_on, member, sha256, MemoryHost};
 #[cfg(native)]
 use crate::test_support::{bzip2, tar, TarEntry};
@@ -271,18 +271,32 @@ fn malformed_digests_conflicting_keys_and_unplaceable_files_are_refused_before_d
 }
 
 #[test]
-fn a_file_is_named_after_the_last_segment_of_its_url() {
-    let named = |url| file_name(url);
+fn a_file_sits_where_its_url_puts_it_in_its_repository() {
+    // A Hugging Face file: its path in the repository, subfolders and all.
     assert_eq!(
-        named("https://hf.co/repo/resolve/abc/tiny-encoder.int8.onnx"),
+        file_path("https://huggingface.co/org/repo/resolve/abc123/onnx/model_q8.onnx"),
+        Some("onnx/model_q8.onnx".to_owned())
+    );
+    assert_eq!(
+        file_path("https://hf.co/repo/resolve/abc/tiny-encoder.int8.onnx?download=1#top"),
         Some("tiny-encoder.int8.onnx".to_owned())
     );
+    // A release asset: its name.
     assert_eq!(
-        named("https://host/model.onnx?download=1#top"),
-        Some("model.onnx".to_owned())
+        file_path(
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro.tar.bz2"
+        ),
+        Some("kokoro.tar.bz2".to_owned())
     );
-    for url in ["https://host/", "https://host/..", "no-slash"] {
-        assert_eq!(named(url), None, "{url}");
+    for url in [
+        "https://host/",
+        "https://host/..",
+        "no-slash",
+        "https://hf.co/repo/resolve/abc",
+        "https://hf.co/repo/resolve/abc/../escape",
+        "https://hf.co/repo/resolve/abc/a\\b",
+    ] {
+        assert_eq!(file_path(url), None, "{url}");
     }
 }
 

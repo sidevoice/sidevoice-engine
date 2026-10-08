@@ -99,8 +99,9 @@ let handle = engine.prepare(&selection, &|progress: Progress| report(progress), 
   SHA-256; `key` is only the name the backend finds it by.
 - **Storage is laid out as Hugging Face's hub cache.** Each file is a blob, `blobs/<sha256>`, stored once whichever
   builds or versions use it, so it is never downloaded twice. Each build has its folder, `models/<build id>/`, where
-  every file sits under its original name (the last segment of its URL, or its path inside its archive), so a
-  backend whose engine expects a model directory, or looks at names and extensions, finds what it expects; `load`
+  every file sits under its original name: its path in its Hugging Face repository (`onnx/model_q8.onnx`, as the
+  hub's own snapshot folders keep it), a release asset's name, or its path inside its archive. So a backend whose
+  engine expects a model directory, or looks at names, extensions and subfolders, finds what it expects; `load`
   gets those paths. Natively a folder's files are hard links to the blobs (no privilege needed, and on one volume,
   since everything is under the data directory); where the file system refuses a link, the file is copied, which
   costs the space twice and works the same. The browser's OPFS has no links: there the folder will hold a copy of

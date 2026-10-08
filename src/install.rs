@@ -6,11 +6,12 @@
 //! Storage is laid out as Hugging Face's hub cache. Each file is a blob stored under its digest, once, whichever builds
 //! use it: a file shared by two builds, or unchanged across a version, is downloaded once, and a blob is only stored
 //! once its bytes hash to its name. Each build has its folder, named after the build's id, where every file sits under
-//! its original name (the last segment of its URL), as a link to its blob: so a backend whose engine expects a model
-//! directory, or looks at file names and extensions, finds what it expects. [`Installed`] is where each key's file is
-//! in that folder, and a build is installed when its folder is stored, which happens only once every file is in it.
-//! Files stay on disk when their models leave memory; [`Installer::uninstall`] removes a build's folder, and each of
-//! its blobs no other folder links.
+//! its original name, as a link to its blob: its path in its Hugging Face repository (`onnx/model_q8.onnx`, as the
+//! hub's snapshot folders keep it), the name of a release asset, or its path inside its archive. So a backend whose
+//! engine expects a model directory, or looks at file names and extensions, finds what it expects. [`Installed`] is
+//! where each key's file is in that folder, and a build is installed when its folder is stored, which happens only
+//! once every file is in it. Files stay on disk when their models leave memory; [`Installer::uninstall`] removes a
+//! build's folder, and each of its blobs no other folder links.
 //!
 //! An artifact with an `archive_path` is a member of an archive: several keys may share one archive (the same `url`
 //! and `sha256`), each naming its own member. Each distinct archive is downloaded once, checked against its digest,
@@ -23,7 +24,7 @@
 //! - `digest-invalid`: a file's digest is not a SHA-256 in lowercase hex.
 //! - `artifact-key-conflict`: two files of the build have the same name.
 //! - `archive-path-invalid`: a file's path inside its archive is not a plain relative path.
-//! - `file-name-invalid`: a file's URL does not end in a usable file name.
+//! - `file-name-invalid`: a file's URL does not give a usable file name.
 //! - `file-path-conflict`: two files of the build would sit at the same place in its folder.
 //! - `archive-unsupported`: this build cannot unpack archives (the web build: archives come only with native-only
 //!   builds).
@@ -206,16 +207,16 @@ impl Installer {
     }
 }
 
-/// Where each artifact sits in the build's folder: a member at its path inside the archive, a file under the last
-/// segment of its URL. Fails with `file-name-invalid` for a URL that ends in no usable name, and `file-path-conflict`
-/// when two different files would sit at one place.
+/// Where each artifact sits in the build's folder: a member at its path inside the archive, a file where its URL puts it
+/// ([`file_path`]). Fails with `file-name-invalid` for a URL that gives no usable path, and `file-path-conflict` when
+/// two different files would sit at one place.
 fn paths(artifacts: &[Artifact], members: &[Option<String>]) -> Result<Vec<String>> {
     let mut placed = BTreeMap::new();
     let mut paths = Vec::new();
     for (artifact, member) in artifacts.iter().zip(members) {
         let path = match member {
             Some(member) => member.clone(),
-            None => file_name(&artifact.url).ok_or(Error::new("file-name-invalid"))?,
+            None => file_path(&artifact.url).ok_or(Error::new("file-name-invalid"))?,
         };
         let what = (artifact.sha256.as_str(), member.as_deref());
         if *placed.entry(path.clone()).or_insert(what) != what {
@@ -226,9 +227,16 @@ fn paths(artifacts: &[Artifact], members: &[Option<String>]) -> Result<Vec<Strin
     Ok(paths)
 }
 
-/// The file name a URL ends in, without its query or fragment, if it is a plain one.
-fn file_name(url: &str) -> Option<String> {
+/// Where a downloaded file sits in its build's folder, from its URL (without its query or fragment): for a Hugging
+/// Face file (`…/resolve/<revision>/<path>`), its path in the repository, as the hub's own snapshot folders keep it
+/// (`onnx/model_q8.onnx`, which transformers.js and mlx-audio look for); for any other URL, a GitHub release asset
+/// among them, its last segment. `None` unless that is a plain relative path ([`member_path`]).
+fn file_path(url: &str) -> Option<String> {
     let url = url.split(['?', '#']).next()?;
+    if let Some((_, revision_and_path)) = url.split_once("/resolve/") {
+        let (_, path) = revision_and_path.split_once('/')?;
+        return member_path(path);
+    }
     let (_, name) = url.rsplit_once('/')?;
     member_path(name).filter(|name| !name.contains('/'))
 }
