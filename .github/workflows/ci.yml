@@ -6,8 +6,8 @@ name: ci
 # publishes (release.yml). Which backends a build contains is checked here, per target (src/backend/tests.rs, and in the
 # packaged build by npm-smoke); whether they work on a given machine is never: that is each backend's probe().
 on:
+  # Into any branch, so a pull request stacked on another is checked before its base merges.
   pull_request:
-    branches: [main]
   # release-please.yml dispatches it on the release PR, whose pushes start no workflow.
   workflow_dispatch:
 
