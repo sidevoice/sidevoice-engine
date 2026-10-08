@@ -161,18 +161,18 @@ fn its_directory_stores_a_tree_only_once_committed_and_finds_its_members() {
     let host = NativeHost::new(&scratch.0).expect("host");
     let storage = host.storage();
 
-    let mut dropped = block_on(storage.create_tree("tree")).expect("tree");
-    block_on(dropped.file("lib/half.so")).expect("file");
+    let mut dropped = storage.create_tree("tree").expect("tree");
+    dropped.file("lib/half.so").expect("file");
     drop(dropped);
     assert_eq!(entries(&scratch.0.join("partial")), 0);
     assert_eq!(block_on(storage.find("tree")), Ok(None));
 
-    let mut tree = block_on(storage.create_tree("tree")).expect("tree");
-    block_on(tree.directory("data/empty")).expect("directory");
-    block_on(tree.file("lib/libfake.so")).expect("file");
-    block_on(tree.write(b"a lib")).expect("written");
-    block_on(tree.write(b"rary")).expect("written");
-    let location = block_on(tree.commit()).expect("committed");
+    let mut tree = storage.create_tree("tree").expect("tree");
+    tree.directory("data/empty").expect("directory");
+    tree.file("lib/libfake.so").expect("file");
+    tree.write(b"a lib").expect("written");
+    tree.write(b"rary").expect("written");
+    let location = tree.commit().expect("committed");
     assert_eq!(Path::new(&location), scratch.0.join("files").join("tree"));
 
     let library = block_on(storage.find_member("tree", "lib/libfake.so"))
@@ -215,6 +215,11 @@ fn its_directory_reads_a_stored_file_back() {
         back.extend(part);
     }
     assert_eq!(back, bytes);
+
+    let mut opened = Vec::new();
+    std::io::Read::read_to_end(&mut storage.open("file").expect("opened"), &mut opened)
+        .expect("read");
+    assert_eq!(opened, bytes);
 }
 
 #[test]
@@ -258,10 +263,10 @@ fn a_name_stored_twice_is_stored_once_and_leaves_nothing_partial_whether_file_or
         let mut file = block_on(storage.create("same")).expect("writer");
         block_on(file.write(b"bytes")).expect("written");
         block_on(file.commit()).expect("committed, the second time too");
-        let mut tree = block_on(storage.create_tree("same-unpacked")).expect("tree");
-        block_on(tree.file("a/b")).expect("file");
-        block_on(tree.write(b"member")).expect("written");
-        block_on(tree.commit()).expect("committed, the second time too");
+        let mut tree = storage.create_tree("same-unpacked").expect("tree");
+        tree.file("a/b").expect("file");
+        tree.write(b"member").expect("written");
+        tree.commit().expect("committed, the second time too");
     }
     assert_eq!(entries(&partial), 0);
     let member = block_on(storage.find_member("same-unpacked", "a/b")).expect("found");

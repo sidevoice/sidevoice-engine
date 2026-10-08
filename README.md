@@ -77,7 +77,9 @@ take some of them, which it says as a hard constraint (`"requires": {"accelerato
 
 ## Using a model, and what stays in memory
 
-A native app builds its host on a directory of its own and hands it to the engine:
+A native app builds its host on a directory of its own and hands it to the engine. The native engine's futures expect a
+**Tokio runtime** (the app's own, as sidevoice-core and the desktop app have): downloads go through `reqwest`, and
+archives are unpacked on Tokio's blocking threads.
 
 ```rust
 let host = NativeHost::new(app_data_dir.join("engine"))?;
@@ -108,8 +110,8 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
 - **`NativeHost`** (`src/host/native.rs`) takes one parameter, the data directory, which it creates. It reports `os`
   and `arch` from `std::env::consts`, `cores` from `available_parallelism`, the machine's memory (or its cgroup's
   limit) from `sysinfo`, and `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver is
-  installed. It downloads over HTTPS with `ureq` and rustls: a blocking client on a thread per download, so the
-  engine's futures need no particular async runtime.
+  installed. It downloads over HTTPS with `reqwest` and rustls, the HTTP client sidevoice-core and the desktop app
+  use, streaming each body as it arrives.
 - **The installer does not know what a file is.** A build's model files (catalogue) and its backend's files
   (`backends.json`) are one list of artifacts. Each is stored under its SHA-256 (content-addressed), checked as it
   arrives, and only stored whole once it matches; `key` is only the name the backend finds it by. A file already
@@ -121,7 +123,9 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
   of its tarball). Each distinct archive is downloaded once, checked against its digest, and only then unpacked,
   once, into a tree stored under its digest; the archive itself is then removed. Unpacking takes directories and
   regular files only (no links of any kind), refuses any path that leaves the tree, and bounds the total size and
-  the number of entries.
+  the number of entries. The tar format is read by the `tar` crate, from storage, on a blocking thread. Archives
+  come only with native-only builds (sherpa-onnx's release assets): the web build refuses them before downloading,
+  with `archive-unsupported`.
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
 

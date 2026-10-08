@@ -30,12 +30,17 @@ fn malformed_digests_are_refused() {
 }
 
 #[test]
-fn a_key_naming_two_files_or_two_members_is_refused() {
+fn a_key_naming_two_files_is_refused() {
     let conflicting = [
         artifact("model.onnx", "https://models/model.onnx", MODEL),
         artifact("model.onnx", "https://models/other", b"other"),
     ];
     assert_eq!(code(&conflicting), "artifact-key-conflict");
+}
+
+#[test]
+#[cfg(native)]
+fn a_key_naming_two_members_is_refused() {
     let two = [
         member("model", KOKORO, ARCHIVE, "kokoro/model.onnx"),
         member("model", KOKORO, ARCHIVE, "kokoro/espeak-ng-data"),
@@ -44,6 +49,7 @@ fn a_key_naming_two_files_or_two_members_is_refused() {
 }
 
 #[test]
+#[cfg(native)]
 fn archive_paths_must_stay_inside_and_are_normalised() {
     for path in ["../outside", "/kokoro/model.onnx", ""] {
         assert_eq!(
@@ -58,6 +64,15 @@ fn archive_paths_must_stay_inside_and_are_normalised() {
     ])
     .expect("checked");
     assert_eq!(members, [Some("kokoro/model.onnx".to_owned()), None]);
+}
+
+#[test]
+#[cfg(web)]
+fn archives_are_refused_on_the_web() {
+    assert_eq!(
+        code(&[member("model", KOKORO, ARCHIVE, "kokoro/model.onnx")]),
+        "archive-unsupported"
+    );
 }
 
 #[test]

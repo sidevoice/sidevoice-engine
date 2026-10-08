@@ -19,6 +19,8 @@
 //! - `digest-invalid`: a file's digest is not a SHA-256 in lowercase hex.
 //! - `artifact-key-conflict`: two files of the build have the same name.
 //! - `archive-path-invalid`: a file's path inside its archive is not a plain relative path.
+//! - `archive-unsupported`: this build cannot unpack archives (the web build: archives come only with native-only
+//!   builds).
 //! - `digest-mismatch`: a downloaded file is not the one expected.
 //! - `archive-corrupt`: an archive could not be read.
 //! - `archive-entry-unsupported`: an archive holds something that is not a plain file or directory inside it.
@@ -29,14 +31,15 @@
 //!   stored).
 //!
 //! Inside, the steps (`plan`: what is wanted, checked before anything is downloaded; `download`: one file fetched,
-//! verified and committed; `archive`: unpacking, safely) and what they share (`progress`, what the installer reports
-//! as it goes; `cancel`, how it is stopped; `digest`, SHA-256).
+//! verified and committed; `archive`: unpacking, safely, in native builds) and what they share (`progress`, what the
+//! installer reports as it goes; `cancel`, how it is stopped; `digest`, SHA-256).
 
 use std::collections::BTreeMap;
 
 use crate::host::{Host, Storage};
 use crate::{Error, Result};
 
+#[cfg(native)]
 mod archive;
 mod cancel;
 mod digest;
@@ -97,8 +100,8 @@ impl Installer {
     ///
     /// # Errors
     ///
-    /// The codes listed above. `digest-invalid`, `artifact-key-conflict` and `archive-path-invalid` are found before
-    /// anything is downloaded.
+    /// The codes listed above. `digest-invalid`, `artifact-key-conflict`, `archive-path-invalid` and
+    /// `archive-unsupported` are found before anything is downloaded.
     pub(crate) async fn install(
         &self,
         artifacts: &[Artifact],
@@ -194,10 +197,64 @@ impl Installer {
     }
 }
 
-/// Unpacks the stored archive `sha256` into its tree.
+/// Unpacks the stored archive `sha256` into its tree, on one of Tokio's blocking threads: `tar` reads synchronously.
+/// Dropping the future stops the unpacking at its next part, and the tree is discarded.
+#[cfg(native)]
 async fn unpack(storage: &dyn Storage, sha256: &str, cancel: &Cancel) -> Result<()> {
-    let archive = storage.read(sha256).await?;
-    let mut tree = storage.create_tree(&plan::unpacked(sha256)).await?;
-    archive::unpack(archive, tree.as_mut(), archive::Limits::DEFAULT, cancel).await?;
-    tree.commit().await.map(drop)
+    /// Stops the unpacking when the future that waits for it is dropped.
+    struct StopOnDrop(Cancel);
+    impl Drop for StopOnDrop {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+
+    let archive = storage.open(sha256)?;
+    let mut tree = storage.create_tree(&plan::unpacked(sha256))?;
+    let cancel = cancel.clone();
+    let stop = StopOnDrop(Cancel::new());
+    let stopped = stop.0.clone();
+    let unpacking = tokio::task::spawn_blocking(move || {
+        let check = || cancel.check().and_then(|()| stopped.check());
+        archive::unpack(archive, tree.as_mut(), archive::Limits::DEFAULT, &check)?;
+        tree.commit().map(drop)
+    });
+    let unpacked = match unpacking.await {
+        Ok(unpacked) => unpacked,
+        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+        // The runtime is shutting down.
+        Err(_) => Err(Error::new("cancelled")),
+    };
+    drop(stop);
+    unpacked
+}
+
+/// Archives are refused before anything is downloaded ([`check`]).
+#[cfg(web)]
+async fn unpack(_storage: &dyn Storage, _sha256: &str, _cancel: &Cancel) -> Result<()> {
+    Err(Error::new("archive-unsupported"))
+}
+
+/// `path` as a path inside a tree, if it is one: relative, `/`-separated, with `.` and empty segments dropped and no
+/// `..`, backslash, colon or control character; `None` otherwise, or if nothing is left. What an artifact's
+/// `archive_path` must be, and what an archive's entries must be named (`archive`).
+fn member_path(path: &str) -> Option<String> {
+    if path.starts_with('/') || path.len() > 4096 {
+        return None;
+    }
+    let mut segments = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => return None,
+            _ if segment
+                .chars()
+                .any(|c| c == '\\' || c == ':' || c.is_control()) =>
+            {
+                return None
+            }
+            _ => segments.push(segment),
+        }
+    }
+    (!segments.is_empty() && segments.len() <= 64).then(|| segments.join("/"))
 }

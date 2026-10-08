@@ -34,11 +34,9 @@ pub use catalog::{
     MemorySource, ModelEntry, ModelFile, Problem, Requires, Voice,
 };
 pub use engine::{Audio, ConfigError, Engine, LoadedModel, Model, ModelBuild, Stt, Tts};
+pub use host::{Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter};
 #[cfg(native)]
-pub use host::NativeHost;
-pub use host::{
-    Accelerator, Capabilities, Download, Fetcher, Host, Runs, Storage, StorageWriter, TreeWriter,
-};
+pub use host::{NativeHost, TreeWriter};
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
 pub use resolver::Reason;

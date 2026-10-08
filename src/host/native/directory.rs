@@ -79,16 +79,6 @@ impl Storage for Directory {
         }))
     }
 
-    async fn create_tree(&self, name: &str) -> Result<Box<dyn TreeWriter>> {
-        let target = self.path(name)?;
-        let partial = self.partial(name);
-        fs::create_dir(&partial).map_err(|_| failed())?;
-        Ok(Box::new(Tree {
-            file: None,
-            staged: Staged::new(partial, target),
-        }))
-    }
-
     async fn read(&self, name: &str) -> Result<Box<dyn Download>> {
         let file = File::open(self.path(name)?).map_err(|_| failed())?;
         let size = file.metadata().map_err(|_| failed())?.len();
@@ -106,6 +96,22 @@ impl Storage for Directory {
             Err(error) if error.kind() != ErrorKind::NotFound => Err(failed()),
             _ => Ok(()),
         }
+    }
+
+    fn open(&self, name: &str) -> Result<Box<dyn Read + Send>> {
+        Ok(Box::new(
+            File::open(self.path(name)?).map_err(|_| failed())?,
+        ))
+    }
+
+    fn create_tree(&self, name: &str) -> Result<Box<dyn TreeWriter>> {
+        let target = self.path(name)?;
+        let partial = self.partial(name);
+        fs::create_dir(&partial).map_err(|_| failed())?;
+        Ok(Box::new(Tree {
+            file: None,
+            staged: Staged::new(partial, target),
+        }))
     }
 }
 
@@ -186,14 +192,13 @@ struct Tree {
     staged: Staged,
 }
 
-#[async_trait]
 impl TreeWriter for Tree {
-    async fn directory(&mut self, path: &str) -> Result<()> {
+    fn directory(&mut self, path: &str) -> Result<()> {
         self.file = None;
         fs::create_dir_all(inside(&self.staged.partial, path)?).map_err(|_| failed())
     }
 
-    async fn file(&mut self, path: &str) -> Result<()> {
+    fn file(&mut self, path: &str) -> Result<()> {
         self.file = None;
         let path = inside(&self.staged.partial, path)?;
         if let Some(parent) = path.parent() {
@@ -203,12 +208,12 @@ impl TreeWriter for Tree {
         Ok(())
     }
 
-    async fn write(&mut self, bytes: &[u8]) -> Result<()> {
+    fn write(&mut self, bytes: &[u8]) -> Result<()> {
         let file = self.file.as_mut().ok_or_else(failed)?;
         file.write_all(bytes).map_err(|_| failed())
     }
 
-    async fn commit(mut self: Box<Self>) -> Result<String> {
+    fn commit(mut self: Box<Self>) -> Result<String> {
         let synced = self.file.take().map_or(Ok(()), |file| file.sync_all());
         self.staged.commit(synced)
     }

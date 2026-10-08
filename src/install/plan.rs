@@ -1,10 +1,10 @@
 //! What an install needs, worked out before anything is downloaded: every artifact checked (a well-formed digest, a
-//! plain relative archive path, no key naming two things), and the distinct digests it wants, whole, unpacked, or
+//! plain relative archive path, archives only where they can be unpacked, no key naming two things), and the distinct digests it wants, whole, unpacked, or
 //! both.
 
 use std::collections::BTreeMap;
 
-use super::{archive, digest, Artifact};
+use super::{digest, member_path, Artifact};
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -20,9 +20,10 @@ pub(super) struct Wanted<'a> {
     pub(super) unpacked: bool,
 }
 
-/// Every digest well formed, every archive path a plain relative path, and no key naming two different things.
-/// Returns each artifact's archive path, normalised. Fails with `digest-invalid`, `archive-path-invalid` or
-/// `artifact-key-conflict`.
+/// Every digest well formed, every archive path a plain relative path (and archives only where they can be unpacked),
+/// and no key naming two different things.
+/// Returns each artifact's archive path, normalised. Fails with `digest-invalid`, `archive-unsupported`,
+/// `archive-path-invalid` or `artifact-key-conflict`.
 pub(super) fn check(artifacts: &[Artifact]) -> Result<Vec<Option<String>>> {
     let mut keys = BTreeMap::new();
     let mut members = Vec::new();
@@ -33,7 +34,10 @@ pub(super) fn check(artifacts: &[Artifact]) -> Result<Vec<Option<String>>> {
         let member = match &artifact.archive_path {
             None => None,
             Some(path) => {
-                Some(archive::member_path(path).ok_or(Error::new("archive-path-invalid"))?)
+                if cfg!(web) {
+                    return Err(Error::new("archive-unsupported"));
+                }
+                Some(member_path(path).ok_or(Error::new("archive-path-invalid"))?)
             }
         };
         let named = (artifact.sha256.as_str(), member.clone());
