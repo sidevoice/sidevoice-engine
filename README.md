@@ -158,21 +158,33 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 ## Build and test
 
 You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C compiler for the native build (rustls'
-crypto, `ring`). A native build links sherpa-onnx statically: the `sherpa-onnx-sys` build script downloads its
-prebuilt static libraries for the target from sherpa-onnx's GitHub release (about 22 MB on Linux and macOS, kept in
-`target/sherpa-onnx-prebuilt/`; `SHERPA_ONNX_ARCHIVE_DIR` points it at archives you already have), and they need the
-C++ standard library the platform's C++ toolchain provides (libstdc++ on Linux). `--no-default-features` leaves the
-backend out. The native tests build and check this platform's backends; the one that downloads a real file through
-`NativeHost` is ignored unless asked for, and CI asks:
+crypto, `ring`). A native build links sherpa-onnx statically, and its prebuilt static libraries need the C++ standard
+library the platform's C++ toolchain provides (libstdc++ on Linux). `--no-default-features` leaves the backend out.
+
+Where those libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build script
+would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in
+`xtask/sherpa-onnx-libs.json`, unpacks its `lib/` into `~/.cache/sidevoice-engine/sherpa-onnx/` (or the directory
+given) and prints that directory; `SHERPA_ONNX_LIB_DIR` makes the build link it and download nothing. CI does exactly
+this (`.github/actions/setup`), so the build cache never holds the libraries. Without `SHERPA_ONNX_LIB_DIR`, the build
+script downloads them itself, unchecked, into `target/sherpa-onnx-prebuilt/`.
+
+```sh
+export SHERPA_ONNX_LIB_DIR="$(cargo xtask sherpa-libs)"
+cargo xtask sherpa-libs --pin     # after changing the crate's version: write the archives' digests from GitHub's
+cargo xtask sherpa-libs --check   # what link-size.yml runs when the dependencies or the pins change
+```
+
+The native tests build and check this platform's backends; the one that downloads a real file through `NativeHost` is
+ignored unless asked for, and CI asks:
 
 ```sh
 cargo test --locked
 cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests   # with the network, as CI
 ```
 
-The sherpa-onnx backend's tests that run real models install the models first, through the installer and `NativeHost`
-(about 150 MB, kept by digest in `target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips
-them; CI runs them on each native platform:
+The sherpa-onnx backend's tests that run real models download them first (about 250 MB, cached by digest in
+`target/test-models/`, or in `SIDEVOICE_TEST_MODELS`), so plain `cargo test` skips them; CI runs them on each
+native platform:
 
 ```sh
 cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
