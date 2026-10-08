@@ -1,6 +1,6 @@
-//! Where a host keeps files: by name, whole or not at all. A stored name is a file or a tree (a directory of files, an
-//! unpacked archive). Storage does not know what a file is: the installer names each one after its digest
-//! (content-addressed), and a name is only ever stored once its bytes have been checked.
+//! Where a host keeps files: by name, whole or not at all. A stored name is a file or, in a native build, a tree (a
+//! directory of files, an unpacked archive). Storage does not know what a file is: the installer names each one after
+//! its digest (content-addressed), and a name is only ever stored once its bytes have been checked.
 
 use async_trait::async_trait;
 
@@ -13,9 +13,13 @@ use crate::Result;
 ///
 /// Names are made of ASCII letters, digits, `-` and `_` (the installer uses lowercase hex digests). A path inside a
 /// tree is relative and `/`-separated, without empty, `.` or `..` segments (the installer checks it before it gets
-/// here). What is stored is stored whole or not at all: what [`Storage::create`] or [`Storage::create_tree`] writes is
+/// here). What is stored is stored whole or not at all: what [`Storage::create`] or `Storage::create_tree` writes is
 /// only stored under its name when it is committed. Errors are stable codes: `storage-failed` when the medium fails,
 /// `storage-name-invalid` for a name or a path that breaks the rules above.
+///
+/// Trees are unpacked archives, which only native builds install: in a native build
+/// (`#[cfg(not(target_arch = "wasm32"))]`), a storage also opens a stored file for reading and creates a tree, both
+/// synchronously, because the installer unpacks on a blocking thread of its own.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 pub trait Storage: MaybeSend + MaybeSync {
@@ -29,15 +33,20 @@ pub trait Storage: MaybeSend + MaybeSync {
     /// [committed](StorageWriter::commit); dropped before that, what was written is discarded.
     async fn create(&self, name: &str) -> Result<Box<dyn StorageWriter>>;
 
-    /// A new tree to be stored as `name`, written a file at a time. Nothing is stored as `name` until it is
-    /// [committed](TreeWriter::commit); dropped before that, what was written is discarded.
-    async fn create_tree(&self, name: &str) -> Result<Box<dyn TreeWriter>>;
-
     /// The file stored as `name`, a part at a time.
     async fn read(&self, name: &str) -> Result<Box<dyn Download>>;
 
     /// Removes the file or tree stored as `name`; nothing happens if there is none.
     async fn remove(&self, name: &str) -> Result<()>;
+
+    /// The file stored as `name`, read synchronously.
+    #[cfg(native)]
+    fn open(&self, name: &str) -> Result<Box<dyn std::io::Read + Send>>;
+
+    /// A new tree to be stored as `name`, written a file at a time, synchronously. Nothing is stored as `name` until
+    /// it is [committed](TreeWriter::commit); dropped before that, what was written is discarded.
+    #[cfg(native)]
+    fn create_tree(&self, name: &str) -> Result<Box<dyn TreeWriter>>;
 }
 
 /// A file being written to [`Storage`], stored under its name only when committed.
@@ -52,21 +61,20 @@ pub trait StorageWriter: MaybeSend {
     async fn commit(self: Box<Self>) -> Result<String>;
 }
 
-/// A tree being written to [`Storage`], stored under its name only when committed. Paths follow the rules of
-/// [`Storage`]; parent directories are created as needed.
-#[cfg_attr(native, async_trait)]
-#[cfg_attr(web, async_trait(?Send))]
-pub trait TreeWriter: MaybeSend {
+/// A tree being written to [`Storage`], synchronously, stored under its name only when committed. Paths follow the
+/// rules of [`Storage`]; parent directories are created as needed. Native builds only, as trees are.
+#[cfg(native)]
+pub trait TreeWriter: Send {
     /// Creates the directory at `path`.
-    async fn directory(&mut self, path: &str) -> Result<()>;
+    fn directory(&mut self, path: &str) -> Result<()>;
 
     /// Starts the file at `path`, empty: what [`TreeWriter::write`] writes goes into it, until the next file.
-    async fn file(&mut self, path: &str) -> Result<()>;
+    fn file(&mut self, path: &str) -> Result<()>;
 
     /// Appends `bytes` to the file started last.
-    async fn write(&mut self, bytes: &[u8]) -> Result<()>;
+    fn write(&mut self, bytes: &[u8]) -> Result<()>;
 
     /// Stores the tree under its name and says where it is kept, as [`Storage::find`] would. If another tree was
     /// stored under that name meanwhile, that one is kept: same name, same content.
-    async fn commit(self: Box<Self>) -> Result<String>;
+    fn commit(self: Box<Self>) -> Result<String>;
 }

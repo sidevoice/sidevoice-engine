@@ -27,8 +27,9 @@ use http::Http;
 /// - accelerators: `Cpu` always; `Metal` and `CoreMl` on macOS; `Cuda` where an NVIDIA driver is installed (Linux's
 ///   `/proc/driver/nvidia/version`, Windows' `nvcuda.dll`). Each backend's probe confirms what it can actually use.
 ///
-/// Downloads use a blocking HTTP client (`ureq`, with rustls) on a thread of their own, so the engine's futures run on
-/// whatever executor the app has, and none is required.
+/// Downloads go through `reqwest`, with rustls: the HTTP client sidevoice-core and the desktop app use. **The engine's
+/// futures expect a Tokio runtime** in a native build: `reqwest` needs one, and archives are unpacked on its blocking
+/// threads. Run them on the app's own runtime; outside one, they panic.
 #[derive(Debug)]
 pub struct NativeHost {
     capabilities: Capabilities,

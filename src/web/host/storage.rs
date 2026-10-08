@@ -1,4 +1,4 @@
-use crate::{async_trait, Download, Error, Result, Storage, StorageWriter, TreeWriter};
+use crate::{async_trait, Download, Error, Result, Storage, StorageWriter};
 
 /// The JavaScript host's storage (OPFS, IndexedDB, ...), as the engine sees it. Not bridged yet (#8): every call fails
 /// with `not-implemented`.
@@ -15,10 +15,6 @@ impl Storage for WebStorage {
     }
 
     async fn create(&self, _name: &str) -> Result<Box<dyn StorageWriter>> {
-        Err(Error::new("not-implemented"))
-    }
-
-    async fn create_tree(&self, _name: &str) -> Result<Box<dyn TreeWriter>> {
         Err(Error::new("not-implemented"))
     }
 
