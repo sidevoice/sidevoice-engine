@@ -33,7 +33,8 @@ pub(crate) trait LoadedModel: MaybeSend {
     reason = "the engine does not use a loaded model yet: only the tests do"
 )]
 pub(crate) trait SttModel {
-    /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it.
+    /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it. A backend may not pass it on yet:
+    /// sherpa-onnx's detects the language itself (sidevoice-engine#46).
     async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String>;
 }
 

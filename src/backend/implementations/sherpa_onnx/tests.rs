@@ -53,13 +53,16 @@ fn kind(files: &[(&str, &str)]) -> Result<Kind> {
 }
 
 #[test]
-fn the_family_follows_from_its_files_keys() {
-    assert_eq!(kind(&[("whisper.encoder", "e.onnx")]), Ok(Kind::Whisper));
+fn what_a_build_is_follows_from_its_files_keys() {
+    assert_eq!(kind(&[("whisper.encoder", "e.onnx")]), Ok(Kind::Stt));
     assert_eq!(kind(&[("kokoro.voices", "v.bin")]), Ok(Kind::Tts));
     assert_eq!(kind(&[]).unwrap_err().code, "unsupported-model");
     assert_eq!(
-        kind(&[("tokens", "t.txt")]).unwrap_err().code,
-        "unsupported-model"
+        kind(&[("tokens", "t.txt"), ("kokoro.model", "m.onnx")])
+            .unwrap_err()
+            .code,
+        "unsupported-model",
+        "a recognizer's field and a TTS's"
     );
 }
 

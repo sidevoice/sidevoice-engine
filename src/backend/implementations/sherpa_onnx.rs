@@ -22,9 +22,12 @@
 //! - Kokoro: `kokoro.model`, `kokoro.voices`, `kokoro.tokens` and `kokoro.data_dir` (espeak-ng's data, a directory),
 //!   under `OfflineTtsConfig.model`.
 //!
-//! What a build is follows from its keys ([`Kind::of`]), and only what sherpa-onnx's config does not cover is code:
-//! Whisper takes the language per call by a new recognizer (`whisper.rs`); every text-to-speech model is alike
-//! (`synthesizer.rs`), told a call's language as an espeak-ng voice where its config has espeak-ng's data.
+//! What a build is follows from its keys ([`Kind::of`]), and no model has code of its own: every speech-to-text model
+//! is alike (`recognizer.rs`), and so is every text-to-speech model (`synthesizer.rs`), told a call's language as an
+//! espeak-ng voice where its config has espeak-ng's data.
+//!
+//! A `language` passed to `transcribe` is not passed on to sherpa-onnx yet: Whisper detects the language of each turn.
+//! How a call's arguments reach a model's config is to be data, per build (sidevoice-engine#46).
 //!
 //! # Accelerators
 //!
@@ -50,13 +53,13 @@ mod config;
 #[cfg(test)]
 mod inference_tests;
 mod model_metadata;
+mod recognizer;
 mod synthesizer;
 #[cfg(test)]
 mod tests;
-mod whisper;
 
+use recognizer::Recognizer;
 use synthesizer::Synthesizer;
-use whisper::Whisper;
 
 struct SherpaOnnx;
 
@@ -97,7 +100,7 @@ impl Library for Linked {
         let kind = Kind::of(files)?;
         let provider = provider_for(files, accelerator)?;
         Ok(match kind {
-            Kind::Whisper => Box::new(Whisper::load(config::recognizer(files, provider)?)?),
+            Kind::Stt => Box::new(Recognizer::load(&config::recognizer(files, provider)?)?),
             Kind::Tts => Box::new(Synthesizer::load(&config::tts(files, provider)?, files)?),
         })
     }
@@ -106,26 +109,26 @@ impl Library for Linked {
 /// What a build is, for what its config does not cover: it follows from its files' keys (see *Files*).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
-    /// Whisper, which takes its language per call by a new recognizer (`whisper.rs`).
-    Whisper,
+    /// Any speech-to-text model (`recognizer.rs`).
+    Stt,
     /// Any text-to-speech model (`synthesizer.rs`).
     Tts,
 }
 
 impl Kind {
-    /// A `whisper.` key makes it Whisper; keys that are all fields of the TTS's config make it a TTS; anything else is
-    /// `unsupported-model`.
+    /// Keys that are all fields of the recognizer's config make it speech to text, all fields of the TTS's config text
+    /// to speech; anything else is `unsupported-model`.
     fn of(files: &Installed) -> Result<Self> {
-        let keys = || files.files.keys();
-        if keys().any(|key| key.starts_with("whisper.")) {
-            return Ok(Self::Whisper);
+        let all = |field: &dyn Fn(&str) -> bool| {
+            !files.files.is_empty() && files.files.keys().all(|key| field(key))
+        };
+        if all(&|key| config::stt_field(&mut Default::default(), key).is_some()) {
+            Ok(Self::Stt)
+        } else if all(&|key| config::tts_field(&mut Default::default(), key).is_some()) {
+            Ok(Self::Tts)
+        } else {
+            Err(Error::new("unsupported-model"))
         }
-        let mut model = sherpa_onnx::OfflineTtsModelConfig::default();
-        if !files.files.is_empty() && keys().all(|key| config::tts_field(&mut model, key).is_some())
-        {
-            return Ok(Self::Tts);
-        }
-        Err(Error::new("unsupported-model"))
     }
 }
 

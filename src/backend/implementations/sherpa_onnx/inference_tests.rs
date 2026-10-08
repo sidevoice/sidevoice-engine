@@ -246,7 +246,7 @@ fn whisper_transcribes_a_clip() {
     let text = ready(stt.transcribe(&prepared.clip, Some("en"))).expect("a transcript");
     println!("Whisper heard: {text:?}");
     assert_eq!(normalised(&text), prepared.clip_text);
-    // Detecting the language, and a regional tag, give the same text.
+    // The language is not passed on yet (sidevoice-engine#46): with it, without it, the same text.
     let detected = ready(stt.transcribe(&prepared.clip, None)).expect("a transcript");
     let regional = ready(stt.transcribe(&prepared.clip, Some("en-GB"))).expect("a transcript");
     assert_eq!(normalised(&detected), prepared.clip_text);
