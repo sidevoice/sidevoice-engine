@@ -11,7 +11,19 @@ description = "Build tooling for the engine: the npm package, the release assets
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
+# `sherpa-libs` unpacks sherpa-onnx's archive itself, as the engine does (the same crates), so that a laptop needs no
+# bzip2 tool.
+bzip2 = "=0.6.1"
+tar = { version = "0.4.46", default-features = false }
+# `sherpa-libs --pin` reads the pinned sherpa-onnx crate's config structs to generate the fields a build's files fill.
+syn = { version = "2", default-features = false, features = ["full", "parsing"] }
 # `cargo xtask e2e` runs the voice loop through the engine's public API, as an app does.
-sidevoice-engine = { path = ".." }
+sidevoice-engine = { path = "..", optional = true }
 # The runtime the loop runs the engine on: the native engine's downloads (reqwest) need Tokio.
-tokio = { version = "1.53.2", default-features = false, features = ["rt-multi-thread"] }
+tokio = { version = "1.53.2", default-features = false, features = ["rt-multi-thread"], optional = true }
+
+[features]
+default = ["e2e"]
+# `cargo xtask e2e` builds the engine, which links sherpa-onnx's libraries: `--no-default-features` leaves it out, so
+# that `sherpa-libs` can fetch those libraries before anything needs them (.github/actions/setup).
+e2e = ["dep:sidevoice-engine", "dep:tokio"]

@@ -1,8 +1,8 @@
 name: Set up the Rust build
 description: >-
-  Installs the pinned Rust toolchain (with rustfmt and Clippy) and restores the build cache. With `wasm: true`, also
-  the wasm32 target and the wasm-bindgen CLI (`wasm-bindgen`, and `wasm-bindgen-test-runner`, the wasm32 tests'
-  runner in .cargo/config.toml).
+  Installs the pinned Rust toolchain (with rustfmt and Clippy), restores the build cache and fetches sherpa-onnx's
+  prebuilt libraries (`cargo xtask sherpa-libs`). With `wasm: true`, also the wasm32 target and the wasm-bindgen CLI
+  (`wasm-bindgen`, and `wasm-bindgen-test-runner`, the wasm32 tests' runner in .cargo/config.toml).
 
 inputs:
   wasm:
@@ -25,13 +25,18 @@ runs:
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
         key: ${{ inputs.wasm == 'true' && 'wasm' || '' }}
-    # sherpa-onnx-sys downloads its static libraries into target/sherpa-onnx-prebuilt and links them from there. The
-    # cache restores that directory pruned (rust-cache keeps build, deps and .fingerprint), and with it the build
-    # script's output, so the script would neither run again nor download what is missing: forget both, so that it
-    # runs and fetches them.
-    - name: Forget sherpa-onnx-sys's build output
+    # sherpa-onnx's prebuilt static libraries, which the `sherpa-onnx` crate links: fetched once by `cargo xtask
+    # sherpa-libs`, checked against the digests in xtask/sherpa-onnx-libs.json, and kept outside target/, which
+    # rust-cache prunes. The build links them through SHERPA_ONNX_LIB_DIR, which the command exports, so
+    # sherpa-onnx-sys's build script downloads nothing. xtask without its default features: it must not build the
+    # engine (and sherpa-onnx-sys) before the libraries are there.
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/sidevoice-engine/sherpa-onnx
+        key: sherpa-onnx-libs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/sherpa-onnx-libs.json') }}
+    - name: sherpa-onnx's libraries
       shell: bash
-      run: rm -rf target/sherpa-onnx-prebuilt target/*/build/sherpa-onnx-sys-* target/*/.fingerprint/sherpa-onnx-sys-*
+      run: cargo run --quiet --locked --manifest-path xtask/Cargo.toml --no-default-features -- sherpa-libs
     # The CLI must be the version of the `wasm-bindgen` crate in Cargo.lock: bump both together. install-action
     # checks the release binary against the SHA-256 in its own manifest; no fallback to building it from source.
     # After the cache, so that no binary the cache restores stands in for this one.

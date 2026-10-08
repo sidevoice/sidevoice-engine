@@ -1,32 +1,14 @@
 //! The catalogue this repository ships: one file per family, `catalog/families/<family>.json` at the repository root,
 //! compiled in. Its files' URLs, sizes and digests, and its estimated memory, are written by `cargo xtask
 //! pin-catalog` from the Hugging Face and GitHub APIs, never by hand. The tests parse every file on every target,
-//! check the merge, and fail if a file in the directory is not listed here.
+//! check the merge, and check that each file's id is its name.
 
 use super::{CatalogFragment, CatalogSource, Family};
 use crate::{Error, Result};
 
-/// Every bundled family: the name of its file, and the file.
-const FAMILIES: &[(&str, &str)] = &[
-    (
-        "fastconformer",
-        include_str!("../../catalog/families/fastconformer.json"),
-    ),
-    ("kokoro", include_str!("../../catalog/families/kokoro.json")),
-    (
-        "parakeet",
-        include_str!("../../catalog/families/parakeet.json"),
-    ),
-    ("piper", include_str!("../../catalog/families/piper.json")),
-    (
-        "supertonic",
-        include_str!("../../catalog/families/supertonic.json"),
-    ),
-    (
-        "whisper",
-        include_str!("../../catalog/families/whisper.json"),
-    ),
-];
+/// Every bundled family: the name of its file, and the file. Listed by `build.rs`, from `catalog/families/` itself:
+/// adding a family is adding its file.
+const FAMILIES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/bundled_families.rs"));
 
 /// The catalogue bundled in the engine. Not included by default: whoever builds an [`Engine`](crate::Engine) passes
 /// it among its sources.

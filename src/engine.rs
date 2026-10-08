@@ -176,7 +176,8 @@ impl Engine {
         })
     }
 
-    /// Where `build` is now: being installed or loaded, failed, loaded, or else whether all its files are stored.
+    /// Where `build` is now: being installed or loaded, failed, loaded, or else whether its folder is stored (which it
+    /// only is with every file in it).
     ///
     /// # Errors
     ///
@@ -189,13 +190,11 @@ impl Engine {
         if let Some(state) = lock(&self.states).get(&build.id) {
             return Ok(state.clone());
         }
-        let (_, artifacts) = self.artifacts(build)?;
-        for artifact in &artifacts {
-            if self.host.storage().find(&artifact.sha256).await?.is_none() {
-                return Ok(BuildState::Absent);
-            }
-        }
-        Ok(BuildState::Installed)
+        self.artifacts(build)?;
+        Ok(match self.host.storage().find_folder(&build.id).await? {
+            Some(_) => BuildState::Installed,
+            None => BuildState::Absent,
+        })
     }
 
     /// Installs the selected build and loads it: only that backend is ever activated. The installer gets the model's
@@ -229,7 +228,7 @@ impl Engine {
         let result: Result<Handle> = async {
             let files = self
                 .installer
-                .install(&artifacts, self.host.as_ref(), progress, cancel)
+                .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
                 .await?;
             cancel.check()?;
             preparing.set(BuildState::Loading);
