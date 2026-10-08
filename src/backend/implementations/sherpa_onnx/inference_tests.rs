@@ -1,14 +1,19 @@
 //! Real models through the linked library: Whisper transcribes a clip whose text is known, Kokoro speaks, and what
-//! Kokoro says Whisper hears back. They download the models they need (about 150 MB: Whisper tiny.en and Kokoro, both
-//! int8, pinned in `inference_tests.json`), so they are ignored by default and CI's inference job runs them:
+//! Kokoro says Whisper hears back. And each catalogue build `inference_tests.json` names under `transcribe` is installed
+//! from the bundled catalogue, as an app installs it, and transcribes the shared clips it names (LibriSpeech in
+//! English, FLEURS in Spanish, both CC-BY-4.0) within the word error rate `max_wer`: adding such a test is one entry.
+//!
+//! They download the models they need (Whisper tiny.en and Kokoro, about 150 MB, then each build named; several GB),
+//! so they are ignored by default and CI's inference job runs them, with the plain tests beside them:
 //!
 //! ```sh
-//! cargo test --lib sherpa_onnx::inference_tests -- --ignored --nocapture
+//! cargo test --lib sherpa_onnx::inference_tests -- --include-ignored --nocapture
 //! ```
 //!
-//! Until the installer exists (it is the engine's, and generic), they stand in for it: each model file is downloaded with
-//! `curl`, checked against its digest, kept in a cache by digest (`target/test-models/`, or `SIDEVOICE_TEST_MODELS`),
-//! and the archives are unpacked there. They run on the CPU, the one accelerator the linked libraries have.
+//! The first three predate the installer: each of their files is downloaded with `curl`, checked against its digest,
+//! kept in a cache by digest (`target/test-models/`, or `SIDEVOICE_TEST_MODELS`), and the archives are unpacked there;
+//! the clips are kept there too. The catalogue builds are installed in a directory of their own, one at a time. They
+//! run on the CPU, the one accelerator the linked libraries have.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -34,6 +39,34 @@ struct Fixtures {
     clip: Clip,
     /// Kokoro's archive, and its files' paths inside it by their keys in `Installed`.
     kokoro: Archive,
+    /// The highest word error rate a transcription of [`Fixtures::clips`] may have.
+    max_wer: f32,
+    /// Clips of known text, by language: the shared fixtures of [`Fixtures::transcribe`].
+    clips: BTreeMap<String, NamedClip>,
+    /// Catalogue builds, each with the clips it must transcribe.
+    transcribe: Vec<Transcribe>,
+}
+
+/// A clip of known text, and where it comes from.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NamedClip {
+    url: String,
+    sha256: String,
+    text: String,
+    source: String,
+    license: String,
+}
+
+/// A build of the bundled catalogue, installed as an app installs it, and the clips it must transcribe; `note` says
+/// why a language it has is left out.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Transcribe {
+    build: String,
+    clips: Vec<String>,
+    #[serde(default)]
+    note: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -151,34 +184,41 @@ fn path_text(path: &Path) -> String {
     path.to_str().expect("a UTF-8 cache path").to_owned()
 }
 
-/// The samples of a 16-bit PCM WAV file at 16 kHz, mono, as floats in [-1, 1).
+/// The samples of a 16-bit PCM WAV file, mixed down to mono and resampled to 16 kHz, as floats in [-1, 1).
 fn wav_16k_mono(wav: &[u8]) -> Vec<f32> {
     let u16_at = |at: usize| u16::from_le_bytes([wav[at], wav[at + 1]]);
     let u32_at = |at: usize| u32::from_le_bytes([wav[at], wav[at + 1], wav[at + 2], wav[at + 3]]);
     assert_eq!((&wav[..4], &wav[8..12]), (&b"RIFF"[..], &b"WAVE"[..]));
     let mut at = 12;
-    let mut format_ok = false;
+    let mut format = None;
     while at + 8 <= wav.len() {
         let (id, len) = (&wav[at..at + 4], u32_at(at + 4) as usize);
         let body = at + 8;
         match id {
             b"fmt " => {
-                // PCM, one channel, 16 kHz, 16 bits.
-                format_ok = (
-                    u16_at(body),
-                    u16_at(body + 2),
-                    u32_at(body + 4),
-                    u16_at(body + 14),
-                ) == (1, 1, 16_000, 16);
+                // PCM, 16 bits: its channels and rate.
+                assert_eq!((u16_at(body), u16_at(body + 14)), (1, 16), "16-bit PCM");
+                format = Some((usize::from(u16_at(body + 2)), u32_at(body + 4)));
             }
             b"data" => {
-                assert!(format_ok, "the clip is 16-bit PCM, mono, at 16 kHz");
-                return wav[body..body + len]
+                let (channels, rate) = format.expect("the format before the data");
+                let samples: Vec<f32> = wav[body..(body + len).min(wav.len())]
                     .as_chunks::<2>()
                     .0
-                    .iter()
-                    .map(|sample| f32::from(i16::from_le_bytes(*sample)) / 32_768.0)
+                    .chunks(channels)
+                    .map(|frame| {
+                        let sum: f32 = frame
+                            .iter()
+                            .map(|sample| f32::from(i16::from_le_bytes(*sample)) / 32_768.0)
+                            .sum();
+                        sum / frame.len() as f32
+                    })
                     .collect();
+                return if rate == 16_000 {
+                    samples
+                } else {
+                    to_16k(&samples, rate)
+                };
             }
             _ => {}
         }
@@ -293,4 +333,132 @@ fn whisper_hears_what_kokoro_says() {
     let heard = ready(stt.transcribe(&speech, Some("en"))).expect("a transcript");
     println!("Kokoro said {sentence:?}; Whisper heard {heard:?}");
     assert_eq!(normalised(&heard), normalised(sentence));
+}
+
+/// `text` for a word error rate: [`normalised`], with the acute and diaeresis accents of vowels folded (Whisper writes
+/// "Tierra" and "tierra", "movimiento" with or without them alike).
+fn words(text: &str) -> Vec<String> {
+    let folded: String = text
+        .chars()
+        .map(|c| match c {
+            'á' | 'Á' => 'a',
+            'é' | 'É' => 'e',
+            'í' | 'Í' => 'i',
+            'ó' | 'Ó' => 'o',
+            'ú' | 'Ú' | 'ü' | 'Ü' => 'u',
+            c => c,
+        })
+        .collect();
+    normalised(&folded)
+        .split(' ')
+        .filter(|word| !word.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The word error rate of `heard` against `said`: the words to substitute, insert or delete, over the words said.
+fn wer(said: &str, heard: &str) -> f32 {
+    let (said, heard) = (words(said), words(heard));
+    let mut row: Vec<usize> = (0..=heard.len()).collect();
+    for (i, word) in said.iter().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, other) in heard.iter().enumerate() {
+            let substituted = diagonal + usize::from(word != other);
+            diagonal = row[j + 1];
+            row[j + 1] = substituted.min(row[j] + 1).min(row[j + 1] + 1);
+        }
+    }
+    row[heard.len()] as f32 / said.len().max(1) as f32
+}
+
+#[test]
+fn the_word_error_rate_counts_edits_over_the_words_said() {
+    assert_eq!(wer("Hola, ¿qué tal?", "hola que tal"), 0.0);
+    assert_eq!(wer("one two three four", "one too three"), 0.5);
+    assert_eq!(wer("one", ""), 1.0);
+}
+
+/// Each catalogue build `inference_tests.json` names under `transcribe`, installed from the bundled catalogue through
+/// the engine's installer and `NativeHost`, as an app installs it, transcribes the clips it names within `max_wer`. One
+/// build at a time, uninstalled afterwards, so that the largest is all the disk holds. Every row is printed before the
+/// verdict.
+#[test]
+#[ignore = "downloads every build it names (several GB): cargo test --lib sherpa_onnx::inference_tests -- --ignored"]
+fn catalogue_builds_transcribe_the_clips_they_name() {
+    use crate::catalog::{BundledCatalog, CatalogSource, ModelFile};
+    use crate::host::NativeHost;
+    use crate::install::{Cancel, Installer};
+    use crate::test_support::block_on;
+
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("inference_tests.json")).expect("inference_tests.json");
+    let cache = std::env::var_os("SIDEVOICE_TEST_MODELS").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("target/test-models"),
+        PathBuf::from,
+    );
+    fs::create_dir_all(&cache).expect("the cache directory");
+    let catalogue = BundledCatalog.load().expect("the bundled catalogue");
+    let data = std::env::temp_dir().join(format!("sidevoice-inference-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&data);
+    let host = NativeHost::new(&data).expect("a host");
+
+    let mut failed = Vec::new();
+    println!("| build | clip | WER | heard | load s | transcribe s |");
+    for entry in &fixtures.transcribe {
+        let build = catalogue
+            .families
+            .iter()
+            .flat_map(|family| &family.models)
+            .flat_map(|model| &model.builds)
+            .find(|build| build.id == entry.build)
+            .unwrap_or_else(|| panic!("{}: not in the bundled catalogue", entry.build));
+        if let Some(note) = &entry.note {
+            println!("{}: {note}", build.id);
+        }
+        let artifacts: Vec<_> = build.files.iter().map(ModelFile::artifact).collect();
+        let installed =
+            block_on(Installer.install(&build.id, &artifacts, &host, &|_| {}, &Cancel::new()))
+                .unwrap_or_else(|error| panic!("{}: not installed: {}", build.id, error.code));
+        let started = std::time::Instant::now();
+        let library = ready(SherpaOnnx.open(&installed)).expect("the linked library");
+        let mut model = ready(library.load(build, Accelerator::Cpu, &installed))
+            .unwrap_or_else(|error| panic!("{}: not loaded: {}", build.id, error.code));
+        let loading = started.elapsed().as_secs_f32();
+        let stt = model.as_stt().expect("speech to text");
+        for language in &entry.clips {
+            let clip = &fixtures.clips[language];
+            let audio = wav_16k_mono(
+                &fs::read(downloaded(&cache, &clip.url, &clip.sha256)).expect("the clip"),
+            );
+            let started = std::time::Instant::now();
+            let heard = ready(stt.transcribe(&audio, Some(language))).map_err(|error| error.code);
+            let seconds = started.elapsed().as_secs_f32();
+            let heard = heard.unwrap_or_else(|code| format!("<{code}>"));
+            let rate = wer(&clip.text, &heard);
+            println!(
+                "| {} | {language} | {rate:.2} | {heard} | {loading:.1} | {seconds:.1} |",
+                build.id
+            );
+            if rate > fixtures.max_wer {
+                failed.push(format!(
+                    "{} {language}: WER {rate:.2} > {}",
+                    build.id, fixtures.max_wer
+                ));
+            }
+        }
+        drop(model);
+        drop(library);
+        block_on(Installer.uninstall(&build.id, &artifacts, crate::host::Host::storage(&host)))
+            .expect("uninstalled");
+    }
+    let _ = fs::remove_dir_all(&data);
+    for clip in fixtures.clips.values() {
+        assert!(
+            !clip.source.is_empty() && !clip.license.is_empty(),
+            "{}: its source and licence",
+            clip.url
+        );
+    }
+    assert!(failed.is_empty(), "{failed:#?}");
 }

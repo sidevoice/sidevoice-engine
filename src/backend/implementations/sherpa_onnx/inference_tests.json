@@ -30,5 +30,52 @@
       "kokoro.tokens": "kokoro-int8-en-v0_19/tokens.txt",
       "kokoro.data_dir": "kokoro-int8-en-v0_19/espeak-ng-data"
     }
-  }
+  },
+  "max_wer": 0.25,
+  "clips": {
+    "en": {
+      "url": "https://huggingface.co/datasets/hf-internal-testing/dummy-audio-samples/resolve/798f2c7208aacc481351b60b8a39605d8bdae7c2/librispeech_mr_quilter.wav",
+      "sha256": "799f78ed4beb4de7ceae3a809262d4ce242394342ccd1d58cef7d49dbc2def46",
+      "text": "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+      "source": "LibriSpeech dev-clean 1272-128104-0000 (byte-identical to row 0 of hf-internal-testing/librispeech_asr_dummy)",
+      "license": "CC-BY-4.0"
+    },
+    "es": {
+      "url": "https://huggingface.co/datasets/hf-internal-testing/dummy-audio-samples/resolve/798f2c7208aacc481351b60b8a39605d8bdae7c2/fleur_es_sample.wav",
+      "sha256": "04bf4876d16ba5a867f093ba5b34e93f4b82fc8250e78cce90932950d5035132",
+      "text": "Esto parece tener sentido, ya que en la Tierra no se percibe su movimiento, ¿cierto?",
+      "source": "FLEURS es_419 test 7285658688146080595.wav, sentence 1770 (google/fleurs @ 70bb2e84, data/es_419/test.tsv)",
+      "license": "CC-BY-4.0"
+    }
+  },
+  "transcribe": [
+    {
+      "build": "whisper-large-v3/sherpa-onnx-int8",
+      "clips": [
+        "en",
+        "es"
+      ]
+    },
+    {
+      "build": "whisper-large-v3-turbo/sherpa-onnx-int8",
+      "clips": [
+        "en",
+        "es"
+      ]
+    },
+    {
+      "build": "canary-180m-flash/sherpa-onnx-int8",
+      "clips": [
+        "en"
+      ],
+      "note": "Spanish needs canary.src_lang, a per-call parameter the engine does not pass yet (sidevoice-engine#46): with none, Canary reads every clip as English."
+    },
+    {
+      "build": "qwen3-asr-0.6b/sherpa-onnx-int8",
+      "clips": [
+        "en",
+        "es"
+      ]
+    }
+  ]
 }

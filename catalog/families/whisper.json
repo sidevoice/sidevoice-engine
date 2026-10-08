@@ -767,6 +767,360 @@
           ]
         }
       ]
+    },
+    {
+      "id": "whisper-large-v3",
+      "capabilities": [
+        "stt"
+      ],
+      "parameters_m": 1543,
+      "languages": [
+        "multi"
+      ],
+      "license": "Apache-2.0",
+      "builds": [
+        {
+          "id": "whisper-large-v3/sherpa-onnx-int8",
+          "backend": "sherpa-onnx",
+          "precision": "int8",
+          "files": [
+            {
+              "key": "whisper.encoder",
+              "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3/resolve/2a6507094dd6020d939d78e3f1834a1d06267fca/large-v3-encoder.int8.onnx",
+              "sha256": "d531cf17248acc43e8c09b472a0877055e770877857a5332fc1304b36534ec85",
+              "bytes": 766671985
+            },
+            {
+              "key": "whisper.decoder",
+              "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3/resolve/2a6507094dd6020d939d78e3f1834a1d06267fca/large-v3-decoder.int8.onnx",
+              "sha256": "ebc6bfd88e162a46cb3edee8a7e727e1dcbc65cabecb19e2573695e4d495e1af",
+              "bytes": 1008265203
+            },
+            {
+              "key": "tokens",
+              "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3/resolve/2a6507094dd6020d939d78e3f1834a1d06267fca/large-v3-tokens.txt",
+              "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+              "bytes": 816730
+            }
+          ],
+          "memory": {
+            "mb": 2210,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "whisper-large-v3/whisper-cpp-q5_0",
+          "backend": "whisper-cpp",
+          "precision": "q5_0",
+          "files": [
+            {
+              "key": "model",
+              "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-q5_0.bin",
+              "sha256": "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
+              "bytes": 1081140203
+            }
+          ],
+          "memory": {
+            "mb": 1350,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "whisper-large-v3/transformers-js-fp16",
+          "backend": "transformers-js",
+          "precision": "fp16",
+          "requires": {
+            "webgpu_features": [
+              "shader-f16"
+            ]
+          },
+          "files": [
+            {
+              "key": "encoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/onnx/encoder_model_fp16.onnx",
+              "sha256": "0dd32090292abfb3494506ea2d956f46ae999555df4bbd7a7ef50b26d0c8caa1",
+              "bytes": 1274316249
+            },
+            {
+              "key": "decoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/onnx/decoder_model_merged_fp16.onnx",
+              "sha256": "3041142b357aa6830e3eea8746caf88fa8960a6966fcdfa3b67f7d592a2e6267",
+              "bytes": 1815335624
+            },
+            {
+              "key": "config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/config.json",
+              "sha256": "a306bdf86d5f79595082755649214d8ba2b4e2cb2a7c124c6325c3acb7abf303",
+              "bytes": 1288
+            },
+            {
+              "key": "generation_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/generation_config.json",
+              "sha256": "33ff6901e35fd6ff9d7ac219a7c88118d383dac59f4a48c1bca46b86a11e20c9",
+              "bytes": 3896
+            },
+            {
+              "key": "preprocessor_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/preprocessor_config.json",
+              "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+              "bytes": 340
+            },
+            {
+              "key": "tokenizer",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/tokenizer.json",
+              "sha256": "5c1bf30c9e716e1477bedef846b01be0013daecb89e9e3ef7ab89b23c178df1b",
+              "bytes": 3930645
+            },
+            {
+              "key": "tokenizer_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/tokenizer_config.json",
+              "sha256": "3c75940dfce3a294fca7041a5faff011677f1b68fa85e47511bb8cf6dccaded6",
+              "bytes": 282873
+            }
+          ],
+          "memory": {
+            "mb": 3840,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "whisper-large-v3/transformers-js-q8",
+          "backend": "transformers-js",
+          "precision": "q8",
+          "requires": {
+            "wasm_max_mb": 2048
+          },
+          "files": [
+            {
+              "key": "encoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/onnx/encoder_model_quantized.onnx",
+              "sha256": "f438cff17ce55089f5046c7392421ec646cdf3081098a6510558578321a15c3f",
+              "bytes": 644795348
+            },
+            {
+              "key": "decoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/onnx/decoder_model_merged_quantized.onnx",
+              "sha256": "f0d0fd460448a18ef7835d2ba53fe40aeca244d18715e46fae68f149fb22e2d6",
+              "bytes": 1177130831
+            },
+            {
+              "key": "config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/config.json",
+              "sha256": "a306bdf86d5f79595082755649214d8ba2b4e2cb2a7c124c6325c3acb7abf303",
+              "bytes": 1288
+            },
+            {
+              "key": "generation_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/generation_config.json",
+              "sha256": "33ff6901e35fd6ff9d7ac219a7c88118d383dac59f4a48c1bca46b86a11e20c9",
+              "bytes": 3896
+            },
+            {
+              "key": "preprocessor_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/preprocessor_config.json",
+              "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+              "bytes": 340
+            },
+            {
+              "key": "tokenizer",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/tokenizer.json",
+              "sha256": "5c1bf30c9e716e1477bedef846b01be0013daecb89e9e3ef7ab89b23c178df1b",
+              "bytes": 3930645
+            },
+            {
+              "key": "tokenizer_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-ONNX/resolve/3b6257ad5e67aa523c7c07f4fea04d445eecc4a6/tokenizer_config.json",
+              "sha256": "3c75940dfce3a294fca7041a5faff011677f1b68fa85e47511bb8cf6dccaded6",
+              "bytes": 282873
+            }
+          ],
+          "memory": {
+            "mb": 2260,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        }
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "capabilities": [
+        "stt"
+      ],
+      "parameters_m": 809,
+      "languages": [
+        "multi"
+      ],
+      "license": "MIT",
+      "builds": [
+        {
+          "id": "whisper-large-v3-turbo/sherpa-onnx-int8",
+          "backend": "sherpa-onnx",
+          "precision": "int8",
+          "files": [
+            {
+              "key": "whisper.encoder",
+              "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.int8.onnx",
+              "sha256": "b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b",
+              "bytes": 674716297
+            },
+            {
+              "key": "whisper.decoder",
+              "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.int8.onnx",
+              "sha256": "20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547",
+              "bytes": 361080764
+            },
+            {
+              "key": "tokens",
+              "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt",
+              "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+              "bytes": 816730
+            }
+          ],
+          "memory": {
+            "mb": 1290,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "whisper-large-v3-turbo/whisper-cpp-q5_0",
+          "backend": "whisper-cpp",
+          "precision": "q5_0",
+          "files": [
+            {
+              "key": "model",
+              "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
+              "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+              "bytes": 574041195
+            }
+          ],
+          "memory": {
+            "mb": 720,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "whisper-large-v3-turbo/transformers-js-fp16",
+          "backend": "transformers-js",
+          "precision": "fp16",
+          "requires": {
+            "webgpu_features": [
+              "shader-f16"
+            ]
+          },
+          "files": [
+            {
+              "key": "encoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/onnx/encoder_model_fp16.onnx",
+              "sha256": "fdadc70836e6b028fd5e580417c312208dad073d2d01e509e2d127c1373399d8",
+              "bytes": 1274342603
+            },
+            {
+              "key": "decoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/onnx/decoder_model_merged_fp16.onnx",
+              "sha256": "fdf10afca73a0c7bf87286cfb96cf7028a9edbc9bb02512509a526f95b126c9d",
+              "bytes": 344227339
+            },
+            {
+              "key": "config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/config.json",
+              "sha256": "35cd83669f75bc2867f3b3a4461850392d5e308cd6ea951c3700539883c28df1",
+              "bytes": 1332
+            },
+            {
+              "key": "generation_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/generation_config.json",
+              "sha256": "16f95291d2f47c944d3c2b19390bba7965666555c1ea2a0bdc850d1fab45612f",
+              "bytes": 3897
+            },
+            {
+              "key": "preprocessor_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/preprocessor_config.json",
+              "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+              "bytes": 340
+            },
+            {
+              "key": "tokenizer",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/tokenizer.json",
+              "sha256": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca",
+              "bytes": 2480617
+            },
+            {
+              "key": "tokenizer_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/tokenizer_config.json",
+              "sha256": "844b642c73a91359722f47b35705f7174686df33d252695d8572cf9ac03a6389",
+              "bytes": 282843
+            }
+          ],
+          "memory": {
+            "mb": 2010,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "whisper-large-v3-turbo/transformers-js-q8",
+          "backend": "transformers-js",
+          "precision": "q8",
+          "requires": {
+            "wasm_max_mb": 2048
+          },
+          "files": [
+            {
+              "key": "encoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/onnx/encoder_model_quantized.onnx",
+              "sha256": "d2f853dc3254fdc0079f55dd4433ea716ac98ec5574d3b475f288f2a77cebba9",
+              "bytes": 644822195
+            },
+            {
+              "key": "decoder",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/onnx/decoder_model_merged_quantized.onnx",
+              "sha256": "61481bd3be3a445d5a4b9070e8f8b2c6cc4fbbbbdc9f0e7ed048a132b8b84e0d",
+              "bytes": 439936716
+            },
+            {
+              "key": "config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/config.json",
+              "sha256": "35cd83669f75bc2867f3b3a4461850392d5e308cd6ea951c3700539883c28df1",
+              "bytes": 1332
+            },
+            {
+              "key": "generation_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/generation_config.json",
+              "sha256": "16f95291d2f47c944d3c2b19390bba7965666555c1ea2a0bdc850d1fab45612f",
+              "bytes": 3897
+            },
+            {
+              "key": "preprocessor_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/preprocessor_config.json",
+              "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+              "bytes": 340
+            },
+            {
+              "key": "tokenizer",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/tokenizer.json",
+              "sha256": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca",
+              "bytes": 2480617
+            },
+            {
+              "key": "tokenizer_config",
+              "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/tokenizer_config.json",
+              "sha256": "844b642c73a91359722f47b35705f7174686df33d252695d8572cf9ac03a6389",
+              "bytes": 282843
+            }
+          ],
+          "memory": {
+            "mb": 1350,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        }
+      ]
     }
   ]
 }
