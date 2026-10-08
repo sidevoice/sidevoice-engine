@@ -19,9 +19,10 @@ Read `README.md` (what the engine is and where things are) and `RELEASING.md` (h
 The repository is Rust only: one crate (`src/`), and the build tooling `cargo xtask` (`xtask/`).
 
 - **The engine has no remote providers.** Those stay in sidevoice-core; to the core, the device is one more provider.
-- **The platform is injected** through `Host` (capabilities, storage, fetching), implemented by each platform outside
-  this repository; here there are only the fake hosts of the tests. The engine does not reach for the file system,
-  the network or the browser by itself.
+- **The platform is injected** through `Host` (capabilities, storage, fetching). The engine ships the host of each
+  kind of build, chosen by the same aliases as the backends (`src/host/native.rs`, `NativeHost`; the browser's to
+  come), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
+  network or the browser; the rest of the engine goes through `Host`.
 - **Backends are internal, optional and lazy.** Which exist in a build is a compile-time decision (the cfg aliases
   `web`, `native`, `apple_silicon` from `build.rs`); a backend file carries a single `#![cfg(alias)]` only when its
   library cannot compile elsewhere, and registers itself with `inventory`. A backend describes itself as data

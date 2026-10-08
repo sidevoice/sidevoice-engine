@@ -3,9 +3,7 @@
 
 use async_trait::async_trait;
 
-use crate::backend::LoadedModel;
-use crate::backend::{Backend, BackendFactory, BackendSpec};
-use crate::catalog::Build;
+use crate::backend::{Backend, BackendFactory, BackendSpec, Library};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
@@ -27,13 +25,9 @@ impl Backend for SherpaOnnx {
         &SPEC
     }
 
-    async fn load(
-        &self,
-        _build: &Build,
-        _accelerator: Accelerator,
-        _files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
-        // To come: open the sherpa-onnx C API from `files` with `libloading`, then the model on `accelerator`.
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
+        // To come: open the sherpa-onnx C API from `files` with `libloading`; its `Library` loads the model on
+        // `accelerator`.
         Err(Error::new("not-implemented"))
     }
 }

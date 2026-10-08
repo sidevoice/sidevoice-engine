@@ -21,6 +21,8 @@ inventory = "0.3.24"
 # backends.json (src/backend/runtime.rs), compiled in and read once.
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# Each downloaded file is checked against its digest as it arrives (src/install.rs), on every target.
+sha2 = { version = "0.11.0", default-features = false }
 
 # Which backends a build contains is decided by these tables and by one `#![cfg]` per backend file (build.rs). The
 # libraries listed here are the ones backends link; heavy engine libraries are downloaded when a model needs them,
@@ -36,8 +38,24 @@ wasm-bindgen-futures = "0.4.79"
 # macOS on Apple silicon, on top of everything native: MLX.
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 
-# Every native build.
+# Every native build: the built-in NativeHost (src/host/native.rs) and archives (src/install/archive.rs). sysinfo
+# reads the machine's memory. Downloads go through reqwest, the HTTP client sidevoice-core and the desktop app use,
+# at the core's version, its body streamed as it arrives; TLS is rustls (the aws-lc-rs provider, the platform's
+# certificate verifier), so nothing links the system's OpenSSL. reqwest needs a Tokio runtime, and so do the native
+# engine's futures: archives are unpacked on Tokio's blocking threads. Archives come only with native-only builds
+# (sherpa-onnx's release assets): a tar read by `tar`, bzip2-compressed or not (bzip2 in pure Rust, its default
+# backend).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bzip2 = "=0.6.1"
+futures-core = "0.3.31"
+reqwest = { version = "=0.13.0", default-features = false, features = ["rustls", "stream"] }
+sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
+tar = { version = "0.4.46", default-features = false }
+tokio = { version = "1.53.2", default-features = false, features = ["rt"] }
+
+# The native tests run the engine's futures on one multi-threaded Tokio runtime, as an app does (src/test_support.rs).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "1.53.2", default-features = false, features = ["rt-multi-thread"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3.79"
