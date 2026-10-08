@@ -211,7 +211,7 @@ ignored unless asked for, and CI asks:
 
 ```sh
 cargo test --locked
-cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests   # with the network, as CI
+cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests --skip the_voice_loop   # with the network, as CI
 ```
 
 The sherpa-onnx backend's tests that run real models download them first (about 250 MB, cached by digest in
@@ -220,6 +220,20 @@ native platform:
 
 ```sh
 cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
+```
+
+The whole voice loop is an integration test, `tests/voice_loop.rs`, and uses only the public API, as an app does:
+`NativeHost`, the bundled catalogue, `Engine::models` (each model's sherpa-onnx build), `Engine::load`, then the loaded
+model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-speech model of the plan
+(`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text model of that language
+transcribes it, real recorded clips are transcribed too, and every transcript must stay within the plan's word error
+rate. It downloads about 1.5 GB the first time (kept by digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless
+asked for; the `e2e` workflow runs it on Linux x86_64 and arm64 and on macOS arm64 through `cargo xtask e2e`, which
+puts its table in the job's summary:
+
+```sh
+cargo test --locked --test voice_loop -- --ignored --nocapture
+cargo xtask e2e [DIR]   # the same, keeping its files in DIR (target/voice-loop by default), as CI
 ```
 
 The wasm32 tests run in Node and need the wasm32 target, Node.js and npm, and the wasm-bindgen CLI at the version of

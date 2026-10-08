@@ -12,6 +12,8 @@
 //!   (or, with `--check`, checked) (xtask/src/backends.rs).
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
+//! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
+//!   DIR and its table appended to the job's summary (xtask/src/e2e.rs).
 //! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
 //!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
 //! - `sherpa-libs [DIR | --linked | --pin | --check]`: sherpa-onnx's prebuilt static libraries for this machine, checked
@@ -19,6 +21,7 @@
 
 mod backends;
 mod catalog;
+mod e2e;
 mod link_size;
 mod npm;
 mod release;
@@ -35,7 +38,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check] | link-size \
+     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR] | link-size \
      | sherpa-libs [DIR | --linked | --pin | --check]";
 
 fn main() -> ExitCode {
@@ -52,6 +55,8 @@ fn main() -> ExitCode {
         ["pin-backends", "--check"] => backends::pin(true),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
+        ["e2e"] => e2e::run(None),
+        ["e2e", dir] => e2e::run(Some(dir)),
         ["link-size"] => link_size::measure(),
         ["sherpa-libs"] => sherpa_libs::fetch(None),
         ["sherpa-libs", "--linked"] => sherpa_libs::linked(),
