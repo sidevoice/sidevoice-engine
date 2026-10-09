@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use super::Segmenter;
-use crate::engine::VadOptions;
+use crate::capability::VadOptions;
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;

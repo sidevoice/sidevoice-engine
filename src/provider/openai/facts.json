@@ -1,0 +1,85 @@
+{
+  "source": "https://raw.githubusercontent.com/openai/openai-openapi/e95c0fe615f45a19e8878af923a729948445a6bd/openapi.json",
+  "sha256": "17975b832308c380e4a365e20b37bb17de7e4e27cec3ba84c5be185bd9b400b6",
+  "speech_to_text": [
+    {
+      "model": "whisper-1",
+      "language": "language",
+      "speed": null
+    },
+    {
+      "model": "gpt-transcribe",
+      "language": "language",
+      "speed": null
+    },
+    {
+      "model": "gpt-4o-transcribe",
+      "language": "language",
+      "speed": null
+    },
+    {
+      "model": "gpt-4o-mini-transcribe",
+      "language": "language",
+      "speed": null
+    },
+    {
+      "model": "gpt-4o-mini-transcribe-2025-12-15",
+      "language": "language",
+      "speed": null
+    },
+    {
+      "model": "gpt-4o-transcribe-diarize",
+      "language": "language",
+      "speed": null
+    }
+  ],
+  "text_to_speech": [
+    {
+      "model": "tts-1",
+      "language": null,
+      "speed": [
+        0.25,
+        4.0
+      ]
+    },
+    {
+      "model": "tts-1-hd",
+      "language": null,
+      "speed": [
+        0.25,
+        4.0
+      ]
+    },
+    {
+      "model": "gpt-4o-mini-tts",
+      "language": null,
+      "speed": [
+        0.25,
+        4.0
+      ]
+    },
+    {
+      "model": "gpt-4o-mini-tts-2025-12-15",
+      "language": null,
+      "speed": [
+        0.25,
+        4.0
+      ]
+    }
+  ],
+  "voices": [
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "sage",
+    "shimmer",
+    "verse",
+    "marin",
+    "cedar",
+    "fable",
+    "onyx",
+    "nova"
+  ]
+}

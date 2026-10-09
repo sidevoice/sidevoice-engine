@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use super::Memory;
 use crate::backend::{BackendModel, Library};
+use crate::capability::Resident;
 use crate::catalog::BuildEntry;
-use crate::engine::loaded::Resident;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{async_trait, Error, Result};
@@ -39,7 +39,7 @@ impl BackendModel for NoModel {
 fn resident(library: &Arc<dyn Library>) -> Arc<Resident> {
     Resident::new(
         Box::new(NoModel),
-        Arc::clone(library),
+        Some(Arc::clone(library)),
         Vec::new(),
         Vec::new(),
     )

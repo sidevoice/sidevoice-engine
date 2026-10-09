@@ -16,7 +16,7 @@ use wasm_bindgen::prelude::*;
 
 use super::{call, dispose, failed, object, Model};
 use crate::backend::{BackendModel, Segmenter, VadModel, VadStreamModel, Window};
-use crate::engine::VadOptions;
+use crate::capability::VadOptions;
 use crate::Result;
 
 /// The rate Silero runs at here.

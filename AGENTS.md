@@ -18,8 +18,22 @@ Rules for any coding agent (and person) working in this repository.
 Read `README.md` (what the engine is and where things are) and `RELEASING.md` (how it is versioned and released).
 The repository is Rust only: one crate (`src/`), and the build tooling `cargo xtask` (`xtask/`).
 
-- **The engine has no remote providers.** Those stay in sidevoice-core; to the core, the device is one more provider.
-- **The platform is injected** through `Host` (capabilities, storage, fetching). The engine ships the host of each
+- **Two siblings produce models** (sidevoice-engine#63): the catalogue, of local models (files, families, builds,
+  backends, accelerators, install; `Engine::models`, `Engine::load`, a `LocalModel`), and the remote providers
+  (`src/provider/`: OpenAI, ElevenLabs; `Engine::providers`, `Engine::remote`, a `RemoteModel`). A provider is not a
+  backend: it has no builds, no install and no accelerator, and its models are not in the catalogue. Each provider is
+  one file that registers itself, as backends do; it lists its models live from its API through the host, and the
+  engine keeps the listing in memory only (`Engine::refresh`), with the provider's own status. What an API does not say
+  about its models (which are speech to text, the request field of the language, speed ranges, fixed voices) is
+  derived from the provider's official OpenAPI spec by `cargo xtask pin-providers`, pinned, and checked for drift:
+  nothing about a remote model is written by hand.
+- **One set of capability interfaces** (`src/capability.rs`: `Stt`, `Tts`, `Vad`, `EndOfTurn`), outside both
+  siblings: a `LocalModel` and a `RemoteModel` hand out the same ones, and transcribing with Whisper or with OpenAI is
+  the same call. Code that uses the engine works against them.
+- **Keys come from the host, never from the engine or the catalogue.** The app keeps them (the OS keychain on
+  desktop, the browser's storage on the web) and the host hands one over for each call (`Host::credentials`); the
+  engine stores none, and sidevoice-core holds none. The call goes through the host's HTTP (`Host::http`).
+- **The platform is injected** through `Host` (capabilities, storage, fetching, API calls, keys). The engine ships the host of each
   kind of build, chosen by the same aliases as the backends (`src/host/native.rs`, `NativeHost`; the page's,
   `src/web/host.rs`), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
   network or the browser; the rest of the engine goes through `Host`.

@@ -1,9 +1,11 @@
-//! A loaded model as a voice activity detector: [`Vad`], which opens [`VadStream`]s, each fed audio as it comes and
+//! A model as a voice activity detector: [`Vad`], which opens [`VadStream`]s, each fed audio as it comes and
 //! answering with what it heard ([`VadOutput`]: a [`VadFrame`] per window and the [`VadEvent`]s).
 
 use std::fmt;
 
-use super::LoadedModel;
+use std::sync::Arc;
+
+use super::Resident;
 use crate::backend::VadStreamModel;
 use crate::{Error, Result};
 
@@ -88,9 +90,9 @@ pub struct VadOutput {
     pub events: Vec<VadEvent>,
 }
 
-/// A loaded model, as a voice activity detector.
+/// A model, as a voice activity detector.
 #[derive(Debug, Clone, Copy)]
-pub struct Vad<'a>(pub(super) &'a LoadedModel);
+pub struct Vad<'a>(pub(super) &'a Arc<Resident>);
 
 impl Vad<'_> {
     /// A new stream, from sample 0 and with no speech, deciding with `options`. Each stream has a state of its own, so
@@ -101,7 +103,7 @@ impl Vad<'_> {
     /// `invalid-vad-options` for options out of their bounds, and the backend's `model-load-failed`.
     pub async fn stream(&self, options: VadOptions) -> Result<VadStream> {
         options.check()?;
-        let mut model = self.0.resident.model.lock().await;
+        let mut model = self.0.model.lock().await;
         let vad = model.as_vad().ok_or(Error::new("model-cannot-detect"))?;
         Ok(VadStream {
             sample_rate: vad.sample_rate(),
@@ -110,7 +112,7 @@ impl Vad<'_> {
             pending: Vec::new(),
             position: 0,
             speaking: false,
-            loaded: self.0.clone(),
+            model: Arc::clone(self.0),
         })
     }
 }
@@ -119,7 +121,7 @@ impl Vad<'_> {
 /// come, in pieces of any length; it runs the model on each whole window ([`VadStream::window`] samples) and keeps
 /// the rest for the next piece. Dropping it ends it.
 pub struct VadStream {
-    // Dropped before `loaded`, which keeps its model in memory.
+    // Dropped before `model`, which keeps its model in memory.
     stream: Box<dyn VadStreamModel>,
     sample_rate: u32,
     window: usize,
@@ -129,13 +131,13 @@ pub struct VadStream {
     position: u64,
     /// Whether a [`VadEvent::SpeechStart`] has no [`VadEvent::SpeechEnd`] yet.
     speaking: bool,
-    loaded: LoadedModel,
+    model: Arc<Resident>,
 }
 
 impl fmt::Debug for VadStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VadStream")
-            .field("model", &self.loaded)
+            .field("model", &self.model)
             .field("sample_rate", &self.sample_rate)
             .field("window", &self.window)
             .field("position", &self.position)

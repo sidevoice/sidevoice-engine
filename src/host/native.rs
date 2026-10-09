@@ -1,12 +1,14 @@
 //! The native host, built into every native build: the machine's facts from the standard library and `sysinfo`, files
-//! in a directory the app passes in, and downloads over HTTPS.
+//! in a directory the app passes in, downloads and API calls over HTTPS, and the keys the app hands it.
 //!
-//! Inside: `directory` (the storage) and `http` (the downloads).
+//! Inside: `directory` (the storage) and `http` (the downloads and API calls).
 
 use std::path::PathBuf;
 use std::thread;
 
-use crate::host::{Accelerator, Capabilities, Fetcher, Host, Runs, Storage};
+use crate::host::{
+    Accelerator, Capabilities, Credentials, Fetcher, Host, HttpClient, NoCredentials, Runs, Storage,
+};
 use crate::Result;
 
 mod directory;
@@ -29,12 +31,25 @@ use http::Http;
 ///
 /// Downloads go through `reqwest`, with rustls: the HTTP client sidevoice-core and the desktop app use. **The engine's
 /// futures expect a Tokio runtime** in a native build: `reqwest` needs one, and archives are unpacked on its blocking
-/// threads. Run them on the app's own runtime; outside one, they panic.
-#[derive(Debug)]
+/// threads. Run them on the app's own runtime; outside one, they panic. Remote backends' API calls go through the same
+/// client.
+///
+/// It has no keys of its own: an app that uses remote models hands it where they are with
+/// [`NativeHost::with_credentials`] (the OS keychain, say); without, it has none ([`NoCredentials`]).
 pub struct NativeHost {
     capabilities: Capabilities,
     storage: Directory,
-    fetcher: Http,
+    http: Http,
+    credentials: Box<dyn Credentials>,
+}
+
+impl std::fmt::Debug for NativeHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeHost")
+            .field("capabilities", &self.capabilities)
+            .field("storage", &self.storage)
+            .finish_non_exhaustive()
+    }
 }
 
 impl NativeHost {
@@ -48,8 +63,16 @@ impl NativeHost {
         Ok(Self {
             capabilities: capabilities(),
             storage: Directory::new(data_dir.into())?,
-            fetcher: Http::default(),
+            http: Http::default(),
+            credentials: Box::new(NoCredentials),
         })
+    }
+
+    /// This host, with the keys of remote providers from `credentials`, which it asks each time a key is needed.
+    #[must_use]
+    pub fn with_credentials(mut self, credentials: impl Credentials + 'static) -> Self {
+        self.credentials = Box::new(credentials);
+        self
     }
 }
 
@@ -63,7 +86,15 @@ impl Host for NativeHost {
     }
 
     fn fetcher(&self) -> &dyn Fetcher {
-        &self.fetcher
+        &self.http
+    }
+
+    fn http(&self) -> &dyn HttpClient {
+        &self.http
+    }
+
+    fn credentials(&self) -> &dyn Credentials {
+        self.credentials.as_ref()
     }
 }
 

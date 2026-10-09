@@ -1,0 +1,36 @@
+name: remote-live
+
+# The remote providers called for real (`cargo xtask remote-live`, the engine's ignored integration test
+# tests/remote_live.rs): per provider, the key and its listing, one short speech, one short transcription (the voice
+# loop's LibriSpeech clip, held to its word error rate, with the language sent) and an invalid key that must read
+# `credential-rejected`. It spends money, so it runs by hand and before each release (release-please.yml calls it), never
+# on a pull request and never on a schedule. Each provider's key is a repository secret with a spend limit; a provider
+# whose secret is absent is skipped, and the job says so: it never fails for a missing secret. The table goes to the
+# job's summary.
+on:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      OPENAI_API_KEY_CI:
+        required: false
+      ELEVENLABS_API_KEY_CI:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Remote providers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+      - run: cargo xtask remote-live
+        env:
+          OPENAI_API_KEY_CI: ${{ secrets.OPENAI_API_KEY_CI }}
+          ELEVENLABS_API_KEY_CI: ${{ secrets.ELEVENLABS_API_KEY_CI }}

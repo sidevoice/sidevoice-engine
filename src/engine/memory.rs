@@ -1,13 +1,13 @@
 //! What the engine knows of memory, without holding it: weak references to each backend's open library and to each
-//! build's model in memory. The app's [`LoadedModel`](crate::LoadedModel)s hold them; the engine only finds them again,
+//! build's model in memory. The app's [`LocalModel`](crate::LocalModel)s hold them; the engine only finds them again,
 //! so that a backend's models share one library and a build loaded twice is one model in memory. There is no clock and
 //! no unloading here: what nothing holds is gone.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
-use super::loaded::Resident;
 use crate::backend::{BackendId, Library};
+use crate::capability::Resident;
 
 #[cfg(test)]
 mod tests;
