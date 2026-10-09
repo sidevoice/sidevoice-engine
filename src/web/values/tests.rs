@@ -1,0 +1,59 @@
+use js_sys::Reflect;
+use wasm_bindgen::JsValue;
+use wasm_bindgen_test::wasm_bindgen_test;
+
+use super::{audio, progress, reason, voice};
+use crate::{Audio, Gender, Progress, Reason, Voice};
+
+fn get(value: &JsValue, key: &str) -> JsValue {
+    Reflect::get(value, &key.into()).unwrap()
+}
+
+#[wasm_bindgen_test]
+fn a_reason_has_its_code_and_only_the_numbers_it_has() {
+    let memory = reason(&Reason::with_numbers("memory", 4096, 2048));
+    assert_eq!(get(&memory, "code").as_string().as_deref(), Some("memory"));
+    assert_eq!(get(&get(&memory, "params"), "needs").as_f64(), Some(4096.0));
+    assert_eq!(get(&get(&memory, "params"), "has").as_f64(), Some(2048.0));
+    let plain = reason(&Reason::new("no-accelerator"));
+    let params = get(&plain, "params");
+    assert!(!Reflect::has(&params, &"needs".into()).unwrap());
+}
+
+#[wasm_bindgen_test]
+fn a_voice_has_a_gender_only_when_the_catalogue_states_one() {
+    let dora = Voice {
+        id: "ef_dora".into(),
+        languages: vec!["es".into()],
+        gender: Some(Gender::Female),
+    };
+    assert_eq!(
+        get(&voice(&dora), "gender").as_string().as_deref(),
+        Some("female")
+    );
+    let plain = Voice {
+        id: "F1".into(),
+        languages: vec!["es".into()],
+        gender: None,
+    };
+    assert!(!Reflect::has(&voice(&plain), &"gender".into()).unwrap());
+}
+
+#[wasm_bindgen_test]
+fn progress_and_audio_take_javascripts_names() {
+    let report = progress(Progress {
+        files: 3,
+        done: 1,
+        received: 10,
+        size: None,
+    });
+    assert_eq!(get(&report, "files").as_f64(), Some(3.0));
+    assert!(!Reflect::has(&report, &"size".into()).unwrap());
+    let spoken = audio(&Audio {
+        samples: vec![0.5, -0.5],
+        sample_rate: 24_000,
+    });
+    assert_eq!(get(&spoken, "sampleRate").as_f64(), Some(24_000.0));
+    let samples: js_sys::Float32Array = get(&spoken, "samples").into();
+    assert_eq!(samples.to_vec(), [0.5, -0.5]);
+}

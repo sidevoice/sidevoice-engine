@@ -5,15 +5,17 @@ name: e2e
 # text-to-speech build and transcribed by the speech-to-text builds of its language (Whisper on sherpa-onnx and on
 # whisper.cpp among them), and real recorded clips transcribed, in English and Spanish, each transcript held to a word
 # error rate. The table, and the accelerator each build was loaded on, go to the job's summary; what each model said
-# is kept as an artifact. On every pull request that
-# touches what the loop runs, whatever its base, so a stacked pull request runs it too.
+# is kept as an artifact. In a headless Chrome too: the web loop (`cargo xtask web-e2e`, plan in xtask/web-e2e.json)
+# runs through the npm package and is judged against the same plan's sentences and clips. On every pull request that
+# touches what the loops run, whatever its base, so a stacked pull request runs it too.
 on:
   pull_request:
     paths:
       - src/**
       - catalog/**
       - tests/**
-      - xtask/src/e2e.rs
+      - xtask/**
+      - npm/**
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/e2e.yml
@@ -60,4 +62,26 @@ jobs:
         with:
           name: speech-${{ matrix.target }}
           path: ${{ runner.temp }}/e2e/speech
+          if-no-files-found: ignore
+
+  web:
+    name: Voice loop (web, headless Chrome)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+        with:
+          wasm: true
+      - id: chrome
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          chrome-version: "155.0.8059.39"
+      - run: cargo xtask web-e2e "$RUNNER_TEMP/web-e2e"
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: speech-web
+          path: ${{ runner.temp }}/web-e2e/speech
           if-no-files-found: ignore
