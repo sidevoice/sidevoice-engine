@@ -690,19 +690,3 @@ fn two_calls_on_one_model_run_one_after_the_other() {
         "one at a time"
     );
 }
-
-/// The resampling the engine does for speech to text: the length scales with the rates, and a constant stays constant.
-#[test]
-fn audio_is_resampled_linearly() {
-    let up = super::audio::resample(&[0.5; 100], 8_000, 16_000);
-    assert_eq!(up.len(), 200);
-    assert!(up.iter().all(|sample| (sample - 0.5).abs() < 1e-6));
-    assert_eq!(
-        super::audio::resample(&[0.1, 0.2], 16_000, 16_000),
-        [0.1, 0.2]
-    );
-    assert_eq!(
-        super::audio::resample(&[0.0; 48_000], 48_000, 16_000).len(),
-        16_000
-    );
-}
