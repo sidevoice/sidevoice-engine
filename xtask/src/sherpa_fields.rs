@@ -38,6 +38,18 @@ const NOT_FILES: &[(&str, &str)] = &[
     ("OfflineTtsModelConfig", "kokoro.lang"),
 ];
 
+/// The fields of [`NOT_FILES`] below `OfflineModelConfig` that a call's argument may set, through a build's `call_params`
+/// (sidevoice-engine#46): languages and tasks. The generated `stt_option` names exactly these.
+const CALL_FIELDS: &[&str] = &[
+    "whisper.language",
+    "whisper.task",
+    "canary.src_lang",
+    "canary.tgt_lang",
+    "sense_voice.language",
+    "cohere_transcribe.language",
+    "funasr_nano.language",
+];
+
 /// A struct of the crate: its named fields and their types.
 type Structs = HashMap<String, Vec<(String, syn::Type)>>;
 
@@ -47,7 +59,8 @@ pub(crate) fn generate() -> Result<(String, String)> {
     let structs = parse(&src)?;
     let stt = paths(&structs, "OfflineModelConfig")?;
     let tts = paths(&structs, "OfflineTtsModelConfig")?;
-    let text = render(&version, &stt, &tts);
+    let options = call_fields()?;
+    let text = render(&version, &stt, &tts, &options);
     Ok((rustfmt(&text)?, version))
 }
 
@@ -100,6 +113,26 @@ fn parse(src: &Path) -> Result<Structs> {
         }
     }
     Ok(structs)
+}
+
+/// [`CALL_FIELDS`], each checked to be one of [`NOT_FILES`] below `OfflineModelConfig` (which [`paths`] checks the crate
+/// has).
+fn call_fields() -> Result<Vec<String>> {
+    let options: Vec<&str> = NOT_FILES
+        .iter()
+        .filter(|(of, _)| *of == "OfflineModelConfig")
+        .map(|(_, path)| *path)
+        .collect();
+    CALL_FIELDS
+        .iter()
+        .map(|path| {
+            if options.contains(path) {
+                Ok((*path).to_owned())
+            } else {
+                Err(format!("CALL_FIELDS names `{path}`, which NOT_FILES does not (xtask/src/sherpa_fields.rs)"))
+            }
+        })
+        .collect()
 }
 
 /// Every file path below the struct `root`, in the crate's field order, and every name in [`NOT_FILES`] for it
@@ -170,7 +203,7 @@ fn is_option_string(ty: &syn::Type) -> bool {
 }
 
 /// The file's text, before `rustfmt`.
-fn render(version: &str, stt: &[String], tts: &[String]) -> String {
+fn render(version: &str, stt: &[String], tts: &[String], options: &[String]) -> String {
     let arms = |paths: &[String]| {
         paths
             .iter()
@@ -189,6 +222,8 @@ fn render(version: &str, stt: &[String], tts: &[String]) -> String {
          //! to speech. What a sherpa-onnx build's file keys name. If the crate derives serde for its configs one day, \
          this\n\
          //! table gives way to `serde_json::from_value`.\n\
+         //!\n\
+         //! And every field a call's argument may set through a build's `call_params`: a language, a task.\n\
          \n\
          use sherpa_onnx::{{OfflineModelConfig, OfflineTtsModelConfig}};\n\
          \n\
@@ -204,9 +239,17 @@ fn render(version: &str, stt: &[String], tts: &[String]) -> String {
              config: &'a mut OfflineTtsModelConfig,\n\
              key: &str,\n\
          ) -> Option<&'a mut Option<String>> {{\n\
-             Some(match key {{\n{}        _ => return None,\n    }})\n}}\n",
+             Some(match key {{\n{}        _ => return None,\n    }})\n}}\n\
+         \n\
+         /// The field of `OfflineRecognizerConfig.model_config` that `path` names, if a call's argument may set it.\n\
+         pub(in crate::backend::implementations::sherpa_onnx) fn stt_option<'a>(\n\
+             config: &'a mut OfflineModelConfig,\n\
+             path: &str,\n\
+         ) -> Option<&'a mut Option<String>> {{\n\
+             Some(match path {{\n{}        _ => return None,\n    }})\n}}\n",
         arms(stt),
         arms(tts),
+        arms(options),
     )
 }
 

@@ -205,3 +205,37 @@ fn each_bundled_familys_id_is_its_files_name() {
         assert_eq!(family["id"], *name, "catalog/families/{name}.json");
     }
 }
+
+/// `call_params` is sherpa-onnx's: it says where a call's argument goes in a config only that backend has. Whisper's
+/// builds map the language, and Canary's map it to both its source and its target (so that it transcribes).
+#[test]
+fn only_sherpa_onnx_builds_map_a_calls_arguments_into_their_config() {
+    let fragment = BundledCatalog.load().expect("bundled catalogue");
+    let builds: Vec<_> = fragment
+        .families
+        .iter()
+        .flat_map(|family| &family.models)
+        .flat_map(|model| &model.builds)
+        .collect();
+    for build in &builds {
+        if !build.call_params.is_empty() {
+            assert_eq!(build.backend, "sherpa-onnx", "{}", build.id);
+        }
+    }
+    let language = |id: &str| {
+        let build = builds.iter().find(|build| build.id == id).expect(id);
+        build
+            .call_params
+            .get("language")
+            .cloned()
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        language("whisper-small/sherpa-onnx-int8"),
+        ["whisper.language"]
+    );
+    assert_eq!(
+        language("canary-180m-flash/sherpa-onnx-int8"),
+        ["canary.src_lang", "canary.tgt_lang"]
+    );
+}
