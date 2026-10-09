@@ -85,7 +85,7 @@ fn only_the_last_seconds_reach_the_model_at_16_khz() {
     // 1 s at 16 kHz: all of it.
     block_on(classifier.probability(&vec![0.1; 16_000], 16_000)).expect("a probability");
     let heard = heard.lock().expect("not poisoned").clone();
-    assert!(heard[0].abs_diff(32_000) <= 1, "{heard:?}");
+    assert_eq!(heard[0], 32_000, "{heard:?}");
     assert_eq!(heard[1], 16_000);
 }
 
@@ -101,4 +101,31 @@ fn an_answer_that_is_not_a_probability_fails() {
             "{answer}"
         );
     }
+}
+
+#[test]
+fn audio_with_no_time_base_or_a_sample_that_is_not_a_number_is_refused_before_the_model_hears_it() {
+    let (loaded, heard) = loaded(0.5);
+    let classifier = loaded.as_end_of_turn().expect("a classifier");
+    let code = |audio: &[f32], rate| {
+        block_on(classifier.probability(audio, rate))
+            .map(drop)
+            .unwrap_err()
+            .code
+    };
+    assert_eq!(code(&[0.1; 160], 0), "invalid-sample-rate");
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut audio = vec![0.1; 16_000];
+        audio[5_000] = bad;
+        assert_eq!(code(&audio, 16_000), "invalid-audio", "{bad}");
+    }
+    assert!(
+        heard.lock().expect("not poisoned").is_empty(),
+        "the model heard nothing"
+    );
+
+    // A bad sample before the seconds the model hears is not heard, and does not count.
+    let mut long = vec![0.1; 16_000 * 4];
+    long[100] = f32::NAN;
+    assert_eq!(block_on(classifier.probability(&long, 16_000)), Ok(0.5));
 }
