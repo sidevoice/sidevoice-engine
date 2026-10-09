@@ -53,7 +53,17 @@
   },
   "end_of_turn": {
     "builds": [
-      "smart-turn-v3.2/onnxruntime-int8"
+      {
+        "build": "smart-turn-v3.2/onnxruntime-fp32",
+        "required": [
+          "en",
+          "es"
+        ]
+      },
+      {
+        "build": "smart-turn-v3.2/onnxruntime-int8",
+        "required": []
+      }
     ],
     "pause_s": 0.2,
     "pause_floor": 0.01,

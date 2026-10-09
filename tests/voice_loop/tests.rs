@@ -72,8 +72,21 @@ fn the_plan_names_bundled_builds_and_has_a_sentence_for_each_language() {
     }
     assert!(!plan.end_of_turn.builds.is_empty());
     for model in &plan.end_of_turn.builds {
-        assert!(bundled(model), "{model}");
+        assert!(bundled(&model.build), "{}", model.build);
+        for language in &model.required {
+            assert!(
+                plan.stt.contains_key(language),
+                "{language}: no clip hears it"
+            );
+        }
     }
+    assert!(
+        plan.end_of_turn
+            .builds
+            .iter()
+            .any(|model| !model.required.is_empty()),
+        "something is required"
+    );
     assert_eq!(primary("es-ES"), "es");
 }
 

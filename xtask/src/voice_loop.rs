@@ -243,9 +243,11 @@ pub(crate) struct EndOfTurnRule {
     pub(crate) threshold: f32,
 }
 
-/// One clip heard by one end-of-turn model: the probabilities of the whole and the cut clip, or why there are none.
+/// One clip heard by one end-of-turn model: the probabilities of the whole and the cut clip, or why there are none, and
+/// whether its verdict is required (else it is reported).
 pub(crate) struct Turn {
     pub(crate) pair: String,
+    pub(crate) required: bool,
     pub(crate) whole: Option<f32>,
     pub(crate) cut: Option<f32>,
     pub(crate) error: Option<String>,
@@ -274,17 +276,23 @@ pub(crate) fn judge_turn(turn: &Turn, rule: &EndOfTurnRule) -> Result<()> {
     Ok(())
 }
 
-/// Prints the table of turns, adds it to `$GITHUB_STEP_SUMMARY` when set, and fails if any turn failed.
+/// Prints the table of turns, adds it to `$GITHUB_STEP_SUMMARY` when set, and fails if any required turn failed.
 pub(crate) fn report_turns(title: &str, turns: &[Turn], rule: &EndOfTurnRule) -> Result<()> {
     let mut table = String::from(
         "| Clip → end-of-turn model | P(complete), whole | P(complete), cut | Verdict |\n|---|---|---|---|\n",
     );
     let probability = |p: Option<f32>| p.map_or_else(|| "–".to_owned(), |p| format!("{p:.2}"));
-    let mut failed = 0;
+    let (mut failed, mut required) = (0, 0);
     for turn in turns {
         let verdict = judge_turn(turn, rule);
-        failed += usize::from(verdict.is_err());
-        let verdict = verdict.map_or_else(|why| format!("✗ {why}"), |()| "ok".into());
+        required += usize::from(turn.required);
+        failed += usize::from(turn.required && verdict.is_err());
+        let verdict = match (verdict, turn.required) {
+            (Ok(()), true) => "ok".to_owned(),
+            (Err(why), true) => format!("✗ {why}"),
+            (Ok(()), false) => "ok (reported)".to_owned(),
+            (Err(why), false) => format!("reported: {why}"),
+        };
         table.push_str(&format!(
             "| {} | {} | {} | {verdict} |\n",
             turn.pair,
@@ -293,9 +301,8 @@ pub(crate) fn report_turns(title: &str, turns: &[Turn], rule: &EndOfTurnRule) ->
         ));
     }
     let verdict = format!(
-        "{} of {} clips: complete whole, not complete cut.",
-        turns.len() - failed,
-        turns.len()
+        "{} of {required} required clips: complete whole, not complete cut.",
+        required - failed
     );
     println!("\n{table}\n{verdict}");
     if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {
@@ -304,8 +311,8 @@ pub(crate) fn report_turns(title: &str, turns: &[Turn], rule: &EndOfTurnRule) ->
         text.push_str(&format!("## {title}\n\n{table}\n{verdict}\n"));
         write(Path::new(&summary), text.as_bytes())?;
     }
-    if failed > 0 || turns.is_empty() {
-        return Err(format!("{failed} of {} turns failed", turns.len()));
+    if failed > 0 || required == 0 {
+        return Err(format!("{failed} of {required} required turns failed"));
     }
     Ok(())
 }

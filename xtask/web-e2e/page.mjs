@@ -268,38 +268,40 @@ try {
   vad.free();
   detector.free();
 
-  // The end-of-turn model: each clip whole and cut mid-phrase, each followed by the same pause.
-  const turn = await engine.load(plan.endOfTurn.model, plan.endOfTurn.build);
-  await check(
-    "smart-turn loads as an end-of-turn model only",
-    turn.capabilities().join() === "end-of-turn" && turn.asStt() === undefined && turn.asVad() === undefined,
-    turn.capabilities(),
-  );
-  const endOfTurn = turn.asEndOfTurn();
-  await check("smart-turn hears the last 8 s of a turn", endOfTurn.seconds === 8, endOfTurn.seconds);
-  for (const clip of plan.clips) {
-    const row = { pair: `clip ${clip.name} → ${plan.endOfTurn.build}` };
-    try {
-      const { samples, rate } = wav(await (await fetch(clip.file)).arrayBuffer());
-      const pause = new Float32Array(Math.floor(plan.endOfTurn.pauseS * rate));
-      const followed = (audio) => {
-        const out = new Float32Array(audio.length + pause.length);
-        out.set(audio);
-        return out;
-      };
-      const cut = samples.subarray(0, cutPoint(samples, rate, plan.endOfTurn.pauseFloor));
-      start = performance.now();
-      row.whole = await endOfTurn.probability(followed(samples), rate);
-      row.cut = await endOfTurn.probability(followed(cut), rate);
-      await log(`${row.pair}: ${since(start)}: whole ${row.whole}, cut ${row.cut}`);
-    } catch (error) {
-      row.error = error?.code ?? String(error);
-      await log(`${row.pair}: failed:`, row.error, String(error?.stack ?? ""));
+  // The end-of-turn builds: each clip whole and cut mid-phrase, each followed by the same pause.
+  for (const wanted of plan.endOfTurn.builds) {
+    const turn = await engine.load(wanted.model, wanted.build);
+    await check(
+      `${wanted.build} loads as an end-of-turn model only`,
+      turn.capabilities().join() === "end-of-turn" && turn.asStt() === undefined && turn.asVad() === undefined,
+      turn.capabilities(),
+    );
+    const endOfTurn = turn.asEndOfTurn();
+    await check(`${wanted.build} hears the last 8 s of a turn`, endOfTurn.seconds === 8, endOfTurn.seconds);
+    for (const clip of plan.clips) {
+      const row = { pair: `clip ${clip.name} → ${wanted.build}`, build: wanted.build, language: clip.language };
+      try {
+        const { samples, rate } = wav(await (await fetch(clip.file)).arrayBuffer());
+        const pause = new Float32Array(Math.floor(plan.endOfTurn.pauseS * rate));
+        const followed = (audio) => {
+          const out = new Float32Array(audio.length + pause.length);
+          out.set(audio);
+          return out;
+        };
+        const cut = samples.subarray(0, cutPoint(samples, rate, plan.endOfTurn.pauseFloor));
+        start = performance.now();
+        row.whole = await endOfTurn.probability(followed(samples), rate);
+        row.cut = await endOfTurn.probability(followed(cut), rate);
+        await log(`${row.pair}: ${since(start)}: whole ${row.whole}, cut ${row.cut} (at ${(cut.length / rate).toFixed(2)} s)`);
+      } catch (error) {
+        row.error = error?.code ?? String(error);
+        await log(`${row.pair}: failed:`, row.error, String(error?.stack ?? ""));
+      }
+      report.turns.push(row);
     }
-    report.turns.push(row);
+    endOfTurn.free();
+    turn.free();
   }
-  endOfTurn.free();
-  turn.free();
 
   stt.free();
   whisper.free();

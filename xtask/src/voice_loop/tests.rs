@@ -61,6 +61,7 @@ fn a_turn_is_complete_whole_and_not_cut() {
     };
     let turn = |whole, cut| Turn {
         pair: "clip → model".into(),
+        required: true,
         whole,
         cut,
         error: None,

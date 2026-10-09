@@ -37,6 +37,42 @@
       "license": "BSD-2-Clause",
       "builds": [
         {
+          "id": "smart-turn-v3.2/onnxruntime-fp32",
+          "backend": "onnxruntime",
+          "precision": "fp32",
+          "files": [
+            {
+              "key": "smart_turn",
+              "url": "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/f766f81d3cfdf7737ac64aad813d91bbfd56bf93/smart-turn-v3.2-gpu.onnx",
+              "sha256": "ab8dc64b88713f90b571c15b714bd1330e6c883cad8763dacf65c9376dc539be",
+              "bytes": 32411198
+            }
+          ],
+          "memory": {
+            "mb": 50,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "smart-turn-v3.2/transformers-js-fp32",
+          "backend": "transformers-js",
+          "precision": "fp32",
+          "files": [
+            {
+              "key": "smart_turn",
+              "url": "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/f766f81d3cfdf7737ac64aad813d91bbfd56bf93/smart-turn-v3.2-gpu.onnx",
+              "sha256": "ab8dc64b88713f90b571c15b714bd1330e6c883cad8763dacf65c9376dc539be",
+              "bytes": 32411198
+            }
+          ],
+          "memory": {
+            "mb": 50,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
           "id": "smart-turn-v3.2/onnxruntime-int8",
           "backend": "onnxruntime",
           "precision": "int8",

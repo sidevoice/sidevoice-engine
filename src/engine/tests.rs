@@ -264,6 +264,13 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         end_of_turn,
         [("smart-turn-v3.2".to_owned(), backend.to_owned())]
     );
+    // Ranked by catalogue order until sidevoice-engine#4: fp32 first, where it fits.
+    let smart_turn = models
+        .iter()
+        .find(|model| model.id == "smart-turn-v3.2")
+        .expect("smart-turn");
+    let recommended = smart_turn.recommended_build.as_deref().unwrap_or_default();
+    assert!(recommended.ends_with("-fp32"), "{recommended}");
 }
 
 /// A file of a fake build: `https://models/<id>`, holding `<id>`'s bytes.

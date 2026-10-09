@@ -208,7 +208,7 @@ fn run() -> Result<()> {
                 audio,
             ));
         }
-        recorded.push((what, samples, rate));
+        recorded.push((what, samples, rate, clip.language.clone()));
     }
     let mut detections = Vec::new();
     for build in &plan.vad.builds {
@@ -216,17 +216,18 @@ fn run() -> Result<()> {
         let vad = loaded
             .as_vad()
             .ok_or(format!("{build}: not a voice activity detector"))?;
-        for (what, samples, rate) in &recorded {
+        for (what, samples, rate, _) in &recorded {
             detections.push(detect(&vad, build, what, (samples, *rate), &plan.vad));
         }
     }
     let mut turns = Vec::new();
-    for build in &plan.end_of_turn.builds {
+    for wanted in &plan.end_of_turn.builds {
+        let build = &wanted.build;
         let loaded = load(&engine, build, &mut loaded_on)?;
         let model = loaded
             .as_end_of_turn()
             .ok_or(format!("{build}: not an end-of-turn model"))?;
-        for (what, samples, rate) in &recorded {
+        for (what, samples, rate, language) in &recorded {
             let (whole, cut) = end_of_turn::heard(samples, *rate, &plan.end_of_turn);
             let probability = |audio: &[f32]| {
                 block_on(model.probability(audio, *rate)).map_err(|e| format!("`{}`", e.code))
@@ -236,12 +237,26 @@ fn run() -> Result<()> {
                 (Ok(whole), Ok(cut)) => end_of_turn::judge(*whole, *cut, &plan.end_of_turn),
                 (Err(why), _) | (_, Err(why)) => Err(why.clone()),
             };
+            // What the cut clip says, as the language's first speech-to-text build hears it.
+            let cut_audio = end_of_turn::heard(samples, *rate, &plan.end_of_turn).1;
+            let listener = plan.stt.get(language).and_then(|builds| builds.first());
+            let cut_says = listener
+                .and_then(|listener| listeners.get(listener))
+                .and_then(LoadedModel::as_stt)
+                .map(|stt| block_on(stt.transcribe(&cut_audio, *rate, Some(language))))
+                .map_or_else(
+                    || "–".to_owned(),
+                    |heard| heard.unwrap_or_else(|e| format!("`{}`", e.code)),
+                );
             let pair = format!("{what} → {build}");
-            println!("{pair}: whole {whole:?}, cut {cut:?}: {verdict:?}");
+            let required = wanted.required.contains(language);
+            println!("{pair}: whole {whole:?}, cut {cut:?} ({cut_says:?}): {verdict:?}");
             turns.push(end_of_turn::Turn {
                 pair,
                 whole: whole.ok(),
                 cut: cut.ok(),
+                cut_says,
+                required,
                 verdict,
             });
         }
@@ -514,7 +529,10 @@ fn report(
         ));
     }
     if unended > 0 || turns.is_empty() {
-        return Err(format!("{unended} of {} turns failed", turns.len()));
+        return Err(format!(
+            "{unended} required turns of {} failed",
+            turns.len()
+        ));
     }
     Ok(())
 }

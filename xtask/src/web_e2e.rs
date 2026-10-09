@@ -42,8 +42,8 @@ struct Plan {
     stt: Build,
     /// What detects speech.
     vad: Build,
-    /// What tells a complete turn.
-    end_of_turn: Build,
+    /// What tells a complete turn: each build, and the languages whose clips it must judge right.
+    end_of_turn: Vec<TurnBuild>,
     /// What speaks.
     tts: Vec<Speaker>,
 }
@@ -53,6 +53,15 @@ struct Plan {
 struct Build {
     model: String,
     build: String,
+}
+
+#[derive(Debug, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct TurnBuild {
+    model: String,
+    build: String,
+    /// Primary language subtags; its clips in other languages are reported only.
+    required: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +123,8 @@ struct PageRow {
 #[serde(rename_all = "camelCase")]
 struct PageTurn {
     pair: String,
+    build: String,
+    language: String,
     whole: Option<f32>,
     cut: Option<f32>,
     error: Option<String>,
@@ -202,8 +213,7 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             "silenceS": shared.vad.silence_s,
         },
         "endOfTurn": {
-            "model": plan.end_of_turn.model,
-            "build": plan.end_of_turn.build,
+            "builds": &plan.end_of_turn,
             "pauseS": shared.end_of_turn.pause_s,
             "pauseFloor": shared.end_of_turn.pause_floor,
         },
@@ -286,6 +296,9 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
         .turns
         .into_iter()
         .map(|turn| Turn {
+            required: plan.end_of_turn.iter().any(|wanted| {
+                wanted.build == turn.build && wanted.required.contains(&turn.language)
+            }),
             pair: turn.pair,
             whole: turn.whole,
             cut: turn.cut,
