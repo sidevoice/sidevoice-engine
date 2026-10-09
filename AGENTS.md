@@ -24,8 +24,8 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
   come), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
   network or the browser; the rest of the engine goes through `Host`.
 - **Backends are internal, optional and lazy.** Which exist in a build is a compile-time decision (the cfg aliases
-  `web`, `native`, `apple_silicon` from `build.rs`); a backend file carries a single `#![cfg(alias)]` only when its
-  library cannot compile elsewhere, and registers itself with `inventory`. A backend describes itself as data
+  `web`, `native`, `apple_silicon` from `build.rs`); a backend file carries a single `#![cfg]`, stating its own condition
+  (an alias, and the Cargo feature that links its library if one does), only when its library cannot compile elsewhere, and registers itself with `inventory`. A backend describes itself as data
   (`BackendSpec`: accelerators in order of preference, requirements as checks); the engine matches, ranks, selects
   and installs for every backend alike. Which models a backend runs is the catalogue's to say, and what it downloads
   is data too, never code. A backend's code only checks its accelerators for real when the default `probe()` is not

@@ -635,7 +635,7 @@ impl CatalogSource for FakeCatalog {
 
 /// The output of `future`, which must be ready on its first poll: the engine's futures that do not wait on a host
 /// (a backend's `load`, a loaded model's work) are, and the tests have no executor.
-#[cfg(sherpa_onnx)]
+#[cfg(all(native, feature = "sherpa-onnx"))]
 pub(crate) fn ready<F: std::future::Future>(future: F) -> F::Output {
     let mut context = std::task::Context::from_waker(std::task::Waker::noop());
     match std::pin::pin!(future).poll(&mut context) {

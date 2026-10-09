@@ -307,8 +307,9 @@ new one. As an example, a Vosk backend (whisper.cpp's, `whisper_cpp.rs`, is a re
 for now, see sidevoice-engine#33):
 
 1. **Its file**, `src/backend/implementations/vosk.rs`. If its code cannot compile everywhere, the file
-   starts with one `#![cfg(<alias>)]` from `build.rs` (`web`, `native`, `apple_silicon`), with a comment saying why,
-   and does not exist elsewhere. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
+   starts with one `#![cfg]` stating its own condition: an alias from `build.rs` (`web`, `native`, `apple_silicon`),
+   and its Cargo feature if it is linked only with one (`all(native, feature = "vosk")`), with a comment saying why;
+   it does not exist elsewhere. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
 
    ```rust
    // Vosk's library is native here: its web build would be another backend.

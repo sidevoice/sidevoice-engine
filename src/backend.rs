@@ -116,14 +116,6 @@ pub(crate) use library::Library;
 pub(crate) use loaded_model::BackendModel;
 #[cfg(test)]
 pub(crate) use loaded_model::{SttModel, TtsModel};
-#[cfg_attr(
-    not(any(sherpa_onnx, whisper_cpp, web, apple_silicon)),
-    allow(
-        unused_imports,
-        reason = "no backend is compiled in here without the sherpa-onnx and whisper-cpp features"
-    )
-)]
-pub(crate) use registry::BackendFactory;
 pub(crate) use registry::{built_in, find};
 #[allow(
     unused_imports,

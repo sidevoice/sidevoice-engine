@@ -1,5 +1,5 @@
-// Linked only where the `whisper-cpp` feature (default) brings whisper-rs in, natively: build.rs.
-#![cfg(whisper_cpp)]
+// Native only, and only with the `whisper-cpp` feature (default), which brings whisper-rs in.
+#![cfg(all(native, feature = "whisper-cpp"))]
 //! whisper.cpp, on ggml: speech to text with Whisper's ggml builds (the catalogue's `whisper-cpp` builds, files from
 //! ggerganov/whisper.cpp). One whole turn at a time, in the language asked for or the one it detects, decoded greedily,
 //! without timestamps.
@@ -40,7 +40,8 @@ use whisper_rs::{
 };
 
 use crate::backend::loaded_model::SttModel;
-use crate::backend::{Backend, BackendFactory, BackendModel, BackendSpec, Library};
+use crate::backend::registry::BackendFactory;
+use crate::backend::{Backend, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;

@@ -1,5 +1,5 @@
-// Linked only where the `sherpa-onnx` feature (default) brings the official crate in, natively: build.rs.
-#![cfg(sherpa_onnx)]
+// Native only, and only with the `sherpa-onnx` feature (default), which brings the official crate in.
+#![cfg(all(native, feature = "sherpa-onnx"))]
 //! sherpa-onnx: speech to text with Whisper and text to speech with Kokoro, on ONNX Runtime.
 //!
 //! # Binding
@@ -44,7 +44,8 @@
 
 use async_trait::async_trait;
 
-use crate::backend::{Backend, BackendFactory, BackendModel, BackendSpec, Library};
+use crate::backend::registry::BackendFactory;
+use crate::backend::{Backend, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;
