@@ -18,9 +18,12 @@ Rules for any coding agent (and person) working in this repository.
 Read `README.md` (what the engine is and where things are) and `RELEASING.md` (how it is versioned and released).
 The repository is Rust only: one crate (`src/`), and the build tooling `cargo xtask` (`xtask/`).
 
-- **Remote providers are backends too** (`openai`, `elevenlabs`): one catalogue covers local and remote models, and a
-  remote model is used through the same interface. The engine never stores a key: the host hands it over for each
-  call, and the call goes through the host's HTTP.
+- **Remote providers are engine backends** (`openai`, `elevenlabs`; sidevoice-core#89, sidevoice-engine#63): one
+  catalogue covers local and remote models, and a remote model is used through the same interface (`as_stt`,
+  `as_tts`, `voices`). Its build has no files; installing it only checks that a key is available.
+- **Keys come from the host, never from the engine or the catalogue.** The app keeps them (the OS keychain on
+  desktop, the browser's storage on the web) and the host hands one over for each call (`Host::credentials`); the
+  engine stores none, and sidevoice-core holds none. The call goes through the host's HTTP (`Host::http`).
 - **The platform is injected** through `Host` (capabilities, storage, fetching, API calls, keys). The engine ships the host of each
   kind of build, chosen by the same aliases as the backends (`src/host/native.rs`, `NativeHost`; the page's,
   `src/web/host.rs`), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
