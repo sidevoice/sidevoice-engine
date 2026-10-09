@@ -430,7 +430,8 @@ fn catalogue_builds_transcribe_the_clips_they_name() {
                 .unwrap_or_else(|error| panic!("{}: not installed: {}", build.id, error.code));
         let started = std::time::Instant::now();
         let library = ready(SherpaOnnx.open(&installed)).expect("the linked library");
-        let mut model = ready(library.load(build, Accelerator::Cpu, &installed))
+        let loading = Loading::new();
+        let mut model = ready(library.load(loading.of(build, Accelerator::Cpu, &installed)))
             .unwrap_or_else(|error| panic!("{}: not loaded: {}", build.id, error.code));
         let loading = started.elapsed().as_secs_f32();
         let stt = model.as_stt().expect("speech to text");
