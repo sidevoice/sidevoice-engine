@@ -19,12 +19,8 @@ fn built_in_is_exactly_this_platforms_backends() {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             expected.push("mlx");
         }
-        if cfg!(feature = "sherpa-onnx") {
-            expected.push("sherpa-onnx");
-        }
-        if cfg!(feature = "whisper-cpp") {
-            expected.push("whisper-cpp");
-        }
+        expected.push("sherpa-onnx");
+        expected.push("whisper-cpp");
     }
     assert_eq!(ids, expected);
 }

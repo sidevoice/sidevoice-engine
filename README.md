@@ -46,8 +46,7 @@ platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
 now, two backends are the exception: native builds link sherpa-onnx statically, through the official crate, and
-whisper.cpp, through `whisper-rs`, each behind its default feature, `sherpa-onnx` and `whisper-cpp`
-(sidevoice-engine#33 is loading them on demand).
+whisper.cpp, through `whisper-rs` (sidevoice-engine#33 is loading them on demand).
 
 ## What a host must report
 
@@ -188,8 +187,7 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 ## Build and test
 
 You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C compiler for the native build (rustls'
-crypto, `ring`). A native build links two backends' engines statically, and `--no-default-features` leaves both out;
-`--no-default-features --features sherpa-onnx` (or `whisper-cpp`) keeps one.
+crypto, `ring`). A native build links two backends' engines statically; there is no build without them.
 
 - **whisper.cpp** is compiled, with ggml, from the sources `whisper-rs-sys` bundles, so the build needs CMake, a C++
   compiler and libclang (for `bindgen`, which writes the bindings). whisper.cpp tunes ggml for the building machine's
@@ -307,9 +305,9 @@ new one. As an example, a Vosk backend (whisper.cpp's, `whisper_cpp.rs`, is a re
 for now, see sidevoice-engine#33):
 
 1. **Its file**, `src/backend/implementations/vosk.rs`. If its code cannot compile everywhere, the file
-   starts with one `#![cfg]` stating its own condition: an alias from `build.rs` (`web`, `native`, `apple_silicon`),
-   and its Cargo feature if it is linked only with one (`all(native, feature = "vosk")`), with a comment saying why;
-   it does not exist elsewhere. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
+   starts with one `#![cfg(<alias>)]` from `build.rs` (`web`, `native`, `apple_silicon`), with a comment saying why,
+   and does not exist elsewhere. If it links a library, that dependency goes under the same platform in `Cargo.toml`:
+   the two must agree, or the file does not compile. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
 
    ```rust
    // Vosk's library is native here: its web build would be another backend.

@@ -53,7 +53,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .iter()
         .find(|b| b.id == "whisper-small-gguf")
         .expect("gguf");
-    if cfg!(all(not(target_arch = "wasm32"), feature = "whisper-cpp")) {
+    if cfg!(not(target_arch = "wasm32")) {
         assert!(gguf.available && gguf.accelerator.is_some());
     } else {
         assert!(!gguf.available && gguf.accelerator.is_none());

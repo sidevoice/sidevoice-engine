@@ -1,5 +1,5 @@
-// Native only, and only with the `sherpa-onnx` feature (default), which brings the official crate in.
-#![cfg(all(native, feature = "sherpa-onnx"))]
+// Native only: the official crate links native libraries (its dependency is native-only in Cargo.toml).
+#![cfg(native)]
 //! sherpa-onnx: speech to text with Whisper and text to speech with Kokoro, on ONNX Runtime.
 //!
 //! # Binding
@@ -9,8 +9,7 @@
 //! target (ONNX Runtime included) and links them into the app: in this first phase the backend is linked, not
 //! downloaded when a model needs it, and nothing is downloaded for it. So `open` has
 //! nothing to open: its library is the linked one, and the contract (`open`, then the library's `load`) stays as it
-//! is for when loading the runtime on demand comes back (sidevoice-engine#33). Building without the `sherpa-onnx`
-//! feature leaves the backend out, and ONNX Runtime with it.
+//! is for when loading the runtime on demand comes back (sidevoice-engine#33).
 //!
 //! # Files
 //!

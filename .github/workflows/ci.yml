@@ -33,8 +33,6 @@ jobs:
       - run: cargo fmt --check
       - run: cargo fmt --manifest-path xtask/Cargo.toml --check
       - run: cargo clippy --locked --all-targets -- -D warnings
-      # Without the default `sherpa-onnx` and `whisper-cpp` features: the backends, and the libraries they link, left out.
-      - run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - run: cargo clippy --locked --all-targets --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
 

@@ -1,8 +1,7 @@
 name: link-size
 
-# What linking each backend's engine costs an app: the smallest program using the engine, built in release mode and
-# stripped, with no linked backend, with `sherpa-onnx` or `whisper-cpp` alone, and with both, the default
-# (xtask/src/link_size.rs); the sizes go to each job's summary. Not on
+# What linking the engine costs an app: the smallest program using the engine, built in release mode and stripped
+# (xtask/src/link_size.rs); its size goes to each job's summary. Not on
 # every pull request: on demand, and on those that change what is linked (the dependencies, sherpa-onnx's pinned
 # libraries, or the measurement itself), which also check that what `cargo xtask sherpa-libs --pin` writes for the
 # version Cargo.toml pins is what is committed: xtask/sherpa-onnx-libs.json, and the config fields generated from the

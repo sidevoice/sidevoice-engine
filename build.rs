@@ -1,5 +1,5 @@
 //! The engine's platform aliases, named once: `web`, `native` and `apple_silicon`. They name platforms only; which
-//! of them a module needs, and any Cargo feature it also depends on, is that module's own `#[cfg]` to say.
+//! of them a module needs is that module's own `#[cfg]` to say.
 //!
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.

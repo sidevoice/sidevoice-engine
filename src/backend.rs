@@ -83,9 +83,8 @@
 //!
 //! - native: the backend opens the downloaded library at run time and calls its C API through a table of function
 //!   pointers resolved then. **Phase 1 exceptions:** sherpa-onnx is linked, through the official `sherpa-onnx` crate
-//!   (static, pinned exactly in Cargo.toml, native builds only, behind the default `sherpa-onnx` feature), and so is
-//!   whisper.cpp, through `whisper-rs` (compiled from the sources it bundles, the same way, behind the default
-//!   `whisper-cpp` feature), so neither downloads anything. Loading them on demand is sidevoice-engine#33, which also
+//!   (static, pinned exactly in Cargo.toml, native builds only), and so is whisper.cpp, through
+//!   `whisper-rs` (compiled from the sources it bundles, the same way), so neither downloads anything. Loading them on demand is sidevoice-engine#33, which also
 //!   decides where a downloaded library's files are declared. Any other native backend follows the design;
 //! - web: the backend's engine is a JavaScript module, and the backend imports it at run time (a dynamic `import()`
 //!   through `wasm-bindgen`), so a page that never loads a model never fetches it. The module comes with the npm

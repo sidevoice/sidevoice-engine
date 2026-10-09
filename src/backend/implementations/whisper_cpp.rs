@@ -1,5 +1,5 @@
-// Native only, and only with the `whisper-cpp` feature (default), which brings whisper-rs in.
-#![cfg(all(native, feature = "whisper-cpp"))]
+// Native only: whisper-rs compiles whisper.cpp for the target (its dependency is native-only in Cargo.toml).
+#![cfg(native)]
 //! whisper.cpp, on ggml: speech to text with Whisper's ggml builds (the catalogue's `whisper-cpp` builds, files from
 //! ggerganov/whisper.cpp). One whole turn at a time, in the language asked for or the one it detects, decoded greedily,
 //! without timestamps.
@@ -10,7 +10,7 @@
 //! `FullParams`). Its build script compiles the whisper.cpp and ggml it bundles with CMake and links them statically:
 //! in this first phase the backend is linked, as sherpa-onnx is, and nothing is downloaded for it. So `open` has nothing
 //! to open, and the contract (`open`, then the library's `load`) stays as it is for when loading it on demand comes
-//! (sidevoice-engine#33). Building without the `whisper-cpp` feature leaves the backend out, and whisper.cpp with it.
+//! (sidevoice-engine#33).
 //!
 //! whisper.cpp logs what it does to the standard error (the model it reads, the backend it runs on), as it comes: the
 //! engine does not redirect it.
