@@ -8,6 +8,7 @@ use std::io::{BufReader, Cursor};
 
 use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
 
+use super::recognizer::{primary_subtag, recent, KEPT};
 use super::synthesizer::espeak_voice;
 use super::{config, model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
 use crate::backend::{Backend, BackendModel};
@@ -81,6 +82,17 @@ fn every_sherpa_onnx_build_in_the_catalogue_names_config_fields_its_family_takes
                     config::tts_field(&mut OfflineTtsModelConfig::default(), &file.key).is_some()
                 };
                 assert!(known, "{}: no sherpa-onnx field {}", build.id, file.key);
+            }
+            for (argument, paths) in &build.call_params {
+                for path in paths {
+                    let field =
+                        config::stt_option(&mut OfflineModelConfig::default(), path).is_some();
+                    assert!(
+                        field,
+                        "{}: {argument} to no field a call sets: {path}",
+                        build.id
+                    );
+                }
             }
             let files = Installed {
                 files: build
@@ -197,4 +209,65 @@ fn metadata_is_read_past_the_other_fields_of_the_model() {
     assert_eq!(find("speaker_names").as_deref(), Some("af,am_adam"));
     assert_eq!(find("model_type").as_deref(), Some("kokoro"));
     assert_eq!(find("sample_rate"), None);
+}
+
+#[test]
+fn a_calls_language_goes_where_the_build_maps_it_and_none_sets_it_back() {
+    let files = installed(&[("canary.encoder", "e.onnx"), ("canary.decoder", "d.onnx")]);
+    let mut stt = config::recognizer(&files, "cpu").expect("a recognizer config");
+    let canary: std::collections::BTreeMap<_, _> = [(
+        "language".to_owned(),
+        vec!["canary.src_lang".to_owned(), "canary.tgt_lang".to_owned()],
+    )]
+    .into();
+    config::set_call(&mut stt, &canary, "language", Some("es")).expect("set");
+    assert_eq!(stt.model_config.canary.src_lang.as_deref(), Some("es"));
+    assert_eq!(stt.model_config.canary.tgt_lang.as_deref(), Some("es"));
+    config::set_call(&mut stt, &canary, "language", None).expect("set back");
+    assert_eq!(stt.model_config.canary.src_lang, None);
+    // An argument the build does not map sets nothing.
+    config::set_call(&mut stt, &canary, "task", Some("translate")).expect("nothing to set");
+    assert_eq!(stt.model_config.whisper.task, None);
+    // A path no field a call may set has, files included, is refused.
+    let file = [("language".to_owned(), vec!["whisper.encoder".to_owned()])].into();
+    assert_eq!(
+        config::set_call(&mut stt, &file, "language", Some("es")).map_err(|e| e.code),
+        Err("unsupported-model")
+    );
+}
+
+#[test]
+fn a_language_is_named_by_its_primary_subtag() {
+    assert_eq!(primary_subtag("es"), "es");
+    assert_eq!(primary_subtag("es-ES"), "es");
+    assert_eq!(primary_subtag("en_GB"), "en");
+    assert_eq!(primary_subtag("PT-br"), "pt");
+}
+
+#[test]
+fn the_last_recognizers_used_are_kept_and_the_oldest_goes() {
+    assert_eq!(KEPT, 2);
+    let mut made: Vec<(Option<&str>, u32)> = Vec::new();
+    let mut count = 0;
+    let mut get = |made: &mut Vec<_>, key| {
+        *recent(made, key, |_| {
+            count += 1;
+            Ok(count)
+        })
+        .expect("made")
+    };
+    assert_eq!(get(&mut made, None), 1);
+    assert_eq!(get(&mut made, Some("es")), 2);
+    assert_eq!(get(&mut made, None), 1, "kept: not made again");
+    assert_eq!(get(&mut made, Some("en")), 3, "the oldest, es, goes");
+    assert_eq!(get(&mut made, Some("es")), 4, "made again");
+    assert_eq!(made.len(), KEPT);
+    let failed = recent(&mut made, Some("xx"), |_| {
+        Err(crate::Error::new("model-load-failed"))
+    });
+    assert_eq!(
+        failed.map(drop).map_err(|e| e.code),
+        Err("model-load-failed")
+    );
+    assert_eq!(made.len(), KEPT, "a failure keeps what was kept");
 }

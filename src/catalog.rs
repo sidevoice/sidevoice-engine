@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
+use model::CALL_ARGUMENTS;
 
 mod bundled;
 mod family;
@@ -114,6 +115,13 @@ pub enum Problem {
         /// The key of the file that disagrees with an earlier one.
         key: String,
     },
+    /// A build's `call_params` naming an argument the interface's calls do not have, or one with no config path.
+    UnknownCallArgument {
+        /// The build.
+        build: String,
+        /// The argument as written.
+        argument: String,
+    },
     /// A language of a model or of one of its voices that is not a BCP 47 tag ("multi", "spanish", "es_ES").
     InvalidLanguage {
         /// The model.
@@ -218,6 +226,14 @@ fn check_build(build: &BuildEntry, known: &dyn Fn(&str) -> bool, problems: &mut 
         problems.push(Problem::BuildWithoutFiles {
             build: build.id.clone(),
         });
+    }
+    for (argument, paths) in &build.call_params {
+        if !CALL_ARGUMENTS.contains(&argument.as_str()) || paths.is_empty() {
+            problems.push(Problem::UnknownCallArgument {
+                build: build.id.clone(),
+                argument: argument.clone(),
+            });
+        }
     }
     let mut keys = HashSet::new();
     let mut downloads = HashMap::new();

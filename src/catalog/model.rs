@@ -7,6 +7,7 @@ mod build;
 mod capability;
 mod voice;
 
+pub(crate) use build::CALL_ARGUMENTS;
 pub use build::{BuildEntry, Memory, MemorySource, ModelFile, Requires};
 pub use capability::Capability;
 pub use voice::{Gender, Voice};
