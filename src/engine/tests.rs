@@ -23,6 +23,8 @@ use crate::{
     async_trait, Accelerator, BuildEntry, BundledCatalog, Cancel, Capability, Engine, Error,
     Gender, LoadedModel, ModelFile, Reason, Result, Voice,
 };
+#[cfg(native)]
+use crate::{VadOptions, VadStream};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -105,6 +107,25 @@ fn a_native_engine_its_futures_and_its_loaded_models_can_cross_threads() {
     sent(engine.load("whisper-small", None, &|_| {}, &Cancel::new()));
     sent(engine.install("whisper-small", None, &|_| {}, &Cancel::new()));
     shared_type::<LoadedModel>();
+}
+
+/// What a loaded model's calls return can cross threads natively: an app awaits them on its own runtime's tasks. Checked
+/// when this compiles; never called.
+#[cfg(native)]
+#[allow(dead_code, reason = "a check at compile time")]
+fn a_loaded_models_futures_are_send(loaded: &LoadedModel, stream: &mut VadStream) {
+    fn sent<T: Send>(_: T) {}
+    if let Some(stt) = loaded.as_stt() {
+        sent(stt.transcribe(&[], 16_000, None));
+    }
+    if let Some(tts) = loaded.as_tts() {
+        sent(tts.voices());
+        sent(tts.speak("", "", None, None));
+    }
+    if let Some(vad) = loaded.as_vad() {
+        sent(vad.stream(VadOptions::default()));
+    }
+    sent(stream.accept(&[]));
 }
 
 /// What each CI platform offers with the catalogue this repository ships: every bundled model of a capability, each
