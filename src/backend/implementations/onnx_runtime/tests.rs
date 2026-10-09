@@ -36,6 +36,8 @@ fn it_runs_on_the_cpu_and_opens_on_the_runtime_sherpa_onnx_links() {
         ready(OnnxRuntime.open(&Installed::default())).is_ok(),
         "twice"
     );
+    // `ort` itself, as an app's own code would use it, once the backend has opened: the engine set nothing global.
+    assert!(ort::session::Session::builder().is_ok());
 }
 
 #[test]

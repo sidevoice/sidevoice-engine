@@ -71,9 +71,14 @@ whisper-rs = { version = "=0.16.0", features = ["metal"] }
 bzip2 = "=0.6.1"
 futures-core = "0.3.31"
 # The ONNX Runtime backend (src/backend/implementations/onnx_runtime.rs): `ort`'s safe API over the ONNX Runtime
-# sherpa-onnx already links (below), never a runtime of its own: `alternative-backend` makes `ort-sys` link and download
-# nothing, and the backend hands `ort` the linked runtime's C API. API 17 is what it asks of a runtime (1.17 or later).
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17", "alternative-backend"] }
+# sherpa-onnx already links (below), never a runtime of its own. `ort-sys` is named only to switch its linking off
+# (`disable-linking`): it then links and downloads nothing, and `OrtGetApiBase` resolves to the runtime inside sherpa-onnx's
+# libraries. `ort` keeps its ordinary lazy initialization (no `alternative-backend`): the engine installs no process-wide
+# API, so an app's own use of `ort` works the same before and after the engine's. Cargo unifies features, so such an app's
+# `ort` also runs on that linked runtime (1.28) rather than link or download one: two static ONNX Runtimes could not be
+# linked into one binary anyway. API 17 is what it asks of a runtime (1.17 or later).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17"] }
+ort-sys = { version = "=2.0.0-rc.13", default-features = false, features = ["disable-linking"] }
 reqwest = { version = "=0.13.0", default-features = false, features = ["rustls", "stream"] }
 sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
 tar = { version = "0.4.46", default-features = false }

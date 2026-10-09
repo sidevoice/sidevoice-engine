@@ -1785,6 +1785,7 @@ dependencies = [
  "inventory",
  "js-sys",
  "ort",
+ "ort-sys",
  "reqwest",
  "serde",
  "serde_json",

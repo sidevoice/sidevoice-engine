@@ -6,9 +6,12 @@
 //! # Binding
 //!
 //! Native builds already link one ONNX Runtime, statically, inside sherpa-onnx's libraries (1.28 for sherpa-onnx
-//! 1.13.8). This backend runs on that one rather than link a second: the `ort` crate's safe API, built with
-//! `alternative-backend`, so it downloads and links no runtime of its own, and `open` hands it the linked runtime's C
-//! API (`OrtGetApiBase`, resolved when the app is linked, asked for API 17). What it adds to an app is `ort`'s glue.
+//! 1.13.8). This backend runs on that one rather than link a second: the `ort` crate's safe API, with `ort-sys`'s
+//! `disable-linking`, so it downloads and links no runtime of its own, and `OrtGetApiBase` resolves, when the app is
+//! linked, to the runtime inside sherpa-onnx's libraries. `ort` initializes itself from it the first time it is used,
+//! as it does for any caller: the engine installs no process-wide API, so an app's own use of `ort` is unaffected by
+//! whether, or when, this backend opens. `open` only checks that the linked runtime offers API 17. What it adds to an
+//! app is `ort`'s glue.
 //! Where a runtime comes from once runtimes load on demand is sidevoice-engine#33 (and a generic ONNX Runtime backend,
 //! #25): this backend then takes it from there.
 //!
@@ -20,8 +23,6 @@
 //! # Accelerators
 //!
 //! The CPU: the linked runtime has no other execution provider (see sherpa-onnx's *Accelerators*).
-
-use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use ort::session::Session;
@@ -61,35 +62,25 @@ impl Backend for OnnxRuntime {
         &SPEC
     }
 
-    /// Hands `ort` the linked runtime's C API, once for the process. Nothing installed is read. Fails with
-    /// `library-open-failed` when the runtime does not offer API 17.
+    /// Checks that the linked runtime offers the API `ort` asks for; `ort` then initializes itself from it, as for any
+    /// other caller. Nothing installed is read. Fails with `library-open-failed` when it does not.
     async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
-        linked()?;
+        if !linked() {
+            return Err(Error::new("library-open-failed"));
+        }
         Ok(Box::new(Linked))
     }
 }
 
-/// `ort` on the runtime sherpa-onnx links: set up the first time, remembered after.
-fn linked() -> Result<()> {
-    static API: OnceLock<bool> = OnceLock::new();
-    let ready = *API.get_or_init(|| {
-        // SAFETY: `OrtGetApiBase` is the linked runtime's entry point, which returns a pointer to a static table, and
-        // `GetApi` a pointer to a static table of the version asked for, or null when it is too old.
-        unsafe {
-            let base = ort::sys::OrtGetApiBase();
-            if base.is_null() {
-                return false;
-            }
-            let api = ((*base).GetApi)(ort::sys::ORT_API_VERSION);
-            if api.is_null() {
-                return false;
-            }
-            // `false` when it was set already: then it is this same runtime, set by an earlier call.
-            ort::set_api((*api).clone());
-        }
-        true
-    });
-    ready.then_some(()).ok_or(Error::new("library-open-failed"))
+/// Whether the runtime sherpa-onnx links offers the API version `ort` asks for, so that `ort`'s own initialization, which
+/// panics when it does not, will succeed. It sets nothing: `ort` keeps its ordinary initialization.
+fn linked() -> bool {
+    // SAFETY: `OrtGetApiBase` is the linked runtime's entry point, which returns a pointer to a static table, and
+    // `GetApi` a pointer to a static table of the version asked for, or null when the runtime is older.
+    unsafe {
+        let base = ort::sys::OrtGetApiBase();
+        !base.is_null() && !((*base).GetApi)(ort::sys::ORT_API_VERSION).is_null()
+    }
 }
 
 /// The linked runtime, which loads models.
