@@ -8,8 +8,6 @@
 //!   the nightly) and `SHA256SUMS` written over DIR (xtask/src/release.rs).
 //! - `publish DIR TAG`: DIR attached to the GitHub Release TAG, read back, verified, and the Release published.
 //! - `npm-publish TAG`: the tarball of the Release TAG (a `vX.Y.Z`), verified, published to npm.
-//! - `pin-backends [--check]`: every file in `backends.json` downloaded at its pinned version and its `sha256` written
-//!   (or, with `--check`, checked) (xtask/src/backends.rs).
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
 //! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
@@ -19,7 +17,6 @@
 //! - `sherpa-libs [DIR | --linked | --pin | --check]`: sherpa-onnx's prebuilt static libraries for this machine, checked
 //!   against `xtask/sherpa-onnx-libs.json` and unpacked for `SHERPA_ONNX_LIB_DIR` (xtask/src/sherpa_libs.rs).
 
-mod backends;
 mod catalog;
 mod e2e;
 mod link_size;
@@ -38,7 +35,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR] | link-size \
+     | pin-catalog [--check] | e2e [DIR] | link-size \
      | sherpa-libs [DIR | --linked | --pin | --check]";
 
 fn main() -> ExitCode {
@@ -51,8 +48,6 @@ fn main() -> ExitCode {
         ["manifest", dir, "--tag", tag] => release::manifest(Path::new(dir), Some(tag)),
         ["publish", dir, tag] => release::publish(Path::new(dir), tag),
         ["npm-publish", tag] => npm::publish(tag),
-        ["pin-backends"] => backends::pin(false),
-        ["pin-backends", "--check"] => backends::pin(true),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
         ["e2e"] => e2e::run(None),

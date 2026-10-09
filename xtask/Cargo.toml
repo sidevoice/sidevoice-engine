@@ -4,10 +4,10 @@ version = "0.0.0"
 edition = "2021"
 rust-version = "1.98"
 publish = false
-description = "Build tooling for the engine: the npm package, the release assets, publishing and the backends' digests."
+description = "Build tooling for the engine: the npm package, the release assets, publishing, the catalogue's pins and the voice loop."
 
 [dependencies]
-# preserve_order: `pin-backends` rewrites backends.json with its keys where they were.
+# preserve_order: `pin-catalog` rewrites the family files with their keys where they were.
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }

@@ -90,7 +90,7 @@ fn empty_levels_are_problems() {
 
 #[test]
 fn a_build_needs_a_known_backend_and_files_with_digests_and_distinct_keys() {
-    // whisper-cpp is in backends.json, compiled here or not: it is known.
+    // whisper-cpp is a known backend, compiled here or not.
     let known = build("m/whisper-cpp", "whisper-cpp", 1);
     let unknown = build("m/nope", "no-such-backend", 1);
     let mut files = build("m/files", "sherpa-onnx", 1);

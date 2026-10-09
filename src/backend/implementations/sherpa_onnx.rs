@@ -7,7 +7,7 @@
 //! The official `sherpa-onnx` crate (k2-fsa), pinned to one exact version in Cargo.toml, through its safe API
 //! (`OfflineRecognizer`, `OfflineTts`). Its build script downloads sherpa-onnx's prebuilt static libraries for the
 //! target (ONNX Runtime included) and links them into the app: in this first phase the backend is linked, not
-//! downloaded when a model needs it, and `backends.json` lists nothing to download for it (`[]`). So `open` has
+//! downloaded when a model needs it, and nothing is downloaded for it. So `open` has
 //! nothing to open: its library is the linked one, and the contract (`open`, then the library's `load`) stays as it
 //! is for when loading the runtime on demand comes back (sidevoice-engine#33). Building without the `sherpa-onnx`
 //! feature leaves the backend out, and ONNX Runtime with it.
@@ -66,6 +66,10 @@ struct SherpaOnnx;
 
 const SPEC: BackendSpec = BackendSpec {
     id: "sherpa-onnx",
+    name: "sherpa-onnx",
+    description: "Speech recognition and synthesis on ONNX Runtime, through the official crate, linked into native \
+                  builds for now (sidevoice-engine#33).",
+    upstream: "https://github.com/k2-fsa/sherpa-onnx",
     // Core ML is not in the linked libraries (see *Accelerators*).
     accelerators: &[Accelerator::Cpu],
     requirements: &[],

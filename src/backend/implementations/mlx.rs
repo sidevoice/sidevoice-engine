@@ -12,6 +12,9 @@ struct Mlx;
 
 const SPEC: BackendSpec = BackendSpec {
     id: "mlx",
+    name: "MLX",
+    description: "Apple's array framework for Apple silicon. A stub: it loads no model yet.",
+    upstream: "https://github.com/ml-explore/mlx",
     accelerators: &[Accelerator::Metal],
     requirements: &[&MinMemoryMb(8_192)],
 };
