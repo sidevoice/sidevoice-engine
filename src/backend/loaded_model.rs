@@ -33,7 +33,7 @@ pub(crate) trait BackendModel: MaybeSend {
 /// A speech-to-text model: one whole turn at a time.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-pub(crate) trait SttModel {
+pub(crate) trait SttModel: MaybeSend {
     /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it. sherpa-onnx passes it on only
     /// where the build's `call_params` map it into the config (sidevoice-engine#46).
     async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String>;
@@ -43,7 +43,7 @@ pub(crate) trait SttModel {
 /// *Speech out* in `backend.rs`).
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-pub(crate) trait TtsModel {
+pub(crate) trait TtsModel: MaybeSend {
     /// The voices it speaks with.
     fn voices(&self) -> Vec<String>;
     /// The sample rate of what [`TtsModel::speak`] returns, in Hz.
@@ -62,7 +62,7 @@ pub(crate) trait TtsModel {
 }
 
 /// A voice activity detector: it makes streams, each with a state of its own, so several can run at once.
-pub(crate) trait VadModel {
+pub(crate) trait VadModel: MaybeSend {
     /// The rate its streams take, in Hz.
     fn sample_rate(&self) -> u32;
     /// How many samples [`VadStreamModel::window`] takes at a time.
