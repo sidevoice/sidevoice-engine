@@ -303,7 +303,8 @@ on sherpa-onnx) then hears each recorded clip set between two seconds of silence
 reports must lie in the clip, give or take 0.3 s, be ended by the silence after it, and together cover half the clip
 (`tests/voice_loop/vad.rs`). Each end-of-turn model (smart-turn) hears each clip whole and cut mid-phrase (the middle of its longest stretch of speech without a pause), each followed by a
 0.2 s pause, the moment silence alone would end the turn: it must call the whole clip complete (P ≥ 0.5) and the
-cut one not (`tests/voice_loop/end_of_turn.rs`). It downloads about 1.5 GB the first time (kept by
+cut one not, which each build is required to do in English; the Spanish clip, read speech the model calls complete
+wherever it is cut, is reported, until conversational clips come (sidevoice-engine#74; `tests/voice_loop/end_of_turn.rs`). It downloads about 1.5 GB the first time (kept by
 digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless asked for; the `e2e` workflow runs it on Linux x86_64 and
 arm64 and on macOS arm64 through `cargo xtask e2e`, which puts its table, and the accelerator each build was loaded
 on, in the job's summary:

@@ -56,13 +56,14 @@
       {
         "build": "smart-turn-v3.2/onnxruntime-fp32",
         "required": [
-          "en",
-          "es"
+          "en"
         ]
       },
       {
         "build": "smart-turn-v3.2/onnxruntime-int8",
-        "required": []
+        "required": [
+          "en"
+        ]
       }
     ],
     "pause_s": 0.2,
