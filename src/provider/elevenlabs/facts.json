@@ -1,0 +1,40 @@
+{
+  "source": "https://api.elevenlabs.io/openapi.json",
+  "sha256": "0c930e56e1853d00967cfacd1638f8133d3b4317e6eb07d4337141dadf5b4df9",
+  "speech_to_text": [
+    {
+      "model": "scribe_v2",
+      "language": "language_code",
+      "speed": null
+    },
+    {
+      "model": "scribe_v2_medical",
+      "language": "language_code",
+      "speed": null
+    }
+  ],
+  "text_to_speech": [
+    {
+      "model": "eleven_flash_v2_5",
+      "language": "language_code",
+      "speed": [
+        0.7,
+        1.2
+      ]
+    },
+    {
+      "model": "eleven_multilingual_v2",
+      "language": null,
+      "speed": [
+        0.7,
+        1.2
+      ]
+    },
+    {
+      "model": "eleven_v3",
+      "language": "language_code",
+      "speed": null
+    }
+  ],
+  "voices": []
+}

@@ -24,6 +24,7 @@ fn a_reason_has_its_code_and_only_the_numbers_it_has() {
 fn a_voice_has_a_gender_only_when_the_catalogue_states_one() {
     let dora = Voice {
         id: "ef_dora".into(),
+        name: None,
         languages: vec!["es".into()],
         gender: Some(Gender::Female),
     };
@@ -33,6 +34,7 @@ fn a_voice_has_a_gender_only_when_the_catalogue_states_one() {
     );
     let plain = Voice {
         id: "F1".into(),
+        name: None,
         languages: vec!["es".into()],
         gender: None,
     };

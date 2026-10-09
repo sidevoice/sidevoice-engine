@@ -11,8 +11,14 @@
 //!   approve.
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
+//! - `pin-providers [--check]`: what the remote providers' APIs do not say about their models, derived from their
+//!   official OpenAPI specs into each provider's `facts.json` (or, with `--check`, checked for drift)
+//!   (xtask/src/providers.rs).
 //! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
 //!   DIR and its table appended to the job's summary (xtask/src/e2e.rs).
+//! - `remote-live`: the remote providers called for real, the engine's ignored integration test `tests/remote_live.rs`,
+//!   for each provider whose key is in the environment, and its table appended to the job's summary
+//!   (xtask/src/remote_live.rs).
 //! - `link-size`: what linking the engine costs, as the release size of the smallest program using it
 //!   (xtask/src/link_size.rs).
 //! - `sherpa-libs [DIR | --linked | --pin | --check]`: sherpa-onnx's prebuilt static libraries for this machine, checked
@@ -26,7 +32,9 @@ mod catalog;
 mod e2e;
 mod link_size;
 mod npm;
+mod providers;
 mod release;
+mod remote_live;
 mod sherpa_fields;
 mod sherpa_libs;
 mod test_browser;
@@ -44,7 +52,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-catalog [--check] | e2e [DIR] | link-size | test-browser | web-e2e [DIR] \
+     | pin-catalog [--check] | pin-providers [--check] | e2e [DIR] | link-size | remote-live | test-browser | web-e2e [DIR] \
      | sherpa-libs [DIR | --linked | --pin | --check]";
 
 fn main() -> ExitCode {
@@ -59,9 +67,12 @@ fn main() -> ExitCode {
         ["npm-publish", tag] => npm::publish(tag),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
+        ["pin-providers"] => providers::pin(false),
+        ["pin-providers", "--check"] => providers::pin(true),
         ["e2e"] => e2e::run(None),
         ["e2e", dir] => e2e::run(Some(dir)),
         ["link-size"] => link_size::measure(),
+        ["remote-live"] => remote_live::run(),
         ["sherpa-libs"] => sherpa_libs::fetch(None),
         ["sherpa-libs", "--linked"] => sherpa_libs::linked(),
         ["sherpa-libs", "--pin"] => sherpa_libs::pin(false),

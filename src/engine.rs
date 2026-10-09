@@ -1,48 +1,53 @@
-//! The engine of one place: its host, its catalogue and the backends compiled into it, and what an app does with a
-//! model: list them ([`Engine::models`]), install and uninstall one, and load one ([`Engine::load`]), which returns a
-//! [`LoadedModel`] that transcribes, speaks or detects speech, and is unloaded when dropped.
+//! The engine of one place: its host, its catalogue and the backends compiled into it, the remote providers compiled
+//! into it, and what an app does with a model. A local model: list them ([`Engine::models`]), install and uninstall
+//! one, and load one ([`Engine::load`]), which returns a [`LocalModel`], unloaded when dropped. A remote model: list
+//! the providers and their models ([`Engine::providers`], [`Engine::refresh`]) and make one ([`Engine::remote`]), a
+//! [`RemoteModel`](crate::RemoteModel). Either hands out the capability interfaces ([`Stt`](crate::Stt), ...).
 //!
-//! Inside: `model` (a model as [`Engine::models`] lists it), `loaded` (a model in memory: [`LoadedModel`], [`Stt`],
-//! [`Tts`], [`Vad`] and its [`VadStream`]), `audio` ([`Audio`], and resampling), `memory` (weak references: one
-//! library per backend, one model per build) and `error` (why an engine cannot be built).
+//! Inside: `model` (a model as [`Engine::models`] lists it), `local` ([`LocalModel`]), `providers` (the remote side),
+//! `memory` (weak references: one library per backend, one model per build) and `error` (why an engine cannot be
+//! built).
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::backend::{self, Backend, BackendInfo};
+use crate::capability::Resident;
 use crate::catalog::{BuildEntry, Catalog, CatalogSource, ModelEntry, ModelFile};
 use crate::host::{Accelerator, Host};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
+use crate::provider::listing::Listings;
+use crate::provider::{self, Adapter};
 use crate::resolver::{Reason, Rejection, Resolver};
 use crate::{Error, Result};
 
-mod audio;
 mod error;
-pub(super) mod loaded;
+mod local;
 mod memory;
 mod model;
+mod providers;
 #[cfg(test)]
 mod tests;
 
-pub use audio::Audio;
 pub use error::ConfigError;
-pub use loaded::{
-    EndOfTurn, LoadedModel, Stt, Tts, Vad, VadEvent, VadFrame, VadOptions, VadOutput, VadStream,
-};
+pub use local::LocalModel;
 pub use model::{Model, ModelBuild};
 
-use loaded::Resident;
 use memory::Memory;
 
-/// The engine of one place: what can run here, what is installed, and what is loaded.
+/// The engine of one place: what can run here, what is installed, what is loaded, and what the remote providers offer.
 ///
-/// It holds no model itself: a [`LoadedModel`] does, and the model stays in memory while one of its build lives.
+/// It holds no model itself: a [`LocalModel`] does, and the model stays in memory while one of its build lives.
 /// Loading a build that is already in memory returns it again, and a backend's models share its library.
 pub struct Engine {
-    host: Box<dyn Host>,
+    /// Shared with the remote models it makes, which make their calls through it.
+    host: Arc<dyn Host>,
     catalog: Catalog,
     backends: Vec<Box<dyn Backend>>,
+    providers: Vec<Box<dyn Adapter>>,
+    /// The providers' listings, in memory only.
+    listings: Listings,
     resolver: Resolver,
     installer: Installer,
     memory: Mutex<Memory>,
@@ -90,9 +95,11 @@ impl Engine {
             return Err(ConfigError::Catalog(problems));
         }
         Ok(Self {
-            host,
+            host: Arc::from(host),
             catalog,
             backends,
+            providers: provider::built_in(),
+            listings: Listings::default(),
             resolver: Resolver::default(),
             installer: Installer,
             memory: Mutex::default(),
@@ -179,7 +186,7 @@ impl Engine {
         let (_, artifacts) = self.artifacts(build)?;
         let _installing = Installing::new(&self.installing, &build.id);
         self.installer
-            .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
+            .install(&build.id, &artifacts, &*self.host, progress, cancel)
             .await
             .map(drop)
     }
@@ -191,7 +198,7 @@ impl Engine {
     ///
     /// # Errors
     ///
-    /// `model-not-found`, `build-not-found` (not a build of that model), `model-in-use` while a [`LoadedModel`] of a
+    /// `model-not-found`, `build-not-found` (not a build of that model), `model-in-use` while a [`LocalModel`] of a
     /// build it would remove lives, `install-in-progress` while one of those builds is being installed (or loaded, and
     /// installed first), and what the host's storage fails with. Nothing is removed when it fails before storage.
     pub async fn uninstall(&self, model: &str, build: Option<&str>) -> Result<()> {
@@ -239,7 +246,7 @@ impl Engine {
 
     /// Loads `build` of the model `model`, or, with `None`, an installed build that runs here, else the recommended
     /// one; it is installed first if it is not (telling `progress`, stopping once `cancel` is cancelled). A build
-    /// already in memory is not loaded again: the [`LoadedModel`] returned shares it. Only the build's backend is ever
+    /// already in memory is not loaded again: the [`LocalModel`] returned shares it. Only the build's backend is ever
     /// activated, and its library is opened with the first of its models.
     ///
     /// # Errors
@@ -252,23 +259,23 @@ impl Engine {
         build: Option<&str>,
         progress: &dyn ProgressSink,
         cancel: &Cancel,
-    ) -> Result<LoadedModel> {
+    ) -> Result<LocalModel> {
         let (entry, build, accelerator) = self.choose(model, build).await?;
         if let Some(resident) = lock(&self.memory).model(&build.id) {
-            return Ok(LoadedModel::new(&entry.id, &build.id, resident));
+            return Ok(LocalModel::new(&entry.id, &build.id, resident));
         }
         let (backend, artifacts) = self.artifacts(build)?;
         let installing = Installing::new(&self.installing, &build.id);
         let files = self
             .installer
-            .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
+            .install(&build.id, &artifacts, &*self.host, progress, cancel)
             .await?;
         drop(installing);
         cancel.check()?;
         let _loading = self.loading.lock().await;
         // Another load of this build may have finished while this one waited.
         if let Some(resident) = lock(&self.memory).model(&build.id) {
-            return Ok(LoadedModel::new(&entry.id, &build.id, resident));
+            return Ok(LocalModel::new(&entry.id, &build.id, resident));
         }
         let id = backend.spec().id;
         let open = lock(&self.memory).library(id);
@@ -278,9 +285,14 @@ impl Engine {
         };
         let model = library.load(build, accelerator, &files).await?;
         let languages = entry.languages.clone();
-        let resident = Resident::new(model, Arc::clone(&library), languages, entry.voices.clone());
+        let resident = Resident::new(
+            model,
+            Some(Arc::clone(&library)),
+            languages,
+            entry.voices.clone(),
+        );
         lock(&self.memory).remember(id, &library, &build.id, &resident);
-        Ok(LoadedModel::new(&entry.id, &build.id, resident))
+        Ok(LocalModel::new(&entry.id, &build.id, resident))
     }
 
     /// Every model of the catalogue, in catalogue order.

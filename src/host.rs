@@ -2,32 +2,37 @@
 //! build, chosen by the same aliases as the backends (`native.rs`, [`NativeHost`], in every native build; the
 //! page's in the web build, in the crate's `web` bridge), and the [`Host`] interface stays open: tests and other platforms bring their own.
 //!
-//! Inside: `capabilities` (what a host reports), `platform` (which platform that is), `storage` and `fetcher` (where
-//! files are kept, and how they arrive), and `native` (the native host).
+//! Inside: `capabilities` (what a host reports), `storage` and `fetcher` (where files are kept, and how they arrive),
+//! `http` (how API calls go out), `credentials` (the keys of remote providers, which the app keeps) and `native` (the
+//! native host).
 
 use crate::maybe_send::{MaybeSend, MaybeSync};
 
 mod capabilities;
+mod credentials;
 mod fetcher;
+mod http;
 #[cfg(native)]
 mod native;
 mod storage;
 
 pub use capabilities::{Accelerator, Capabilities, Runs};
+pub use credentials::{Credentials, NoCredentials};
 pub use fetcher::{Download, Fetcher};
+pub use http::{HttpClient, HttpRequest, HttpResponse};
 #[cfg(native)]
 pub use native::NativeHost;
 #[cfg(native)]
 pub use storage::TreeWriter;
 pub use storage::{FolderWriter, Storage, StorageWriter};
 
-/// The facts, storage and downloads of the place the engine runs in. Without a host there is no engine: an app passes
+/// The facts, storage, downloads, API calls and keys of the place the engine runs in. Without a host there is no engine: an app passes
 /// the built-in one for its build ([`NativeHost`] natively) or its own.
 ///
 /// A host must be `Send + Sync` in a native build and need not be in the web build ([`MaybeSend`], [`MaybeSync`]).
-/// [`Storage`], [`StorageWriter`], [`Fetcher`] and [`Download`] are async traits: implement them with
-/// the re-exported [`async_trait`](crate::async_trait) attribute, which must match the engine's on each target
-/// (futures are `Send` in a native build, not on the web).:
+/// [`Storage`], [`StorageWriter`], [`Fetcher`], [`Download`], [`HttpClient`] and [`Credentials`] are async traits:
+/// implement them with the re-exported [`async_trait`](crate::async_trait) attribute, which must match the engine's on
+/// each target (futures are `Send` in a native build, not on the web).:
 ///
 /// ```
 /// use sidevoice_engine::{async_trait, Download, Error, Fetcher, Result};
@@ -53,4 +58,8 @@ pub trait Host: MaybeSend + MaybeSync {
     fn storage(&self) -> &dyn Storage;
     /// Where files are downloaded from.
     fn fetcher(&self) -> &dyn Fetcher;
+    /// Where API calls go out: a remote provider's listings and its models' calls.
+    fn http(&self) -> &dyn HttpClient;
+    /// Where the keys of remote providers are: the app's, never the engine's.
+    fn credentials(&self) -> &dyn Credentials;
 }

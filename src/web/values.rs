@@ -5,8 +5,8 @@ use js_sys::{Array, Float32Array, Object};
 use wasm_bindgen::JsValue;
 
 use crate::{
-    Accelerator, Audio, Capability, Error, Gender, Model, ModelBuild, Progress, Reason, VadEvent,
-    VadOptions, VadOutput, Voice,
+    Accelerator, Audio, Capability, Error, Gender, Model, ModelBuild, Progress, Provider,
+    ProviderModel, Reason, VadEvent, VadOptions, VadOutput, Voice,
 };
 
 #[cfg(test)]
@@ -65,6 +65,50 @@ fn build(build: &ModelBuild) -> JsValue {
 }
 
 /// `{ code, params: { needs?, has? } }`.
+/// `{ id, name, description, status?, stale, models }`.
+pub(super) fn provider(provider: &Provider) -> JsValue {
+    object(&[
+        ("id", Some(provider.id.into())),
+        ("name", Some(provider.name.into())),
+        ("description", Some(provider.description.into())),
+        ("status", provider.status.as_ref().map(reason)),
+        ("stale", Some(provider.stale.into())),
+        (
+            "models",
+            Some(
+                provider
+                    .models
+                    .iter()
+                    .map(provider_model)
+                    .collect::<Array>()
+                    .into(),
+            ),
+        ),
+    ])
+}
+
+/// `{ id, capabilities, languages, voices, speed? }`.
+fn provider_model(model: &ProviderModel) -> JsValue {
+    let capabilities: Array = model
+        .capabilities
+        .iter()
+        .map(|c| JsValue::from(capability(*c)))
+        .collect();
+    let speed = model
+        .speed
+        .map(|[low, high]| Array::of2(&JsValue::from(low), &JsValue::from(high)).into());
+    object(&[
+        ("id", Some(model.id.as_str().into())),
+        ("capabilities", Some(capabilities.into())),
+        ("languages", Some(strings(&model.languages))),
+        (
+            "voices",
+            Some(model.voices.iter().map(voice).collect::<Array>().into()),
+        ),
+        ("speed", speed),
+    ])
+}
+
 pub(super) fn reason(reason: &Reason) -> JsValue {
     let params = object(&[
         ("needs", reason.needs.map(JsValue::from)),
@@ -81,6 +125,7 @@ pub(super) fn voice(voice: &Voice) -> JsValue {
     });
     object(&[
         ("id", Some(voice.id.as_str().into())),
+        ("name", voice.name.as_deref().map(JsValue::from)),
         ("languages", Some(strings(&voice.languages))),
         ("gender", gender.map(JsValue::from)),
     ])

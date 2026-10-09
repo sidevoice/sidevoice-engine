@@ -3,7 +3,8 @@ name: release-please
 # On every push to main: keep the "release X.Y.Z" PR up to date (version from feat/fix, changelog from the squashed
 # PR titles). Merging that PR is the release: this run then creates the tag and a draft GitHub Release, and
 # release.yml (called below) tests and packages the engine from the tag, attaches the attested assets, publishes the
-# Release and puts the package on npm. RELEASING.md.
+# Release and puts the package on npm, once remote-live.yml (also called below) has called the remote providers for
+# real. RELEASING.md.
 on:
   push:
     branches: [main]
@@ -44,9 +45,18 @@ jobs:
             gh workflow run ci.yml --ref "$branch"
           done
 
+  remote-live:
+    name: Remote providers
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/remote-live.yml
+    secrets:
+      OPENAI_API_KEY_CI: ${{ secrets.OPENAI_API_KEY_CI }}
+      ELEVENLABS_API_KEY_CI: ${{ secrets.ELEVENLABS_API_KEY_CI }}
+
   assets:
     name: Release assets
-    needs: release-please
+    needs: [release-please, remote-live]
     if: needs.release-please.outputs.release_created == 'true'
     permissions:
       contents: write

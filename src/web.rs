@@ -2,19 +2,21 @@
 //! with the methods of [`JsHost`]. Only in the wasm32 build (the npm package).
 //!
 //! A thin wrapper over [`Engine`]: the same operations under JavaScript's names (`models`, `install`, `uninstall`,
-//! `load`, and on what `load` returns, `capabilities`, `asStt().transcribe`, `asTts().voices` and `speak`, and
-//! `asVad().stream`, whose stream `accept`s audio, and `asEndOfTurn().probability`), with a
+//! `load`, `providers`, `refresh`, `remote`, and on the `LocalModel` and `RemoteModel` they return, `capabilities`,
+//! `asStt().transcribe`, `asTts().voices` and `speak`, and `asVad().stream`, whose stream `accept`s audio, and
+//! `asEndOfTurn().probability`), with a
 //! progress callback and an `AbortSignal` where the engine takes a [`ProgressSink`](crate::ProgressSink) and a
 //! [`Cancel`]. Every failure rejects with an `Error` that carries the engine's stable `code` and its `params`, which
 //! the page translates; its message is the code too.
 //!
-//! Inside: `host` (the JavaScript host as the engine sees it, with the web build's storage and downloads), `opfs` (the
-//! browser's private file system, which the storage and the transformers.js backend use) and `values` (the engine's
-//! values as JavaScript objects).
+//! Inside: `host` (the JavaScript host as the engine sees it, with the web build's storage, downloads and API calls),
+//! `opfs` (the browser's private file system, which the storage and the transformers.js backend use) and `values` (the
+//! engine's values as JavaScript objects).
 
 use std::future::Future;
 use std::pin::pin;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::task::Poll;
 
 use js_sys::{Array, Function, Promise, Reflect};
@@ -22,7 +24,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{future_to_promise, JsFuture};
 use web_sys::AbortSignal;
 
-use crate::{BundledCatalog, Cancel, Capability, Engine, Error, LoadedModel, Progress, VadStream};
+use crate::capability::Resident;
+use crate::{BundledCatalog, Cancel, Engine, Error, LocalModel, Progress, RemoteModel, VadStream};
 
 mod host;
 pub(crate) mod opfs;
@@ -39,7 +42,7 @@ const TYPES: &'static str = r#"
 export interface EngineError extends Error { code: string; params: Record<string, number>; }
 /** Why a build does not run here: a stable code and its numbers (`needs`, `has`) when there are any. */
 export interface Reason { code: string; params: { needs?: number; has?: number }; }
-export interface Voice { id: string; languages: string[]; gender?: "female" | "male"; }
+export interface Voice { id: string; name?: string; languages: string[]; gender?: "female" | "male"; }
 export interface ModelBuild {
   id: string; backend: string; accelerator?: string; precision: string; downloadBytes: number; memoryMb: number;
   available: boolean; reasons: Reason[]; installed: boolean;
@@ -48,6 +51,15 @@ export interface Model {
   id: string; family: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; parametersM: number; languages: string[];
   license: string;
   voices: Voice[]; installed: boolean; builds: ModelBuild[]; recommendedBuild?: string;
+}
+/** A remote provider's model, as listed: `speed` is the range it speaks at, when it takes one. */
+export interface ProviderModel {
+  id: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; languages: string[]; voices: Voice[];
+  speed?: [number, number];
+}
+/** A remote provider: its listing's status (a reason, absent when current), whether its models are the last kept. */
+export interface Provider {
+  id: string; name: string; description: string; status?: Reason; stale: boolean; models: ProviderModel[];
 }
 /** How far an install has got: files done of all, and the bytes of the file being downloaded. */
 export interface Progress { files: number; done: number; received: number; size?: number; }
@@ -69,15 +81,17 @@ pub struct WebEngine {
 
 #[wasm_bindgen]
 impl WebEngine {
-    /// Asks the host for its capabilities once, and builds the engine on the bundled catalogue. Rejects with
-    /// `host-capabilities` when the host's `capabilities()` fails, `host-capabilities-<field>` when what it reports is
-    /// malformed.
+    /// Asks the host for its capabilities once, and builds the engine on the bundled catalogue. The host may also have
+    /// `credential(provider)`, which returns (or resolves to) the key of a remote provider (`"openai"`, `"elevenlabs"`)
+    /// or `null`: the engine asks it each time a provider is listed or a remote model called, and keeps no key.
+    /// Rejects with `host-capabilities` when the host's `capabilities()` fails, `host-capabilities-<field>` when what it
+    /// reports is malformed.
     pub async fn create(host: JsHost) -> Result<WebEngine, JsValue> {
         let caps = host
             .capabilities()
             .await
             .map_err(|_| coded(Error::new("host-capabilities")))?;
-        let host = WebHost::from_capabilities(&caps).map_err(|error| {
+        let host = WebHost::new(host, &caps).map_err(|error| {
             let error = JsValue::from(error);
             let code = Reflect::get(&error, &"message".into()).unwrap_or_default();
             set(&error, "code", &code);
@@ -146,9 +160,9 @@ impl WebEngine {
 
     /// Loads `build` of `model` (an installed one that runs here, else the recommended one, when left out),
     /// installing it first if it is not, as [`WebEngine::install`] does. The model stays in memory while a
-    /// `LoadedModel` of its build lives, or an `Stt` or `Tts` one handed out: freeing them all (`free()`, or letting
+    /// `LocalModel` of its build lives, or an `Stt` or `Tts` one handed out: freeing them all (`free()`, or letting
     /// them be collected) unloads it.
-    #[wasm_bindgen(unchecked_return_type = "Promise<LoadedModel>")]
+    #[wasm_bindgen(unchecked_return_type = "Promise<LocalModel>")]
     pub fn load(
         &self,
         model: String,
@@ -163,20 +177,62 @@ impl WebEngine {
             let progress = reporter(on_progress);
             let loading = engine.load(&model, build.as_deref(), &progress, &cancel);
             let loaded = until_aborted(signal.as_ref(), &cancel, loading).await?;
-            Ok(WebLoadedModel { loaded }.into())
+            Ok(WebLocalModel { loaded }.into())
+        })
+    }
+
+    /// Every remote provider of this build, each with its listing's status and its models the app's key may use,
+    /// listing first those whose listing is missing or old. It never rejects: a provider says what failed in its
+    /// `status`.
+    #[wasm_bindgen(unchecked_return_type = "Promise<Provider[]>")]
+    pub fn providers(&self) -> Promise {
+        let engine = Rc::clone(&self.engine);
+        promise(async move {
+            let providers = engine.providers().await;
+            Ok(providers
+                .iter()
+                .map(values::provider)
+                .collect::<Array>()
+                .into())
+        })
+    }
+
+    /// `provider` listed again now; rejects with `provider-not-found` for one not in this build.
+    #[wasm_bindgen(unchecked_return_type = "Promise<Provider>")]
+    pub fn refresh(&self, provider: String) -> Promise {
+        let engine = Rc::clone(&self.engine);
+        promise(async move { Ok(values::provider(&engine.refresh(&provider).await?)) })
+    }
+
+    /// The model `model` of `provider`, as listed: it calls the provider each time it is used. Rejects with
+    /// `provider-not-found`, the provider's status when it has no listing, or `model-not-found`.
+    #[wasm_bindgen(unchecked_return_type = "Promise<RemoteModel>")]
+    pub fn remote(&self, provider: String, model: String) -> Promise {
+        let engine = Rc::clone(&self.engine);
+        promise(async move {
+            let remote = engine.remote(&provider, &model).await?;
+            Ok(WebRemoteModel { remote }.into())
         })
     }
 }
 
-/// A model in memory, for JavaScript. It and the `Stt` and `Tts` it hands out each keep the model in memory: freeing
-/// them all (`free()`, or letting them be collected) unloads it.
-#[wasm_bindgen(js_name = LoadedModel)]
-pub struct WebLoadedModel {
-    loaded: LoadedModel,
+/// The capabilities `resident` has, for JavaScript.
+fn capabilities(resident: &Arc<Resident>) -> Vec<String> {
+    let capabilities = resident.capabilities().iter();
+    capabilities
+        .map(|c| values::capability(*c).to_owned())
+        .collect()
 }
 
-#[wasm_bindgen(js_class = LoadedModel)]
-impl WebLoadedModel {
+/// A local model in memory, for JavaScript. It and the `Stt` and `Tts` it hands out each keep the model in memory:
+/// freeing them all (`free()`, or letting them be collected) unloads it.
+#[wasm_bindgen(js_name = LocalModel)]
+pub struct WebLocalModel {
+    loaded: LocalModel,
+}
+
+#[wasm_bindgen(js_class = LocalModel)]
+impl WebLocalModel {
     /// The model's id.
     #[wasm_bindgen(getter)]
     pub fn id(&self) -> String {
@@ -192,49 +248,98 @@ impl WebLoadedModel {
     /// What it can do: `"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`.
     #[wasm_bindgen(unchecked_return_type = "(\"stt\" | \"tts\" | \"vad\" | \"end-of-turn\")[]")]
     pub fn capabilities(&self) -> Vec<String> {
-        let capabilities = self.loaded.capabilities().iter();
-        capabilities
-            .map(|c| values::capability(*c).to_owned())
-            .collect()
+        capabilities(self.loaded.resident())
     }
 
     /// The model as speech to text, if it is one.
     #[wasm_bindgen(js_name = asStt)]
     pub fn as_stt(&self) -> Option<WebStt> {
-        (self.loaded.capabilities().contains(&Capability::Stt)).then(|| WebStt {
-            loaded: self.loaded.clone(),
-        })
+        WebStt::of(self.loaded.resident())
     }
 
     /// The model as text to speech, if it is one.
     #[wasm_bindgen(js_name = asTts)]
     pub fn as_tts(&self) -> Option<WebTts> {
-        (self.loaded.capabilities().contains(&Capability::Tts)).then(|| WebTts {
-            loaded: self.loaded.clone(),
-        })
+        WebTts::of(self.loaded.resident())
     }
 
     /// The model as a voice activity detector, if it is one.
     #[wasm_bindgen(js_name = asVad)]
     pub fn as_vad(&self) -> Option<WebVad> {
-        (self.loaded.capabilities().contains(&Capability::Vad)).then(|| WebVad {
-            loaded: self.loaded.clone(),
-        })
+        WebVad::of(self.loaded.resident())
     }
 
     /// The model as an end-of-turn classifier, if it is one.
     #[wasm_bindgen(js_name = asEndOfTurn)]
     pub fn as_end_of_turn(&self) -> Option<WebEndOfTurn> {
-        (self.loaded.capabilities().contains(&Capability::EndOfTurn)).then(|| WebEndOfTurn {
-            loaded: self.loaded.clone(),
-        })
+        WebEndOfTurn::of(self.loaded.resident())
     }
 }
 
-/// A loaded model, as speech to text.
+/// A remote provider's model, for JavaScript: each call on what it hands out goes to the provider.
+#[wasm_bindgen(js_name = RemoteModel)]
+pub struct WebRemoteModel {
+    remote: RemoteModel,
+}
+
+#[wasm_bindgen(js_class = RemoteModel)]
+impl WebRemoteModel {
+    /// The provider's id.
+    #[wasm_bindgen(getter)]
+    pub fn provider(&self) -> String {
+        self.remote.provider().to_owned()
+    }
+
+    /// The provider's id of the model.
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        self.remote.id().to_owned()
+    }
+
+    /// What it can do: `"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`.
+    #[wasm_bindgen(unchecked_return_type = "(\"stt\" | \"tts\" | \"vad\" | \"end-of-turn\")[]")]
+    pub fn capabilities(&self) -> Vec<String> {
+        capabilities(self.remote.resident())
+    }
+
+    /// The model as speech to text, if it is one.
+    #[wasm_bindgen(js_name = asStt)]
+    pub fn as_stt(&self) -> Option<WebStt> {
+        WebStt::of(self.remote.resident())
+    }
+
+    /// The model as text to speech, if it is one.
+    #[wasm_bindgen(js_name = asTts)]
+    pub fn as_tts(&self) -> Option<WebTts> {
+        WebTts::of(self.remote.resident())
+    }
+
+    /// The model as a voice activity detector, if it is one.
+    #[wasm_bindgen(js_name = asVad)]
+    pub fn as_vad(&self) -> Option<WebVad> {
+        WebVad::of(self.remote.resident())
+    }
+
+    /// The model as an end-of-turn classifier, if it is one.
+    #[wasm_bindgen(js_name = asEndOfTurn)]
+    pub fn as_end_of_turn(&self) -> Option<WebEndOfTurn> {
+        WebEndOfTurn::of(self.remote.resident())
+    }
+}
+
+/// A model, local or remote, as speech to text.
 #[wasm_bindgen(js_name = Stt)]
 pub struct WebStt {
-    loaded: LoadedModel,
+    model: Arc<Resident>,
+}
+
+impl WebStt {
+    /// `model` as speech to text, if it is one.
+    fn of(model: &Arc<Resident>) -> Option<Self> {
+        (model.capabilities().contains(&crate::Capability::Stt)).then(|| Self {
+            model: Arc::clone(model),
+        })
+    }
 }
 
 #[wasm_bindgen(js_class = Stt)]
@@ -248,9 +353,9 @@ impl WebStt {
         #[wasm_bindgen(js_name = sampleRate)] sample_rate: u32,
         language: Option<String>,
     ) -> Promise {
-        let loaded = self.loaded.clone();
+        let model = Arc::clone(&self.model);
         promise(async move {
-            let stt = loaded
+            let stt = model
                 .as_stt()
                 .ok_or(Error::new("model-cannot-transcribe"))?;
             let text = stt
@@ -261,10 +366,19 @@ impl WebStt {
     }
 }
 
-/// A loaded model, as text to speech.
+/// A model, local or remote, as text to speech.
 #[wasm_bindgen(js_name = Tts)]
 pub struct WebTts {
-    loaded: LoadedModel,
+    model: Arc<Resident>,
+}
+
+impl WebTts {
+    /// `model` as text to speech, if it is one.
+    fn of(model: &Arc<Resident>) -> Option<Self> {
+        (model.capabilities().contains(&crate::Capability::Tts)).then(|| Self {
+            model: Arc::clone(model),
+        })
+    }
 }
 
 #[wasm_bindgen(js_class = Tts)]
@@ -272,9 +386,9 @@ impl WebTts {
     /// The voices it speaks with: `{ id, languages, gender? }`.
     #[wasm_bindgen(unchecked_return_type = "Promise<Voice[]>")]
     pub fn voices(&self) -> Promise {
-        let loaded = self.loaded.clone();
+        let model = Arc::clone(&self.model);
         promise(async move {
-            let tts = loaded.as_tts().ok_or(Error::new("model-cannot-speak"))?;
+            let tts = model.as_tts().ok_or(Error::new("model-cannot-speak"))?;
             let voices = tts.voices().await;
             Ok(voices.iter().map(values::voice).collect::<Array>().into())
         })
@@ -290,19 +404,28 @@ impl WebTts {
         language: Option<String>,
         speed: Option<f32>,
     ) -> Promise {
-        let loaded = self.loaded.clone();
+        let model = Arc::clone(&self.model);
         promise(async move {
-            let tts = loaded.as_tts().ok_or(Error::new("model-cannot-speak"))?;
+            let tts = model.as_tts().ok_or(Error::new("model-cannot-speak"))?;
             let audio = tts.speak(&text, &voice, language.as_deref(), speed).await?;
             Ok(values::audio(&audio))
         })
     }
 }
 
-/// A loaded model, as an end-of-turn classifier.
+/// A model, local or remote, as an end-of-turn classifier.
 #[wasm_bindgen(js_name = EndOfTurn)]
 pub struct WebEndOfTurn {
-    loaded: LoadedModel,
+    model: Arc<Resident>,
+}
+
+impl WebEndOfTurn {
+    /// `model` as an end-of-turn classifier, if it is one.
+    fn of(model: &Arc<Resident>) -> Option<Self> {
+        (model.capabilities().contains(&crate::Capability::EndOfTurn)).then(|| Self {
+            model: Arc::clone(model),
+        })
+    }
 }
 
 #[wasm_bindgen(js_class = EndOfTurn)]
@@ -310,7 +433,7 @@ impl WebEndOfTurn {
     /// How many seconds of the end of a turn the model hears: earlier audio does not count.
     #[wasm_bindgen(getter)]
     pub fn seconds(&self) -> u32 {
-        self.loaded
+        self.model
             .as_end_of_turn()
             .map_or(0, |model| model.seconds())
     }
@@ -323,20 +446,29 @@ impl WebEndOfTurn {
         audio: Vec<f32>,
         #[wasm_bindgen(js_name = sampleRate)] sample_rate: u32,
     ) -> Promise {
-        let loaded = self.loaded.clone();
+        let model = Arc::clone(&self.model);
         promise(async move {
-            let model = loaded
+            let classifier = model
                 .as_end_of_turn()
                 .ok_or(Error::new("model-cannot-end-turns"))?;
-            Ok(model.probability(&audio, sample_rate).await?.into())
+            Ok(classifier.probability(&audio, sample_rate).await?.into())
         })
     }
 }
 
-/// A loaded model, as a voice activity detector.
+/// A model, local or remote, as a voice activity detector.
 #[wasm_bindgen(js_name = Vad)]
 pub struct WebVad {
-    loaded: LoadedModel,
+    model: Arc<Resident>,
+}
+
+impl WebVad {
+    /// `model` as a voice activity detector, if it is one.
+    fn of(model: &Arc<Resident>) -> Option<Self> {
+        (model.capabilities().contains(&crate::Capability::Vad)).then(|| Self {
+            model: Arc::clone(model),
+        })
+    }
 }
 
 #[wasm_bindgen(js_class = Vad)]
@@ -348,10 +480,10 @@ impl WebVad {
         &self,
         #[wasm_bindgen(unchecked_param_type = "VadOptions")] options: Option<js_sys::Object>,
     ) -> Promise {
-        let loaded = self.loaded.clone();
+        let model = Arc::clone(&self.model);
         promise(async move {
             let options = values::vad_options(options.as_ref())?;
-            let vad = loaded.as_vad().ok_or(Error::new("model-cannot-detect"))?;
+            let vad = model.as_vad().ok_or(Error::new("model-cannot-detect"))?;
             let stream = vad.stream(options).await?;
             Ok(WebVadStream {
                 sample_rate: stream.sample_rate(),

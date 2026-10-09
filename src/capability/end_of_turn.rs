@@ -1,6 +1,8 @@
-//! A loaded model as an end-of-turn classifier: [`EndOfTurn`], which says how likely it is that a turn is complete.
+//! A model as an end-of-turn classifier: [`EndOfTurn`], which says how likely it is that a turn is complete.
 
-use super::{audio, LoadedModel};
+use std::sync::Arc;
+
+use super::{audio, Resident};
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -9,16 +11,16 @@ mod tests;
 /// The rate every end-of-turn backend takes (`EndOfTurnModel::probability`).
 const RATE: u32 = 16_000;
 
-/// A loaded model, as an end-of-turn classifier.
+/// A model, as an end-of-turn classifier.
 #[derive(Debug, Clone, Copy)]
-pub struct EndOfTurn<'a>(pub(super) &'a LoadedModel);
+pub struct EndOfTurn<'a>(pub(super) &'a Arc<Resident>);
 
 impl EndOfTurn<'_> {
     /// How many seconds of the end of a turn the model hears (smart-turn: 8): audio before them does not count, so a
     /// caller may pass only those.
     #[must_use]
     pub fn seconds(&self) -> u32 {
-        self.0.resident.end_of_turn_seconds.unwrap_or_default()
+        self.0.end_of_turn_seconds.unwrap_or_default()
     }
 
     /// The probability, from 0 to 1, that the turn in `audio` (mono samples at `sample_rate` Hz, from the turn's start
@@ -48,7 +50,7 @@ impl EndOfTurn<'_> {
         let resampled = audio::resample(tail, sample_rate, RATE);
         let wanted = (self.seconds() * RATE) as usize;
         let pcm = &resampled[resampled.len().saturating_sub(wanted)..];
-        let mut model = self.0.resident.model.lock().await;
+        let mut model = self.0.model.lock().await;
         let classifier = model
             .as_end_of_turn()
             .ok_or(Error::new("model-cannot-end-turns"))?;

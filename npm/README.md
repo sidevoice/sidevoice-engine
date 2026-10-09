@@ -20,6 +20,9 @@ const engine = await WebEngine.create({
   async capabilities() {
     return { os: "web", arch: "wasm32", accelerators: navigator.gpu ? ["webgpu", "wasm"] : ["wasm"] };
   },
+  credential(provider) { // optional: a remote provider's key ("openai", "elevenlabs"), or null
+    return localStorage.getItem(`key:${provider}`);
+  },
 });
 const models = await engine.models(); // each with its builds ranked, whether it is installed, the recommended build
 const whisper = await engine.load("whisper-small", undefined, (progress) => show(progress), abort.signal);
@@ -32,8 +35,14 @@ const mic = await silero.asVad().stream({ minSilenceMs: 500 }); // a state of it
 const { frames, events } = await mic.accept(pcm); // events: { type: "speech-start", at } | { type: "speech-end", start, end }
 const smartTurn = await engine.load("smart-turn-v3.2");
 const p = await smartTurn.asEndOfTurn().probability(turnSoFar, 48000); // the probability the speaker has finished
-stt.free(); // the model leaves memory once its LoadedModel and the Stt and Tts it handed out are freed
+stt.free(); // the model leaves memory once its LocalModel and the Stt and Tts it handed out are freed
 whisper.free(); // (or collected)
+
+// Remote providers, beside the catalogue: listed live with the app's keys, kept in memory only.
+const providers = await engine.providers(); // each { id, name, status?, stale, models: [{ id, capabilities, languages, voices, speed? }] }
+await engine.refresh("elevenlabs"); // listed again now
+const scribe = await engine.remote("elevenlabs", "scribe_v2"); // a RemoteModel: the same asStt(), asTts()
+const heard = await scribe.asStt().transcribe(samples, 48000, "es");
 ```
 
 Every promise rejects with an `Error` carrying the engine's stable `code` and its `params`, for the page to
