@@ -104,7 +104,7 @@ impl EndOfTurnModel for SmartTurn {
 
     /// Fails with `end-of-turn-failed`.
     async fn probability(&mut self, pcm: &[f32]) -> Result<f32> {
-        let features = Float32Array::from(smart_turn::features(pcm).as_slice());
+        let features = Float32Array::from(smart_turn::features_yielding(pcm).await.as_slice());
         let (mels, frames) = (MELS as u32, FRAMES as u32);
         let answer = smart_turn_run(&self.model, &self.tensor, INPUT, &features, mels, frames)
             .await

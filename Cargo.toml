@@ -26,6 +26,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 # Each downloaded file is checked against its digest as it arrives (src/install.rs), on every target.
 sha2 = { version = "0.11.0", default-features = false }
+# smart-turn's input, Whisper's log-mel features (src/backend/smart_turn.rs), on every target: an FFT of any size in pure
+# Rust, which compiles to wasm32 too.
+rustfft = "6.4.1"
 
 # Which backends a build contains is decided by these tables and one `#![cfg]` per backend file, which must agree: a
 # backend whose dependency is missing here does not compile. The libraries listed here are the ones backends link. Heavy engine libraries are meant to be downloaded

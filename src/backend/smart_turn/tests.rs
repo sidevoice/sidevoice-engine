@@ -60,3 +60,56 @@ fn a_long_turn_keeps_its_end_and_silence_is_flat() {
     let silence = features(&[]);
     assert!(silence.iter().all(|x| (x - silence[0]).abs() < 1e-6));
 }
+
+/// Natively, a chunk at a time gives the same features: nothing waits between chunks.
+#[cfg(native)]
+#[test]
+fn chunked_extraction_gives_the_same_features() {
+    let chunked = crate::test_support::ready(super::features_yielding(&signal()));
+    assert_eq!(chunked, features(&signal()));
+}
+
+/// In a page, extraction lets the page run between chunks: a task the page queued while it ran gets to run before it
+/// ends, once per chunk, rather than wait for the whole extraction (which would block the page as long as it lasts).
+#[cfg(web)]
+mod in_a_page {
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    use super::{features, signal};
+    use crate::backend::smart_turn::{features_yielding, CHUNK, FRAMES};
+
+    #[wasm_bindgen(inline_js = r#"
+export function startTicker() {
+  const ticker = { ticks: 0, running: true };
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => {
+    if (!ticker.running) { channel.port1.close(); return; }
+    ticker.ticks += 1;
+    channel.port2.postMessage(null);
+  };
+  channel.port2.postMessage(null);
+  return ticker;
+}
+export function stopTicker(ticker) { ticker.running = false; return ticker.ticks; }
+"#)]
+    extern "C" {
+        #[wasm_bindgen(js_name = startTicker)]
+        fn start_ticker() -> JsValue;
+        #[wasm_bindgen(js_name = stopTicker)]
+        fn stop_ticker(ticker: &JsValue) -> u32;
+    }
+
+    #[wasm_bindgen_test]
+    async fn the_page_runs_between_chunks_and_the_features_are_the_same() {
+        let ticker = start_ticker();
+        let chunked = features_yielding(&signal()).await;
+        let ticks = stop_ticker(&ticker);
+        let chunks = FRAMES.div_ceil(CHUNK) as u32;
+        assert!(
+            ticks + 1 >= chunks,
+            "the page ran {ticks} times during {chunks} chunks"
+        );
+        assert_eq!(chunked, features(&signal()));
+    }
+}
