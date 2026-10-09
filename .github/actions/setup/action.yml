@@ -22,9 +22,14 @@ runs:
         rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy --component rustfmt
         if [ "$WASM" = true ]; then rustup target add --toolchain "$RUST_VERSION" wasm32-unknown-unknown; fi
         echo "RUSTUP_TOOLCHAIN=$RUST_VERSION" >> "$GITHUB_ENV"
+        # whisper.cpp tunes ggml for the building machine's CPU unless told not to (README, "Build and test"). The build
+        # cache is restored on runners of other CPUs, where those instructions are illegal (SIGILL), so CI builds it
+        # portable. whisper-rs-sys reads GGML_* from the environment but does not rebuild when it changes: the cache key
+        # names it, so that no cache built otherwise is restored.
+        echo "GGML_NATIVE=OFF" >> "$GITHUB_ENV"
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
-        key: ${{ inputs.wasm == 'true' && 'wasm' || '' }}
+        key: ggml-portable-${{ inputs.wasm == 'true' && 'wasm' || 'native' }}
     # sherpa-onnx's prebuilt static libraries, which the `sherpa-onnx` crate links: fetched once by `cargo xtask
     # sherpa-libs`, checked against the digests in xtask/sherpa-onnx-libs.json, and kept outside target/, which
     # rust-cache prunes. The build links them through SHERPA_ONNX_LIB_DIR, which the command exports, so
