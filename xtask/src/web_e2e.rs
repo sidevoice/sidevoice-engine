@@ -205,7 +205,7 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             "model": plan.end_of_turn.model,
             "build": plan.end_of_turn.build,
             "pauseS": shared.end_of_turn.pause_s,
-            "cutWithin": shared.end_of_turn.cut_within,
+            "pauseFloor": shared.end_of_turn.pause_floor,
         },
         "tts": speakers,
         "clips": page_clips,

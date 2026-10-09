@@ -1,7 +1,8 @@
 //! How the loop judges an end-of-turn model on a recorded clip. Each clip is heard twice, each time followed by the
 //! same short pause, the moment a silence-based detector would end the turn: whole, where the speaker has finished,
-//! and cut inside a word, where they have not. The cut is where the clip is loudest (the 20 ms of most energy) within
-//! the span the plan gives, so it falls in a voiced sound, never at a pause or between phrases. The model must say the whole clip is a complete turn and the cut one is not:
+//! and cut mid-phrase, where they have not. The cut is the middle of the clip's longest stretch of speech without a
+//! pause (100 ms windows each louder than the plan's `pause_floor`, a fraction of the loudest window): words go on
+//! on both sides of it, so it is never the end of a phrase, which may be a sentence of its own. The model must say the whole clip is a complete turn and the cut one is not:
 //! it ends turns where silence alone would have cut too early.
 
 /// The plan's `end_of_turn`: the builds, and the rule.
@@ -12,8 +13,8 @@ pub(crate) struct EndOfTurnPlan {
     pub(crate) builds: Vec<String>,
     /// The silence after the speech, in seconds: the pause a detector would end the turn at.
     pub(crate) pause_s: f64,
-    /// Where the clip may be cut for its unfinished version, as fractions of its length: the loudest 20 ms in there.
-    pub(crate) cut_within: [f64; 2],
+    /// Below this fraction of the loudest 100 ms, a 100 ms window is a pause.
+    pub(crate) pause_floor: f32,
     /// The probability at or above which a turn is complete.
     pub(crate) threshold: f32,
 }
@@ -21,7 +22,7 @@ pub(crate) struct EndOfTurnPlan {
 /// The clip `samples` at `rate`, whole and cut, each followed by the plan's pause.
 pub(crate) fn heard(samples: &[f32], rate: u32, plan: &EndOfTurnPlan) -> (Vec<f32>, Vec<f32>) {
     let pause = vec![0.0; (plan.pause_s * f64::from(rate)) as usize];
-    let cut = cut_point(samples, rate, plan.cut_within);
+    let cut = cut_point(samples, rate, plan.pause_floor);
     (
         [samples, &pause].concat(),
         [&samples[..cut], &pause[..]].concat(),
@@ -79,19 +80,27 @@ pub(crate) fn table(turns: &[Turn]) -> (String, usize) {
     (table, failed)
 }
 
-/// Where `samples` (at `rate`) is cut: the middle of its loudest 20 ms between the fractions `within` of its length.
-pub(crate) fn cut_point(samples: &[f32], rate: u32, within: [f64; 2]) -> usize {
-    let frame = (rate / 50).max(1) as usize;
-    let from = (samples.len() as f64 * within[0]) as usize / frame;
-    let to = ((samples.len() as f64 * within[1]) as usize / frame).max(from + 1);
-    let energy = |at: usize| -> f32 {
-        let window = samples
-            .get(at * frame..(at + 1) * frame)
-            .unwrap_or_default();
-        window.iter().map(|sample| sample * sample).sum()
-    };
-    let loudest = (from..to)
-        .max_by(|a, b| energy(*a).total_cmp(&energy(*b)))
-        .unwrap_or(from);
-    (loudest * frame + frame / 2).min(samples.len())
+/// Where `samples` (at `rate`) is cut: the middle of its longest run of 100 ms windows each louder than `floor` times
+/// the loudest window.
+pub(crate) fn cut_point(samples: &[f32], rate: u32, floor: f32) -> usize {
+    let window = (rate / 10).max(1) as usize;
+    let energies: Vec<f32> = samples
+        .chunks_exact(window)
+        .map(|chunk| chunk.iter().map(|sample| sample * sample).sum())
+        .collect();
+    let floor = energies.iter().copied().fold(0.0, f32::max) * floor;
+    let (mut longest, mut start) = (0..0, None);
+    for (at, energy) in energies.iter().chain([&0.0]).enumerate() {
+        match (*energy > floor, start) {
+            (true, None) => start = Some(at),
+            (false, Some(from)) => {
+                if at - from > longest.len() {
+                    longest = from..at;
+                }
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    (longest.start + longest.end) * window / 2
 }

@@ -301,7 +301,7 @@ and every transcript must stay within the plan's one word error rate, a loose 50
 works and catches a wrong configuration, it does not measure quality. Each voice activity detector of the plan (Silero
 on sherpa-onnx) then hears each recorded clip set between two seconds of silence, fed 20 ms at a time: every segment it
 reports must lie in the clip, give or take 0.3 s, be ended by the silence after it, and together cover half the clip
-(`tests/voice_loop/vad.rs`). Each end-of-turn model (smart-turn) hears each clip whole and cut inside a word (its loudest 20 ms in the middle), each followed by a
+(`tests/voice_loop/vad.rs`). Each end-of-turn model (smart-turn) hears each clip whole and cut mid-phrase (the middle of its longest stretch of speech without a pause), each followed by a
 0.2 s pause, the moment silence alone would end the turn: it must call the whole clip complete (P ≥ 0.5) and the
 cut one not (`tests/voice_loop/end_of_turn.rs`). It downloads about 1.5 GB the first time (kept by
 digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless asked for; the `e2e` workflow runs it on Linux x86_64 and
@@ -328,7 +328,7 @@ cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own
 The tests that need a page (OPFS, an HTTP server) are ignored in Node and run in a headless Chrome, through
 ChromeDriver (`CHROMEDRIVER`, or `chromedriver` on the `PATH`, and `CHROME` for the Chrome it starts, of the same
 version). The voice loop runs in Chrome too, through the npm package as a page uses it: Whisper base transcribes the
-loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, and Silero finds the speech of each clip, and smart-turn tells each whole clip from a cut inside a word, by the
+loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, and Silero finds the speech of each clip, and smart-turn tells each whole clip from a cut mid-phrase, by the
 native loop's rules, on WebAssembly (`xtask/web-e2e.json`; a few
 hundred MB downloaded on every run, into a profile that is thrown away; `CHROME`, else `google-chrome`):
 

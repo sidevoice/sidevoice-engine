@@ -56,7 +56,7 @@ fn a_turn_is_complete_whole_and_not_cut() {
     use super::{judge_turn, EndOfTurnRule, Turn};
     let rule = EndOfTurnRule {
         pause_s: 0.2,
-        cut_within: [0.3, 0.7],
+        pause_floor: 0.01,
         threshold: 0.5,
     };
     let turn = |whole, cut| Turn {
