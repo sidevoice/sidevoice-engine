@@ -42,8 +42,11 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
 - **Nothing heavy is linked into the app.** Engine libraries and models are downloaded on demand. Two exceptions, for
   now: the sherpa-onnx backend links the official `sherpa-onnx` crate statically (ONNX Runtime included), and the
   whisper.cpp backend links `whisper-rs` (whisper.cpp and ggml, compiled from source), each in native builds only, so
-  neither downloads anything of its own. Making them load
-  on demand is sidevoice-engine#33; no other backend links its engine.
+  neither downloads anything of its own. Making them load on demand is sidevoice-engine#33; no other backend links
+  its engine. The `onnxruntime` backend links none: it runs on the ONNX Runtime already inside sherpa-onnx's
+  libraries, through `ort` built with no runtime of its own (`alternative-backend`), so it adds only `ort`'s glue
+  (about 0.1–0.2 MB, measured by the link-size job). When runtimes load on demand, it takes its runtime from there.
+  Remote backends link nothing: they call their providers through the host.
 
 ## Code layout
 
