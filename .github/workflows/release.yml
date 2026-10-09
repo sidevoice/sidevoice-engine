@@ -89,9 +89,10 @@ jobs:
       - run: cargo xtask publish dist "$TAG"
 
   # Versioned releases only, never the nightly: the npm tarball the Release just published (read back and checked
-  # against SHA256SUMS and the attestation), by trusted publishing (OIDC; no token exists). RELEASING.md.
+  # against SHA256SUMS and the attestation), staged by trusted publishing (OIDC; no token exists) for the operator to
+  # approve on npmjs.com. RELEASING.md.
   publish-npm:
-    name: Publish to npm
+    name: Stage on npm
     needs: publish-release
     if: inputs.tag
     runs-on: ubuntu-24.04
@@ -106,8 +107,8 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
       - uses: ./.github/actions/setup
-      # Node.js 24 brings npm 11, which trusted publishing needs (11.5.1 or later; `cargo xtask npm-publish` checks it).
-      # No registry-url, so no .npmrc and no token.
+      # Node.js 24 runs the npm `cargo xtask npm-publish` pins (staged publishing needs `npm stage`); trusted publishing
+      # needs Node.js 22.14 or later. No registry-url, so no .npmrc and no token.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
