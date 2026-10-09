@@ -44,6 +44,12 @@ pub struct BuildEntry {
     ///   whose API takes none maps none.
     #[serde(default, deserialize_with = "call_params")]
     pub call_params: BTreeMap<String, Vec<String>>,
+    /// sherpa-onnx builds only: numbers its config takes that the engine must know, by config path: a voice activity
+    /// detector's window and rate (`silero_vad.window_size`, `sample_rate`), which its streams are fed by and report to
+    /// callers. sherpa-onnx would apply its own defaults, but its C API does not tell them back, so they are data here,
+    /// never constants in code. Empty, none.
+    #[serde(default)]
+    pub config: BTreeMap<String, i32>,
 }
 
 /// The arguments of a call a build's `call_params` may name: `language`, the BCP 47 tag `Stt::transcribe` takes.
