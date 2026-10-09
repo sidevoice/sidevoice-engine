@@ -48,7 +48,7 @@ fn speech_is_confirmed_after_min_speech_and_ends_after_min_silence() {
     assert_eq!(last, 65);
     // Starting two context windows (1 152) and min_speech (4 000) before window 29's end (14 848), and ending min_silence
     // before window 67's end (34 304).
-    assert_eq!(ended, [9_696..26_304]);
+    assert_eq!(ended, vec![9_696..26_304]);
     assert!(ended[0].start < 20 * WINDOW && ended[0].end > 50 * WINDOW);
 }
 
