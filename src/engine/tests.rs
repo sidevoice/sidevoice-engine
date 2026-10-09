@@ -349,11 +349,11 @@ impl TtsModel for FakeModel {
     async fn speak(
         &mut self,
         text: &str,
-        voice: &str,
+        voice: &Voice,
         _language: Option<&str>,
         speed: f32,
     ) -> Result<Vec<f32>> {
-        if voice != "a" && voice != "b" {
+        if voice.id != "a" && voice.id != "b" {
             return Err(Error::new("unknown-voice"));
         }
         Ok(vec![0.0; (text.len() as f32 * speed) as usize])

@@ -148,12 +148,47 @@ fn a_language_reaches_espeak_ng_as_its_voice_or_its_primary_subtag() {
     let voices: BTreeSet<String> = ["en", "en-us", "en-gb", "es", "es-419", "pt-br"]
         .map(str::to_owned)
         .into();
-    assert_eq!(espeak_voice("en-US", &voices), "en-us");
-    assert_eq!(espeak_voice("en_GB", &voices), "en-gb");
-    assert_eq!(espeak_voice("pt-BR", &voices), "pt-br");
-    assert_eq!(espeak_voice("es-ES", &voices), "es", "no es-es voice");
-    assert_eq!(espeak_voice("es", &voices), "es");
-    assert_eq!(espeak_voice("fr-CA", &BTreeSet::new()), "fr");
+    assert_eq!(espeak_voice("en-US", &[], &voices), "en-us");
+    assert_eq!(espeak_voice("en_GB", &[], &voices), "en-gb");
+    assert_eq!(espeak_voice("pt-BR", &[], &voices), "pt-br");
+    assert_eq!(espeak_voice("es-ES", &[], &voices), "es", "no es-es voice");
+    assert_eq!(espeak_voice("es", &[], &voices), "es");
+    assert_eq!(espeak_voice("fr-CA", &[], &BTreeSet::new()), "fr");
+}
+
+#[test]
+fn a_language_without_a_region_takes_the_voices() {
+    // espeak-ng's own names: `en` is British English, `en-us` American; there is no `en-gb` voice.
+    let voices: BTreeSet<String> = ["en", "en-us", "es", "es-419", "pt", "pt-br"]
+        .map(str::to_owned)
+        .into();
+    let declared = |tags: &[&str]| tags.iter().map(|tag| (*tag).to_owned()).collect::<Vec<_>>();
+    assert_eq!(espeak_voice("en", &declared(&["en-US"]), &voices), "en-us");
+    assert_eq!(espeak_voice("en", &declared(&["en-GB"]), &voices), "en");
+    assert_eq!(espeak_voice("pt", &declared(&["pt-BR"]), &voices), "pt-br");
+    assert_eq!(
+        espeak_voice("es", &declared(&["es-419"]), &voices),
+        "es-419"
+    );
+    assert_eq!(
+        espeak_voice("EN", &declared(&["en_US"]), &voices),
+        "en-us",
+        "any spelling"
+    );
+    // The first declared language of the call's.
+    assert_eq!(
+        espeak_voice("es", &declared(&["en-US", "es-419", "es-ES"]), &voices),
+        "es-419"
+    );
+    // A region the call names is kept; another language's region, or a voice with none, changes nothing.
+    assert_eq!(espeak_voice("en-GB", &declared(&["en-US"]), &voices), "en");
+    assert_eq!(espeak_voice("es", &declared(&["en-US"]), &voices), "es");
+    assert_eq!(espeak_voice("en", &declared(&["en"]), &voices), "en");
+    // Without espeak-ng's data, the primary subtag still.
+    assert_eq!(
+        espeak_voice("en", &declared(&["en-US"]), &BTreeSet::new()),
+        "en"
+    );
 }
 
 fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn BackendModel>> {

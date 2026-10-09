@@ -60,6 +60,20 @@ impl Resident {
             voices,
         })
     }
+
+    /// The voice `id` as the catalogue declares it, or, when it does not describe it, with the model's languages and
+    /// no gender.
+    fn voice(&self, id: String) -> Voice {
+        self.voices
+            .iter()
+            .find(|voice| voice.id == id)
+            .cloned()
+            .unwrap_or_else(|| Voice {
+                id,
+                languages: self.languages.clone(),
+                gender: None,
+            })
+    }
 }
 
 /// A model loaded by [`Engine::load`](crate::Engine::load). It stays in memory while any `LoadedModel` of its build
@@ -166,18 +180,7 @@ impl Tts<'_> {
         };
         tts.voices()
             .into_iter()
-            .map(|id| {
-                resident
-                    .voices
-                    .iter()
-                    .find(|voice| voice.id == id)
-                    .cloned()
-                    .unwrap_or_else(|| Voice {
-                        id,
-                        languages: resident.languages.clone(),
-                        gender: None,
-                    })
-            })
+            .map(|id| resident.voice(id))
             .collect()
     }
 
@@ -197,8 +200,9 @@ impl Tts<'_> {
     ) -> Result<Audio> {
         let mut model = self.0.resident.model.lock().await;
         let tts = model.as_tts().ok_or(Error::new("model-cannot-speak"))?;
+        let voice = self.0.resident.voice(voice.to_owned());
         let samples = tts
-            .speak(text, voice, language, speed.unwrap_or(1.0))
+            .speak(text, &voice, language, speed.unwrap_or(1.0))
             .await?;
         Ok(Audio {
             samples,
