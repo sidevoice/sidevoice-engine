@@ -602,6 +602,7 @@ pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> BuildEntry {
         }],
         call_params: Default::default(),
         api_model: None,
+        config: Default::default(),
     }
 }
 

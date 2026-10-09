@@ -17,7 +17,7 @@ use crate::{Error, Result};
 
 mod fields;
 
-pub(super) use fields::{stt_field, stt_option, tts_field, vad_field};
+pub(super) use fields::{stt_field, stt_option, tts_field, vad_field, vad_number};
 
 /// The recognizer's config: every file of `files` in the field its key names, on `provider`; `unsupported-model` for a
 /// key no field has.
@@ -63,14 +63,22 @@ pub(super) fn tts(files: &Installed, provider: &str) -> Result<OfflineTtsConfig>
     Ok(config)
 }
 
-/// The voice activity detector's config: every file of `files` in the field its key names, on `provider`, on one
-/// thread (a window is 32 ms of audio); `unsupported-model` for a key no field has. The rate, the window and the
-/// options are the detector's (`detector.rs`).
-pub(super) fn vad(files: &Installed, provider: &str) -> Result<VadModelConfig> {
+/// The voice activity detector's config: every file of `files` in the field its key names, and every number of the
+/// build's `config` at its path (its window, its rate), on `provider`, on one thread (a window is a few ms of audio);
+/// `unsupported-model` for a key or a path no field has. The options are the detector's (`detector.rs`).
+pub(super) fn vad(
+    files: &Installed,
+    values: &BTreeMap<String, i32>,
+    provider: &str,
+) -> Result<VadModelConfig> {
     let mut config = VadModelConfig::default();
     for (key, path) in &files.files {
         let field = vad_field(&mut config, key).ok_or(Error::new("unsupported-model"))?;
         *field = Some(text(path)?);
+    }
+    for (path, value) in values {
+        let field = vad_number(&mut config, path).ok_or(Error::new("unsupported-model"))?;
+        *field = *value;
     }
     config.provider = Some(provider.to_owned());
     config.num_threads = 1;
