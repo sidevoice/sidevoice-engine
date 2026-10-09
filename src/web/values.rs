@@ -4,7 +4,10 @@
 use js_sys::{Array, Float32Array, Object};
 use wasm_bindgen::JsValue;
 
-use crate::{Accelerator, Audio, Capability, Gender, Model, ModelBuild, Progress, Reason, Voice};
+use crate::{
+    Accelerator, Audio, Capability, Error, Gender, Model, ModelBuild, Progress, Reason, VadEvent,
+    VadOptions, VadOutput, Voice,
+};
 
 #[cfg(test)]
 mod tests;
@@ -104,11 +107,12 @@ pub(super) fn audio(audio: &Audio) -> JsValue {
     ])
 }
 
-/// A capability's id, as the catalogue names it: `stt`, `tts`.
+/// A capability's id, as the catalogue names it: `stt`, `tts`, `vad`.
 pub(super) fn capability(capability: Capability) -> &'static str {
     match capability {
         Capability::Stt => "stt",
         Capability::Tts => "tts",
+        Capability::Vad => "vad",
     }
 }
 
@@ -141,4 +145,71 @@ fn object(properties: &[(&str, Option<JsValue>)]) -> JsValue {
         }
     }
     object.into()
+}
+
+/// `{ threshold?, minSilenceMs?, minSpeechMs? }` as [`VadOptions`], each left out (or `undefined`) taking its default:
+/// `invalid-vad-options` for one that is not a number, or a duration that is not a whole number of milliseconds. The
+/// engine checks the bounds.
+pub(super) fn vad_options(options: Option<&Object>) -> Result<VadOptions, Error> {
+    let mut parsed = VadOptions::default();
+    let Some(options) = options else {
+        return Ok(parsed);
+    };
+    let invalid = || Error::new("invalid-vad-options");
+    let number = |key: &str| -> Result<Option<f64>, Error> {
+        let value = js_sys::Reflect::get(options, &key.into()).map_err(|_| invalid())?;
+        if value.is_undefined() {
+            return Ok(None);
+        }
+        value.as_f64().map(Some).ok_or_else(invalid)
+    };
+    let ms = |value: f64| -> Result<u32, Error> {
+        let whole = value.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&value);
+        whole.then_some(value as u32).ok_or_else(invalid)
+    };
+    if let Some(threshold) = number("threshold")? {
+        parsed.threshold = threshold as f32;
+    }
+    if let Some(value) = number("minSilenceMs")? {
+        parsed.min_silence_ms = ms(value)?;
+    }
+    if let Some(value) = number("minSpeechMs")? {
+        parsed.min_speech_ms = ms(value)?;
+    }
+    Ok(parsed)
+}
+
+/// `{ frames: [{ end, speech, probability? }], events }`.
+pub(super) fn vad_output(output: &VadOutput) -> JsValue {
+    let frames: Array = output
+        .frames
+        .iter()
+        .map(|frame| {
+            object(&[
+                ("end", Some((frame.end as f64).into())),
+                ("speech", Some(frame.speech.into())),
+                ("probability", frame.probability.map(JsValue::from)),
+            ])
+        })
+        .collect();
+    let events: Array = output.events.iter().map(vad_event).collect();
+    object(&[
+        ("frames", Some(frames.into())),
+        ("events", Some(events.into())),
+    ])
+}
+
+/// `{ type: "speech-start", at }` or `{ type: "speech-end", start, end }`; positions as numbers (far below 2^53).
+pub(super) fn vad_event(event: &VadEvent) -> JsValue {
+    match *event {
+        VadEvent::SpeechStart { at } => object(&[
+            ("type", Some("speech-start".into())),
+            ("at", Some((at as f64).into())),
+        ]),
+        VadEvent::SpeechEnd { start, end } => object(&[
+            ("type", Some("speech-end".into())),
+            ("start", Some((start as f64).into())),
+            ("end", Some((end as f64).into())),
+        ]),
+    }
 }

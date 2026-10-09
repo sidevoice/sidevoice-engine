@@ -193,6 +193,14 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         );
         assert!(tts.iter().all(|(_, backend)| backend == "sherpa-onnx"));
     }
+
+    let vad = offered(Capability::Vad);
+    let backend = if cfg!(target_arch = "wasm32") {
+        "transformers-js"
+    } else {
+        "sherpa-onnx"
+    };
+    assert_eq!(vad, [("silero-vad".to_owned(), backend.to_owned())]);
 }
 
 /// A file of a fake build: `https://models/<id>`, holding `<id>`'s bytes.

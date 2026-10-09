@@ -1,0 +1,54 @@
+{
+  "id": "silero-vad",
+  "architecture": "silero-vad",
+  "source": "https://github.com/snakers4/silero-vad",
+  "models": [
+    {
+      "id": "silero-vad",
+      "capabilities": [
+        "vad"
+      ],
+      "parameters_m": 1,
+      "languages": [],
+      "license": "MIT",
+      "builds": [
+        {
+          "id": "silero-vad/sherpa-onnx-fp32",
+          "backend": "sherpa-onnx",
+          "precision": "fp32",
+          "files": [
+            {
+              "key": "silero_vad.model",
+              "url": "https://huggingface.co/onnx-community/silero-vad/resolve/e71cae966052b992a7eca6b17738916ce0eca4ec/onnx/model.onnx",
+              "sha256": "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808",
+              "bytes": 2243022
+            }
+          ],
+          "memory": {
+            "mb": 10,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "silero-vad/transformers-js-fp32",
+          "backend": "transformers-js",
+          "precision": "fp32",
+          "files": [
+            {
+              "key": "vad",
+              "url": "https://huggingface.co/onnx-community/silero-vad/resolve/e71cae966052b992a7eca6b17738916ce0eca4ec/onnx/model.onnx",
+              "sha256": "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808",
+              "bytes": 2243022
+            }
+          ],
+          "memory": {
+            "mb": 10,
+            "source": "estimated",
+            "basis": "weights size + 30%"
+          }
+        }
+      ]
+    }
+  ]
+}

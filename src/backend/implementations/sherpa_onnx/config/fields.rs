@@ -3,12 +3,12 @@
 //!
 //! Every field that takes a file, by its path from the config root it is in: the offline recognizer's model config
 //! (`OfflineRecognizerConfig.model_config`) for speech to text, the offline TTS's (`OfflineTtsConfig.model`) for text
-//! to speech. What a sherpa-onnx build's file keys name. If the crate derives serde for its configs one day, this
-//! table gives way to `serde_json::from_value`.
+//! to speech, the voice activity detector's (`VadModelConfig`) for voice activity. What a sherpa-onnx build's file
+//! keys name. If the crate derives serde for its configs one day, this table gives way to `serde_json::from_value`.
 //!
 //! And every field a call's argument may set through a build's `call_params`: a language, a task.
 
-use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
+use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig, VadModelConfig};
 
 /// The field of `OfflineRecognizerConfig.model_config` that `key` names, if it takes a file.
 pub(in crate::backend::implementations::sherpa_onnx) fn stt_field<'a>(
@@ -104,6 +104,18 @@ pub(in crate::backend::implementations::sherpa_onnx) fn tts_field<'a>(
         "supertonic.tts_json" => &mut config.supertonic.tts_json,
         "supertonic.unicode_indexer" => &mut config.supertonic.unicode_indexer,
         "supertonic.voice_style" => &mut config.supertonic.voice_style,
+        _ => return None,
+    })
+}
+
+/// The field of `VadModelConfig` that `key` names, if it takes a file.
+pub(in crate::backend::implementations::sherpa_onnx) fn vad_field<'a>(
+    config: &'a mut VadModelConfig,
+    key: &str,
+) -> Option<&'a mut Option<String>> {
+    Some(match key {
+        "silero_vad.model" => &mut config.silero_vad.model,
+        "ten_vad.model" => &mut config.ten_vad.model,
         _ => return None,
     })
 }

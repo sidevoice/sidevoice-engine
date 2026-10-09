@@ -27,6 +27,7 @@ fn a_build_is_the_model_its_files_say() {
         "voices/F1",
     ];
     assert_eq!(Kind::of(&installed(&supertonic)), Ok(Kind::Supertonic));
+    assert_eq!(Kind::of(&installed(&["vad"])), Ok(Kind::Silero));
     for unknown in [&["model"][..], &["encoder"], &[]] {
         assert_eq!(
             Kind::of(&installed(unknown)).map_err(|e| e.code),

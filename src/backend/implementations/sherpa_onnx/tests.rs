@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::io::{BufReader, Cursor};
 
-use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
+use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig, VadModelConfig};
 
 use super::recognizer::{primary_subtag, recent, KEPT};
 use super::synthesizer::espeak_voice;
@@ -57,6 +57,7 @@ fn kind(files: &[(&str, &str)]) -> Result<Kind> {
 fn what_a_build_is_follows_from_its_files_keys() {
     assert_eq!(kind(&[("whisper.encoder", "e.onnx")]), Ok(Kind::Stt));
     assert_eq!(kind(&[("kokoro.voices", "v.bin")]), Ok(Kind::Tts));
+    assert_eq!(kind(&[("silero_vad.model", "s.onnx")]), Ok(Kind::Vad));
     assert_eq!(kind(&[]).unwrap_err().code, "unsupported-model");
     assert_eq!(
         kind(&[("tokens", "t.txt"), ("kokoro.model", "m.onnx")])
@@ -78,6 +79,8 @@ fn every_sherpa_onnx_build_in_the_catalogue_names_config_fields_its_family_takes
             for file in &build.files {
                 let known = if model.capabilities.contains(&Capability::Stt) {
                     config::stt_field(&mut OfflineModelConfig::default(), &file.key).is_some()
+                } else if model.capabilities.contains(&Capability::Vad) {
+                    config::vad_field(&mut VadModelConfig::default(), &file.key).is_some()
                 } else {
                     config::tts_field(&mut OfflineTtsModelConfig::default(), &file.key).is_some()
                 };
@@ -135,6 +138,15 @@ fn a_key_names_the_config_field_it_fills_and_an_unknown_one_is_refused() {
         code(config::tts(&tokens, "cpu").map(drop)),
         "unsupported-model",
         "an STT path is not a TTS one"
+    );
+    let files = installed(&[("silero_vad.model", "s.onnx")]);
+    let vad = config::vad(&files, "cpu").expect("a detector config");
+    assert_eq!(vad.silero_vad.model.as_deref(), Some("s.onnx"));
+    assert_eq!((vad.provider.as_deref(), vad.num_threads), (Some("cpu"), 1));
+    assert_eq!(
+        code(config::vad(&tokens, "cpu").map(drop)),
+        "unsupported-model",
+        "an STT path is not a detector one"
     );
     let typo = installed(&[("whisper.encodr", "e.onnx")]);
     assert_eq!(
@@ -207,6 +219,10 @@ fn a_model_missing_a_file_does_not_load() {
     );
     assert_eq!(
         code(load(Accelerator::Cpu, &[("kokoro.voices", "v.bin")])),
+        "model-load-failed"
+    );
+    assert_eq!(
+        code(load(Accelerator::Cpu, &[("silero_vad.model", "s.onnx")])),
         "model-load-failed"
     );
 }

@@ -1,7 +1,8 @@
 // The web voice loop's page (`cargo xtask web-e2e`, served by run.mjs): the npm package `@sidevoice/engine` as a page
 // uses it, through its public interface only. It checks install, cancel, uninstall and the loaded model's
-// capabilities, then transcribes the plan's recorded clips and what each text-to-speech model says, and posts what it
-// found to /report; xtask judges the transcripts. What it logs is posted to /log, and each model's speech to /speech/.
+// capabilities, then transcribes the plan's recorded clips and what each text-to-speech model says, has the voice
+// activity detector hear each clip between two silences, and posts what it found to /report; xtask judges the
+// transcripts and the detections. What it logs is posted to /log, and each model's speech to /speech/.
 import init, { WebEngine } from "@sidevoice/engine";
 
 const post = (path, body) => fetch(path, { method: "POST", body });
@@ -21,7 +22,7 @@ for (const level of ["warn", "error"]) {
 addEventListener("error", (event) => log("page error:", String(event.message)));
 addEventListener("unhandledrejection", (event) => log("unhandled rejection:", String(event.reason?.code ?? event.reason)));
 
-const report = { checks: [], rows: [] };
+const report = { checks: [], rows: [], detections: [] };
 const check = (name, ok, detail = "") => {
   report.checks.push({ name, ok: Boolean(ok), detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
   return log(ok ? "ok:" : "FAILED:", name, detail);
@@ -67,6 +68,21 @@ function wav(buffer) {
     at += 8 + size + (size % 2);
   }
   throw new Error("no data chunk");
+}
+
+/** `samples` at `from` Hz, linearly resampled to `to` Hz: a voice activity stream takes its model's rate. */
+function resample(samples, from, to) {
+  if (from === to) return samples;
+  const step = from / to;
+  const out = new Float32Array(Math.floor(samples.length / step));
+  for (let i = 0; i < out.length; i++) {
+    const at = i * step;
+    const index = Math.floor(at);
+    const here = samples[Math.min(index, samples.length - 1)];
+    const next = index + 1 < samples.length ? samples[index + 1] : here;
+    out[i] = here + (next - here) * (at - index);
+  }
+  return out;
 }
 
 /** `samples` at `rate` as a 16-bit WAV file. */
@@ -180,6 +196,55 @@ try {
     }
     report.rows.push(row);
   }
+
+  // The voice activity detector: each clip between two silences, fed 20 ms at a time as a microphone feeds it.
+  const detector = await engine.load(plan.vad.model, plan.vad.build);
+  await check(
+    "Silero loads as a voice activity detector only",
+    detector.capabilities().join() === "vad" && detector.asStt() === undefined && detector.asTts() === undefined,
+    detector.capabilities(),
+  );
+  const vad = detector.asVad();
+  const refused = await rejection(vad.stream({ threshold: 2 }));
+  await check("a stream with options out of their bounds is refused", refused === "invalid-vad-options", refused);
+  let probabilities = 0;
+  for (const clip of plan.clips) {
+    const detection = { pair: `clip ${clip.name} → ${plan.vad.build}`, clip: [0, 0] };
+    try {
+      const stream = await vad.stream();
+      const rate = stream.sampleRate;
+      const { samples, rate: recorded } = wav(await (await fetch(clip.file)).arrayBuffer());
+      const audio = resample(samples, recorded, rate);
+      const silence = Math.floor(plan.vad.silenceS * rate);
+      const padded = new Float32Array(2 * silence + audio.length);
+      padded.set(audio, silence);
+      detection.clip = [silence / rate, (silence + audio.length) / rate];
+      const events = [];
+      const piece = rate / 50;
+      start = performance.now();
+      for (let at = 0; at < padded.length; at += piece) {
+        const output = await stream.accept(padded.subarray(at, at + piece));
+        probabilities += output.frames.filter((frame) => typeof frame.probability === "number").length;
+        events.push(...output.events);
+      }
+      const finished = await stream.finish();
+      detection.finished = finished !== undefined;
+      if (finished) events.push(finished);
+      detection.starts = events.filter((event) => event.type === "speech-start").length;
+      detection.segments = events
+        .filter((event) => event.type === "speech-end")
+        .map((event) => [event.start / rate, event.end / rate]);
+      await log(`${detection.pair}: ${since(start)}:`, detection.segments);
+      stream.free();
+    } catch (error) {
+      detection.error = error?.code ?? String(error);
+      await log(`${detection.pair}: failed:`, detection.error, String(error?.stack ?? ""));
+    }
+    report.detections.push(detection);
+  }
+  await check("frames on the web carry the model's probability", probabilities > 0, probabilities);
+  vad.free();
+  detector.free();
 
   stt.free();
   whisper.free();

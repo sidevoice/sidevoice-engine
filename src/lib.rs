@@ -1,5 +1,5 @@
 //! The brain of local models: which models exist, which build of each runs on this device, which are installed, and
-//! the models an app loads to transcribe and to speak.
+//! the models an app loads to transcribe, to speak and to detect speech.
 //!
 //! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads) and
 //! the [`CatalogSource`]s to merge, usually the [`BundledCatalog`] and any others. A native build ships one host,
@@ -33,7 +33,10 @@ pub use catalog::{
     BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Gender, Memory,
     MemorySource, ModelEntry, ModelFile, Problem, Requires, Voice,
 };
-pub use engine::{Audio, ConfigError, Engine, LoadedModel, Model, ModelBuild, Stt, Tts};
+pub use engine::{
+    Audio, ConfigError, Engine, LoadedModel, Model, ModelBuild, Stt, Tts, Vad, VadEvent, VadFrame,
+    VadOptions, VadOutput, VadStream,
+};
 pub use host::{
     Accelerator, Capabilities, Download, Fetcher, FolderWriter, Host, Runs, Storage, StorageWriter,
 };

@@ -1,14 +1,15 @@
 // Native only: the official crate links native libraries (its dependency is native-only in Cargo.toml).
 #![cfg(native)]
-//! sherpa-onnx: speech to text with Whisper and text to speech with Kokoro, on ONNX Runtime.
+//! sherpa-onnx: speech to text with Whisper, text to speech with Kokoro and voice activity detection with Silero, on
+//! ONNX Runtime.
 //!
 //! # Binding
 //!
 //! The official `sherpa-onnx` crate (k2-fsa), pinned to one exact version in Cargo.toml, through its safe API
-//! (`OfflineRecognizer`, `OfflineTts`). Its build script downloads sherpa-onnx's prebuilt static libraries for the
-//! target (ONNX Runtime included) and links them into the app: in this first phase the backend is linked, not
-//! downloaded when a model needs it, and nothing is downloaded for it. So `open` has
-//! nothing to open: its library is the linked one, and the contract (`open`, then the library's `load`) stays as it
+//! (`OfflineRecognizer`, `OfflineTts`, `VoiceActivityDetector`). Its build script downloads sherpa-onnx's prebuilt
+//! static libraries for the target (ONNX Runtime included) and links them into the app: in this first phase the
+//! backend is linked, not downloaded when a model needs it, and nothing is downloaded for it. So `open` has nothing
+//! to open: its library is the linked one, and the contract (`open`, then the library's `load`) stays as it
 //! is for when loading the runtime on demand comes back (sidevoice-engine#33).
 //!
 //! # Files
@@ -20,10 +21,11 @@
 //! - Whisper: `whisper.encoder`, `whisper.decoder` and `tokens`, under `OfflineRecognizerConfig.model_config`.
 //! - Kokoro: `kokoro.model`, `kokoro.voices`, `kokoro.tokens` and `kokoro.data_dir` (espeak-ng's data, a directory),
 //!   under `OfflineTtsConfig.model`.
+//! - Silero VAD: `silero_vad.model`, under `VadModelConfig`.
 //!
 //! What a build is follows from its keys ([`Kind::of`]), and no model has code of its own: every speech-to-text model
 //! is alike (`recognizer.rs`), and so is every text-to-speech model (`synthesizer.rs`), told a call's language as an
-//! espeak-ng voice where its config has espeak-ng's data.
+//! espeak-ng voice where its config has espeak-ng's data, and every voice activity detector (`detector.rs`).
 //!
 //! A `language` passed to `transcribe` reaches the model where its build's `call_params` put it in the config (Whisper's
 //! `whisper.language`, Canary's `canary.src_lang` and `canary.tgt_lang`; sidevoice-engine#46); without one, Whisper
@@ -51,6 +53,7 @@ use crate::install::Installed;
 use crate::{Error, Result};
 
 mod config;
+mod detector;
 #[cfg(test)]
 mod inference_tests;
 mod model_metadata;
@@ -59,6 +62,7 @@ mod synthesizer;
 #[cfg(test)]
 mod tests;
 
+use detector::Detector;
 use recognizer::Recognizer;
 use synthesizer::Synthesizer;
 
@@ -67,8 +71,8 @@ struct SherpaOnnx;
 const SPEC: BackendSpec = BackendSpec {
     id: "sherpa-onnx",
     name: "sherpa-onnx",
-    description: "Speech recognition and synthesis on ONNX Runtime, through the official crate, linked into native \
-                  builds for now (sidevoice-engine#33).",
+    description: "Speech recognition, synthesis and voice activity detection on ONNX Runtime, through the official \
+                  crate, linked into native builds for now (sidevoice-engine#33).",
     upstream: "https://github.com/k2-fsa/sherpa-onnx",
     // Core ML is not in the linked libraries (see *Accelerators*).
     accelerators: &[Accelerator::Cpu],
@@ -110,6 +114,7 @@ impl Library for Linked {
                 &build.call_params,
             )?),
             Kind::Tts => Box::new(Synthesizer::load(&config::tts(files, provider)?, files)?),
+            Kind::Vad => Box::new(Detector::load(config::vad(files, provider)?)?),
         })
     }
 }
@@ -121,11 +126,13 @@ enum Kind {
     Stt,
     /// Any text-to-speech model (`synthesizer.rs`).
     Tts,
+    /// Any voice activity detector (`detector.rs`).
+    Vad,
 }
 
 impl Kind {
     /// Keys that are all fields of the recognizer's config make it speech to text, all fields of the TTS's config text
-    /// to speech; anything else is `unsupported-model`.
+    /// to speech, all fields of the detector's config voice activity; anything else is `unsupported-model`.
     fn of(files: &Installed) -> Result<Self> {
         let all = |field: &dyn Fn(&str) -> bool| {
             !files.files.is_empty() && files.files.keys().all(|key| field(key))
@@ -134,6 +141,8 @@ impl Kind {
             Ok(Self::Stt)
         } else if all(&|key| config::tts_field(&mut Default::default(), key).is_some()) {
             Ok(Self::Tts)
+        } else if all(&|key| config::vad_field(&mut Default::default(), key).is_some()) {
+            Ok(Self::Vad)
         } else {
             Err(Error::new("unsupported-model"))
         }

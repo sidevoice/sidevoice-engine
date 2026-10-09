@@ -1,14 +1,19 @@
 //! What the web voice loop (`cargo xtask web-e2e`) takes from the native one (`tests/voice_loop.rs`, the engine's
 //! integration test): the real recorded clips of its plan, `tests/voice_loop.json`, downloaded once and checked
 //! against their digests, and the table of comparisons, each transcript held to a word error rate (`wer.rs`, the same
-//! measure as `tests/voice_loop/wer.rs`: xtask is a package of its own, so it keeps its copy).
+//! measure as `tests/voice_loop/wer.rs`: xtask is a package of its own, so it keeps its copy), and the rule a voice
+//! activity detector is judged by on those clips (the same as `tests/voice_loop/vad.rs`, a copy for the same reason).
 
+use std::ops::Range;
 use std::path::Path;
 use std::{env, fs};
 
 use serde::Deserialize;
 
 use crate::{read, run_in, sha256, write, Result};
+
+#[cfg(test)]
+mod tests;
 
 /// A real recording, with what is said in it.
 #[derive(Debug, Deserialize)]
@@ -107,4 +112,121 @@ pub(crate) fn primary(tag: &str) -> String {
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase()
+}
+
+/// How a voice activity detector is judged on a clip set between two stretches of silence: the plan's `vad`, less its
+/// builds (the native ones).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct VadRule {
+    /// The silence before and after each clip, in seconds.
+    pub(crate) silence_s: f64,
+    /// How far outside the clip a segment may reach, in seconds.
+    pub(crate) tolerance_s: f64,
+    /// How much of the clip the segments must cover together, from 0 to 1.
+    pub(crate) min_coverage: f64,
+}
+
+/// One clip heard by one detector: where the clip lies, the speech found (seconds), whether its last segment was ended by
+/// the end of the audio, how many speech starts were reported, or why it could not run.
+pub(crate) struct Detection {
+    pub(crate) pair: String,
+    pub(crate) clip: Range<f64>,
+    pub(crate) segments: Vec<Range<f64>>,
+    pub(crate) finished: bool,
+    pub(crate) starts: usize,
+    pub(crate) error: Option<String>,
+}
+
+/// Whether `detection` found the clip's speech there and nowhere else, covering enough of it; why not otherwise.
+pub(crate) fn judge(detection: &Detection, rule: &VadRule) -> Result<()> {
+    if let Some(error) = &detection.error {
+        return Err(format!("`{error}`"));
+    }
+    let segments = &detection.segments;
+    if detection.starts != segments.len() {
+        return Err(format!(
+            "{} speech starts for {} ends",
+            detection.starts,
+            segments.len()
+        ));
+    }
+    if segments.is_empty() {
+        return Err("no speech found".into());
+    }
+    if detection.finished {
+        return Err("the speech had not ended when the audio did".into());
+    }
+    let clip = &detection.clip;
+    let (from, to) = (clip.start - rule.tolerance_s, clip.end + rule.tolerance_s);
+    if let Some(outside) = segments
+        .iter()
+        .find(|segment| segment.start < from || segment.end > to)
+    {
+        return Err(format!(
+            "speech at {:.2}–{:.2} s, outside the clip ({:.2}–{:.2} s)",
+            outside.start, outside.end, clip.start, clip.end
+        ));
+    }
+    let covered: f64 = segments
+        .iter()
+        .map(|segment| segment.end.min(clip.end) - segment.start.max(clip.start))
+        .filter(|seconds| *seconds > 0.0)
+        .sum();
+    let coverage = covered / (clip.end - clip.start);
+    if coverage < rule.min_coverage {
+        return Err(format!(
+            "speech covers {:.0}% of the clip, under {:.0}%",
+            coverage * 100.0,
+            rule.min_coverage * 100.0
+        ));
+    }
+    Ok(())
+}
+
+/// Prints the table of detections, adds it to `$GITHUB_STEP_SUMMARY` when set, and fails if any detection failed.
+pub(crate) fn report_detections(
+    title: &str,
+    detections: &[Detection],
+    rule: &VadRule,
+) -> Result<()> {
+    let mut table = String::from(
+        "| Clip → detector | Clip at (s) | Speech found (s) | Verdict |\n|---|---|---|---|\n",
+    );
+    let mut failed = 0;
+    for detection in detections {
+        let verdict = judge(detection, rule);
+        failed += usize::from(verdict.is_err());
+        let found: Vec<String> = detection
+            .segments
+            .iter()
+            .map(|segment| format!("{:.2}–{:.2}", segment.start, segment.end))
+            .collect();
+        let verdict = verdict.map_or_else(|why| format!("✗ {why}"), |()| "ok".into());
+        table.push_str(&format!(
+            "| {} | {:.2}–{:.2} | {} | {verdict} |\n",
+            detection.pair,
+            detection.clip.start,
+            detection.clip.end,
+            found.join(", ")
+        ));
+    }
+    let verdict = format!(
+        "{} of {} clips found where they are, between silences.",
+        detections.len() - failed,
+        detections.len()
+    );
+    println!("\n{table}\n{verdict}");
+    if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {
+        let mut text =
+            String::from_utf8_lossy(&fs::read(&summary).unwrap_or_default()).into_owned();
+        text.push_str(&format!("## {title}\n\n{table}\n{verdict}\n"));
+        write(Path::new(&summary), text.as_bytes())?;
+    }
+    if failed > 0 || detections.is_empty() {
+        return Err(format!(
+            "{failed} of {} detections failed",
+            detections.len()
+        ));
+    }
+    Ok(())
 }

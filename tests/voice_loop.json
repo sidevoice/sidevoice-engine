@@ -51,6 +51,14 @@
       "parakeet-tdt-0.6b-v3/sherpa-onnx-int8"
     ]
   },
+  "vad": {
+    "builds": [
+      "silero-vad/sherpa-onnx-fp32"
+    ],
+    "silence_s": 1.0,
+    "tolerance_s": 0.3,
+    "min_coverage": 0.5
+  },
   "clips": [
     {
       "language": "en",

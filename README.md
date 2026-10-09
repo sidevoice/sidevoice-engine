@@ -95,6 +95,9 @@ let kokoro = engine.load("kokoro-82m-v1.0", None, &|_| {}, &cancel).await?;
 let tts = kokoro.as_tts().expect("text to speech");
 let voices = tts.voices().await; // Voice { id, languages, gender? }
 let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { samples, sample_rate }
+let silero = engine.load("silero-vad", None, &|_| {}, &cancel).await?;
+let mut mic = silero.as_vad().expect("voice activity").stream(VadOptions::default()).await?;
+let heard = mic.accept(&pcm_at_16_khz).await?; // VadOutput { frames, events: [SpeechStart { at }, SpeechEnd { start, end }] }
 ```
 
 - **`Engine::models`** lists every model of the catalogue with its catalogue data, whether it is installed, every
@@ -104,9 +107,18 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
   uninstalling removes each of the model's build folders, keeps any file another build's folder links, and refuses a
   model that is loaded (`model-in-use`).
 - **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
-  recommended one) and returns a `LoadedModel`: `as_stt()` and `as_tts()` are what it can do. Speech to text takes
-  audio at any rate (the engine resamples it); text to speech returns `Audio` at the model's own rate. A model's
-  voices are `Voice { id, languages, gender? }`, as the catalogue declares them where their source does.
+  recommended one) and returns a `LoadedModel`: `as_stt()`, `as_tts()` and `as_vad()` are what it can do. Speech to
+  text takes audio at any rate (the engine resamples it); text to speech returns `Audio` at the model's own rate. A
+  model's voices are `Voice { id, languages, gender? }`, as the catalogue declares them where their source does.
+- **Voice activity is a stream.** `Vad::stream(options)` opens a `VadStream` with a state of its own (several can run
+  at once): it takes mono samples at the model's rate (`sample_rate()`, 16 kHz for Silero; it is not resampled) in
+  pieces of any length, runs the model on each whole window (`window()`, 512 samples) and answers with a `VadFrame`
+  per window (where it ends, whether the stream is in speech, and the model's probability where the backend tells it:
+  transformers.js does, sherpa-onnx 1.13.8 segments inside its library and does not) and the `VadEvent`s:
+  `SpeechStart { at }` when speech is confirmed, `SpeechEnd { start, end }` when it is over, in samples. `VadOptions`
+  holds the threshold, `min_silence_ms` and `min_speech_ms` (sherpa-onnx's defaults: 0.5, 500, 250); every backend
+  segments by sherpa-onnx's rules, so the events mean the same on each. `finish()` ends the speech in progress and
+  starts over; `reset()` forgets it. A stream keeps its model in memory while it lives.
 - **Memory follows the `LoadedModel`s.** Loading a build that is already in memory returns it again; calls on one
   model wait for one another; the model is unloaded when the last `LoadedModel` of its build is dropped, and a
   backend's library is opened with the first of its models and closed after the last one. The engine keeps only weak
@@ -150,9 +162,9 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
-| `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
+| `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
 | `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
-| `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2 | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
+| `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window) | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
 In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub.
 
@@ -169,17 +181,19 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements, the ids a catalogue may name
                   (KNOWN) and BackendInfo (what Engine::backends lists); backend/: requirement, registry, library
-                  (what open returns, which loads models), loaded_model (what load returns: SttModel, TtsModel),
-                  implementations/ (one file per backend)
+                  (what open returns, which loads models), loaded_model (what load returns: SttModel, TtsModel,
+                  VadModel and its streams), segmenter (speech from per-window probabilities, by sherpa-onnx's
+                  rules), implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
   install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
                   download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
                   ProgressSink), cancel (Cancel), digest (SHA-256)
   engine.rs       Engine: models, install, uninstall, load; engine/: model (Model, ModelBuild: what models lists),
-                  loaded (LoadedModel, Stt, Tts), audio (Audio, resampling), memory (weak references: one library
-                  per backend, one model per build), error (ConfigError)
+                  loaded (LoadedModel, Stt, Tts; loaded/vad.rs: Vad, VadStream and their values), audio (Audio,
+                  resampling), memory (weak references: one library per backend, one model per build), error
+                  (ConfigError)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LoadedModel, Stt,
-                  Tts; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
+                  Tts, Vad, VadStream; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
                   file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
                   capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`)
   maybe_send.rs   Send/Sync in native builds only
@@ -245,7 +259,10 @@ model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-s
 (`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text build of that language
 transcribes it (Whisper base on sherpa-onnx and on whisper.cpp among them), real recorded clips are transcribed too,
 and every transcript must stay within the plan's one word error rate, a loose 50%: the loop checks that the circuit
-works and catches a wrong configuration, it does not measure quality. It downloads about 1.5 GB the first time (kept by
+works and catches a wrong configuration, it does not measure quality. Each voice activity detector of the plan (Silero
+on sherpa-onnx) then hears each recorded clip set between two seconds of silence, fed 20 ms at a time: every segment it
+reports must lie in the clip, give or take 0.3 s, be ended by the silence after it, and together cover half the clip
+(`tests/voice_loop/vad.rs`). It downloads about 1.5 GB the first time (kept by
 digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless asked for; the `e2e` workflow runs it on Linux x86_64 and
 arm64 and on macOS arm64 through `cargo xtask e2e`, which puts its table, and the accelerator each build was loaded
 on, in the job's summary:
@@ -270,7 +287,8 @@ cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own
 The tests that need a page (OPFS, an HTTP server) are ignored in Node and run in a headless Chrome, through
 ChromeDriver (`CHROMEDRIVER`, or `chromedriver` on the `PATH`, and `CHROME` for the Chrome it starts, of the same
 version). The voice loop runs in Chrome too, through the npm package as a page uses it: Whisper base transcribes the
-loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, on WebAssembly (`xtask/web-e2e.json`; a few
+loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, and Silero finds the speech of each clip by the
+native loop's rule, on WebAssembly (`xtask/web-e2e.json`; a few
 hundred MB downloaded on every run, into a profile that is thrown away; `CHROME`, else `google-chrome`):
 
 ```sh
@@ -280,7 +298,8 @@ cargo xtask web-e2e [DIR]
 
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
 (`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
-model, its `id`, `capabilities` (`stt`, `tts`), `parameters_m`, `languages` and `license`; a build, its `id`, the
+model, its `id`, `capabilities` (`stt`, `tts`, `vad`), `parameters_m`, `languages` (none for a model that hears no
+language in particular, as a voice activity detector) and `license`; a build, its `id`, the
 `backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
 `requires` (hard constraints only, and optional: the only `accelerators` it
 can take, WebGPU features, the WebAssembly cap), its `memory` (`mb`, with the `source` of the figure, `estimated`,

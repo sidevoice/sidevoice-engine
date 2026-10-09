@@ -54,7 +54,8 @@
 //! - finds each file it needs in `files` by its key in the catalogue;
 //! - loads the model's files on the `accelerator` it is given, one that `probe` returned; it does not fall back to
 //!   another one by itself (the engine decides that, with a new selection);
-//! - returns a [`BackendModel`] that is a speech-to-text model, a text-to-speech model, or both, and keeps nothing:
+//! - returns a [`BackendModel`] that is a speech-to-text model, a text-to-speech model, a voice activity detector, or
+//!   several, and keeps nothing:
 //!   the engine owns what it returns, and the backend object stays empty and stateless (what is open lives in the
 //!   library).
 //!
@@ -73,8 +74,9 @@
 //! - `not-implemented`: this backend cannot load models yet (the stubs, which fail to `open` with it).
 //!
 //! What a loaded model fails with is shared the same way: `transcription-failed` (the speech could not be
-//! transcribed), `speech-failed` (the text could not be spoken), `unknown-voice` (the model has no such voice) and
-//! `invalid-text` (the text has a character the backend cannot take).
+//! transcribed), `speech-failed` (the text could not be spoken), `unknown-voice` (the model has no such voice),
+//! `invalid-text` (the text has a character the backend cannot take) and `detection-failed` (the audio could not be
+//! run through the voice activity detector).
 //!
 //! ## Binding the library
 //!
@@ -89,6 +91,13 @@
 //! - web: the backend's engine is a JavaScript module, and the backend imports it at run time (a dynamic `import()`
 //!   through `wasm-bindgen`), so a page that never loads a model never fetches it. The module comes with the npm
 //!   package; it is never compiled into the engine's WebAssembly.
+//!
+//! ## Voice activity: a stream
+//!
+//! A voice activity detector is the one streaming model: its model makes streams, each with its own state, fed one
+//! window of samples at a time at the model's rate. A backend whose library segments speech itself (sherpa-onnx)
+//! reports its segments; one that only computes a probability per window segments it with `segmenter`, by the same
+//! rules, so the events mean the same on every backend.
 //!
 //! ## Speech out: a whole buffer
 //!
@@ -108,11 +117,12 @@ mod library;
 mod loaded_model;
 mod registry;
 mod requirement;
+mod segmenter;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use library::Library;
-pub(crate) use loaded_model::BackendModel;
+pub(crate) use loaded_model::{BackendModel, VadModel, VadStreamModel, Window};
 #[cfg(test)]
 pub(crate) use loaded_model::{SttModel, TtsModel};
 pub(crate) use registry::{built_in, find};
@@ -122,6 +132,14 @@ pub(crate) use registry::{built_in, find};
 )]
 pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
+#[cfg_attr(
+    native,
+    allow(
+        unused_imports,
+        reason = "only the web build's backend segments speech itself"
+    )
+)]
+pub(crate) use segmenter::Segmenter;
 
 /// A backend's stable id, as catalogue builds name it ([`BuildEntry::backend`](crate::BuildEntry::backend)): "sherpa-onnx",
 /// "whisper-cpp", "mlx", ...
