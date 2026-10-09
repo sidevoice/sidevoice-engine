@@ -7,3 +7,11 @@ xtask = "run --quiet --locked --manifest-path xtask/Cargo.toml --"
 # installs it in CI). Doctests are left out: rustdoc cannot run them on wasm32.
 [target.wasm32-unknown-unknown]
 runner = "wasm-bindgen-test-runner"
+
+# sherpa-onnx's static libraries for Linux x86_64 are built with libstdc++'s old string ABI, and its other targets and
+# whisper.cpp with the new one. Both instantiate std::regex internals under the same names, whose layout holds a
+# std::string; the linker keeps one copy, and ONNX Runtime then aborts with `free(): invalid pointer`. whisper.cpp is
+# compiled with the old ABI there too, so both copies agree. An app that links both backends on Linux x86_64 needs
+# the same line in its own `.cargo/config.toml` (README, "Build and test").
+[env]
+CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"

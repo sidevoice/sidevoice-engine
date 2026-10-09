@@ -69,6 +69,7 @@
 //! - `model-load-failed`: the model's files could not be loaded.
 //! - `unsupported-model`: this backend cannot run this model's files.
 //! - `unsupported-accelerator`: this backend cannot run on this accelerator.
+//! - `unsupported-language`: this model does not know the language it was asked for.
 //! - `not-implemented`: this backend cannot load models yet (the stubs, which fail to `open` with it).
 //!
 //! What a loaded model fails with is shared the same way: `transcription-failed` (the speech could not be
@@ -81,10 +82,10 @@
 //! needs it, like the model.
 //!
 //! - native: the backend opens the downloaded library at run time and calls its C API through a table of function
-//!   pointers resolved then. **Phase 1 exception:** sherpa-onnx is linked, through the official `sherpa-onnx` crate
-//!   (static, pinned exactly in Cargo.toml, native builds only, behind the default `sherpa-onnx` feature), so it
-//!   downloads nothing. Loading it on demand again is sidevoice-engine#33, which also decides where a downloaded
-//!   library's files are declared. Any other native backend follows the design;
+//!   pointers resolved then. **Phase 1 exceptions:** sherpa-onnx is linked, through the official `sherpa-onnx` crate
+//!   (static, pinned exactly in Cargo.toml, native builds only), and so is whisper.cpp, through
+//!   `whisper-rs` (compiled from the sources it bundles, the same way), so neither downloads anything. Loading them on demand is sidevoice-engine#33, which also
+//!   decides where a downloaded library's files are declared. Any other native backend follows the design;
 //! - web: the backend's engine is a JavaScript module, and the backend imports it at run time (a dynamic `import()`
 //!   through `wasm-bindgen`), so a page that never loads a model never fetches it. The module comes with the npm
 //!   package; it is never compiled into the engine's WebAssembly.
@@ -114,14 +115,6 @@ pub(crate) use library::Library;
 pub(crate) use loaded_model::BackendModel;
 #[cfg(test)]
 pub(crate) use loaded_model::{SttModel, TtsModel};
-#[cfg_attr(
-    not(any(sherpa_onnx, web, apple_silicon)),
-    allow(
-        unused_imports,
-        reason = "no backend is compiled in here without the sherpa-onnx feature"
-    )
-)]
-pub(crate) use registry::BackendFactory;
 pub(crate) use registry::{built_in, find};
 #[allow(
     unused_imports,
@@ -179,8 +172,8 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
 }
 
 /// Every backend id a catalogue may name: the [`BackendSpec::id`] of each backend, in whichever build of the engine it
-/// is compiled, and the ids of backends whose code is still to come (`whisper-cpp`, sidevoice-engine#20), which the
-/// catalogue already names. A build naming any other is a catalogue problem (`UnknownBackend`).
+/// is compiled, and the ids of backends whose code is still to come, which the catalogue may already name. A build
+/// naming any other is a catalogue problem (`UnknownBackend`).
 pub(crate) const KNOWN: &[BackendId] = &["sherpa-onnx", "mlx", "transformers-js", "whisper-cpp"];
 
 /// Whether `backend` is one of [`KNOWN`].

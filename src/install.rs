@@ -88,7 +88,7 @@ impl Installed {
     /// Where the host keeps the file or directory whose key is `name`, if it is installed.
     #[allow(
         dead_code,
-        reason = "sherpa-onnx takes every file by its key, the stubs load nothing: only tests ask for one"
+        reason = "for a backend that takes a file by its key: a build with no such backend has no caller"
     )]
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)

@@ -3,7 +3,8 @@
 
 use async_trait::async_trait;
 
-use crate::backend::{Backend, BackendFactory, BackendSpec, Library};
+use crate::backend::registry::BackendFactory;
+use crate::backend::{Backend, BackendSpec, Library};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};

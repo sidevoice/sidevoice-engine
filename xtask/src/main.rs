@@ -12,8 +12,8 @@
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
 //! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
 //!   DIR and its table appended to the job's summary (xtask/src/e2e.rs).
-//! - `link-size`: what linking sherpa-onnx costs, as the release size of the smallest program using the engine with and
-//!   without the `sherpa-onnx` feature (xtask/src/link_size.rs).
+//! - `link-size`: what linking the engine costs, as the release size of the smallest program using it
+//!   (xtask/src/link_size.rs).
 //! - `sherpa-libs [DIR | --linked | --pin | --check]`: sherpa-onnx's prebuilt static libraries for this machine, checked
 //!   against `xtask/sherpa-onnx-libs.json` and unpacked for `SHERPA_ONNX_LIB_DIR` (xtask/src/sherpa_libs.rs).
 

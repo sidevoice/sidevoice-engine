@@ -1,9 +1,10 @@
 //! The voice loop for real, through the engine's public API only, as an app runs it: `NativeHost`, the bundled
-//! catalogue, `Engine::models` (each model's sherpa-onnx build), `Engine::load`, then the loaded model's `as_tts`
+//! catalogue, `Engine::models` (the build the plan names, which must run here), `Engine::load`, then the loaded model's `as_tts`
 //! (`voices`, `speak`) and `as_stt` (`transcribe`).
 //!
-//! What it runs is data, `tests/voice_loop.json`: each text-to-speech model says its language's sentence with the voice
-//! the plan names, and each speech-to-text model the plan pairs with that language transcribes it, at the speech's own
+//! What it runs is data, `tests/voice_loop.json`, which names catalogue builds, so one model can be heard on several
+//! backends (Whisper on sherpa-onnx and on whisper.cpp): each text-to-speech build says its language's sentence with the voice
+//! the plan names, and each speech-to-text build the plan pairs with that language transcribes it, at the speech's own
 //! rate (the engine resamples it); then each real recorded clip (downloaded once through the host, checked against its
 //! sha256) is transcribed by the same models. Every transcript is printed and compared with what was said by its
 //! normalised word error rate (`voice_loop/wer.rs`); the test fails if any is above the plan's `max_wer` (or a voice's
@@ -31,7 +32,9 @@ use std::{env, fs};
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use sidevoice_engine::{BundledCatalog, Cancel, Engine, Host, LoadedModel, NativeHost, Progress};
+use sidevoice_engine::{
+    Accelerator, BundledCatalog, Cancel, Engine, Host, LoadedModel, NativeHost, Progress,
+};
 
 #[path = "voice_loop/audio.rs"]
 mod audio;
@@ -42,9 +45,6 @@ mod wer;
 
 type Result<T> = std::result::Result<T, String>;
 
-/// The backend the loop runs on: the one that runs every model in the plan on every platform it covers.
-const BACKEND: &str = "sherpa-onnx";
-
 /// `tests/voice_loop.json`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,9 +53,9 @@ struct Plan {
     max_wer: f64,
     /// What is said, by primary language subtag (`en`, `es`).
     sentences: BTreeMap<String, String>,
-    /// The text-to-speech models, each with its voice per language it is run in.
+    /// The text-to-speech builds, each with its voice per language it is run in.
     tts: Vec<Speaker>,
-    /// The speech-to-text models that hear each language, by primary language subtag.
+    /// The speech-to-text builds that hear each language, by primary language subtag.
     stt: BTreeMap<String, Vec<String>>,
     /// Real recordings.
     clips: Vec<Clip>,
@@ -64,7 +64,8 @@ struct Plan {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Speaker {
-    model: String,
+    /// A catalogue build id.
+    build: String,
     /// By the BCP 47 tag the model is told: the voice to speak with, or `null` for the model's first.
     voices: BTreeMap<String, Option<String>>,
     /// A higher word error rate this voice's speech may have than the plan's, and `why`, which the plan must give.
@@ -125,17 +126,18 @@ fn run() -> Result<()> {
     let fetcher = NativeHost::new(dir.join("engine")).map_err(|e| format!("NativeHost: {e}"))?;
 
     let mut rows = Vec::new();
+    let mut loaded_on = BTreeMap::new();
     let mut listeners: BTreeMap<String, LoadedModel> = BTreeMap::new();
-    for model in plan.stt.values().flatten() {
-        if !listeners.contains_key(model) {
-            listeners.insert(model.clone(), load(&engine, model)?);
+    for build in plan.stt.values().flatten() {
+        if !listeners.contains_key(build) {
+            listeners.insert(build.clone(), load(&engine, build, &mut loaded_on)?);
         }
     }
     for speaker in &plan.tts {
-        let loaded = load(&engine, &speaker.model)?;
+        let loaded = load(&engine, &speaker.build, &mut loaded_on)?;
         let tts = loaded
             .as_tts()
-            .ok_or(format!("{}: not a text-to-speech model", speaker.model))?;
+            .ok_or(format!("{}: not a text-to-speech model", speaker.build))?;
         let voices: Vec<String> = block_on(tts.voices())
             .into_iter()
             .map(|voice| voice.id)
@@ -150,7 +152,7 @@ fn run() -> Result<()> {
                 .clone()
                 .or_else(|| voices.first().cloned())
                 .unwrap_or_default();
-            let what = format!("{} ({voice}, {tag})", speaker.model);
+            let what = format!("{} ({voice}, {tag})", speaker.build);
             println!("{what} says {said:?}");
             let speech = match block_on(tts.speak(said, &voice, Some(tag), None)) {
                 Ok(speech) => speech,
@@ -164,7 +166,7 @@ fn run() -> Result<()> {
             };
             let seconds = speech.samples.len() as f64 / f64::from(speech.sample_rate.max(1));
             println!("  {seconds:.2} s at {} Hz", speech.sample_rate);
-            let name = format!("{}-{tag}.wav", speaker.model);
+            let name = format!("{}-{tag}.wav", speaker.build.replace('/', "-"));
             write(
                 &dir.join("speech").join(name),
                 &audio::wav(&speech.samples, speech.sample_rate),
@@ -195,7 +197,7 @@ fn run() -> Result<()> {
             ));
         }
     }
-    report(&rows, plan.max_wer, &dir.join("summary.md"))
+    report(&rows, plan.max_wer, &loaded_on, &dir.join("summary.md"))
 }
 
 fn plan_path() -> PathBuf {
@@ -219,39 +221,40 @@ fn plan(json: &str) -> Result<Plan> {
         if speaker.max_wer.is_some() != speaker.why.is_some() {
             return Err(format!(
                 "voice_loop.json: {}: max_wer and why go together",
-                speaker.model
+                speaker.build
             ));
         }
     }
     Ok(plan)
 }
 
-/// `model`'s build on [`BACKEND`], loaded: installed first if it is not.
-fn load(engine: &Engine, model: &str) -> Result<LoadedModel> {
+/// The build `build`, loaded: installed first if it is not. It must run here; the accelerator the engine chose for it
+/// goes into `loaded_on`.
+fn load(
+    engine: &Engine,
+    build: &str,
+    loaded_on: &mut BTreeMap<String, Option<Accelerator>>,
+) -> Result<LoadedModel> {
     let models = block_on(engine.models()).map_err(|e| format!("the models: {e}"))?;
-    let entry = models
+    let (model, entry) = models
         .iter()
-        .find(|entry| entry.id == model)
-        .ok_or(format!("{model}: not in the catalogue"))?;
-    let build = entry
-        .builds
-        .iter()
-        .find(|build| build.backend == BACKEND)
-        .ok_or(format!("{model}: no {BACKEND} build"))?;
-    if !build.available {
-        return Err(format!(
-            "{}: does not run here: {:?}",
-            build.id, build.reasons
-        ));
+        .find_map(|model| {
+            let entry = model.builds.iter().find(|entry| entry.id == build)?;
+            Some((model, entry))
+        })
+        .ok_or(format!("{build}: not in the catalogue"))?;
+    if !entry.available {
+        return Err(format!("{build}: does not run here: {:?}", entry.reasons));
     }
-    println!("loading {} on {:?}", build.id, build.accelerator);
+    println!("loading {build} on {:?}", entry.accelerator);
+    loaded_on.insert(build.to_owned(), entry.accelerator);
     let progress = |progress: Progress| {
         if progress.received == 0 && progress.done < progress.files {
             println!("  file {} of {}", progress.done + 1, progress.files);
         }
     };
-    block_on(engine.load(model, Some(&build.id), &progress, &Cancel::new()))
-        .map_err(|e| format!("{}: {e}", build.id))
+    block_on(engine.load(&model.id, Some(build), &progress, &Cancel::new()))
+        .map_err(|e| format!("{build}: {e}"))
 }
 
 /// What `listener` hears in `audio` (its samples and their rate), told the language.
@@ -324,9 +327,14 @@ fn fetch(host: &NativeHost, clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Prints the table, writes it to `summary` with a heading for this platform, and fails if any row failed or is above
-/// its highest word error rate: its own, or `default`.
-fn report(rows: &[Row], default: f64, summary: &Path) -> Result<()> {
+/// Prints the table and the accelerator each build was loaded on, writes them to `summary` with a heading for this
+/// platform, and fails if any row failed or is above its highest word error rate: its own, or `default`.
+fn report(
+    rows: &[Row],
+    default: f64,
+    loaded_on: &BTreeMap<String, Option<Accelerator>>,
+    summary: &Path,
+) -> Result<()> {
     let mut table =
         String::from("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
     let mut bad = 0;
@@ -369,11 +377,17 @@ fn report(rows: &[Row], default: f64, summary: &Path) -> Result<()> {
         rows.len(),
         default * 100.0
     );
-    println!("\n{table}\n{verdict}");
+    let mut builds = String::from("Builds, and the accelerator the engine loaded each on:\n\n");
+    for (build, accelerator) in loaded_on {
+        let on =
+            accelerator.map_or_else(|| "?".to_owned(), |accelerator| format!("{accelerator:?}"));
+        builds.push_str(&format!("- `{build}`: {on}\n"));
+    }
+    println!("\n{table}\n{verdict}\n\n{builds}");
     let heading = format!("## Voice loop ({} {})", env::consts::OS, env::consts::ARCH);
     write(
         summary,
-        format!("{heading}\n\n{table}\n{verdict}\n").as_bytes(),
+        format!("{heading}\n\n{table}\n{verdict}\n\n{builds}").as_bytes(),
     )?;
     if bad > 0 || rows.is_empty() {
         return Err(format!("{bad} of {} comparisons failed", rows.len()));

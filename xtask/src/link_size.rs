@@ -1,7 +1,6 @@
-//! `cargo xtask link-size`: what linking sherpa-onnx costs an app. The smallest program that uses the engine
-//! (`link_size/probe.rs`) is built in release mode and stripped, as an app ships, twice: with the engine's default
-//! features (the sherpa-onnx backend, linked) and without them. Each build must report the backends it expects; the
-//! two sizes and their difference are printed, and added to `$GITHUB_STEP_SUMMARY` when it is set.
+//! `cargo xtask link-size`: what linking the engine costs an app. The smallest program that uses the engine
+//! (`link_size/probe.rs`) is built in release mode and stripped, as an app ships; its size and the backends it was
+//! built with are printed, and added to `$GITHUB_STEP_SUMMARY` when it is set.
 
 use std::env;
 use std::path::Path;
@@ -14,18 +13,12 @@ const PROBE: &str = include_str!("link_size/probe.rs");
 pub(crate) fn measure() -> Result<()> {
     let (_, target) = metadata()?;
     let root = target.join("link-size");
-    let shared_target = root.join("target");
-    let with = build(&root, &shared_target, "with", true)?;
-    let without = build(&root, &shared_target, "without", false)?;
-    let mb = |bytes: u64| bytes as f64 / 1_048_576.0;
+    let (bytes, backends) = build(&root)?;
+    let platform = format!("{} {}", env::consts::OS, env::consts::ARCH);
     let table = format!(
-        "| Platform | Engine with sherpa-onnx | Engine without | sherpa-onnx costs |\n|---|---|---|---|\n\
-         | {} {} | {:.1} MB ({with} B) | {:.1} MB ({without} B) | {:.1} MB |\n",
-        env::consts::OS,
-        env::consts::ARCH,
-        mb(with),
-        mb(without),
-        mb(with.saturating_sub(without)),
+        "| Platform | Size | Backends |\n|---|---|---|\n| {platform} | {:.1} MB ({bytes} B) | {} |\n",
+        bytes as f64 / 1_048_576.0,
+        backends.trim()
     );
     println!("{table}");
     if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {
@@ -38,35 +31,35 @@ pub(crate) fn measure() -> Result<()> {
     Ok(())
 }
 
-/// The probe built as the package `probe-<name>`, with or without the engine's default features, run once to check
-/// which backends it has, and its size in bytes.
-fn build(root: &Path, shared_target: &Path, name: &str, sherpa: bool) -> Result<u64> {
-    let dir = root.join(name);
+/// The probe, built in `root` and run once: its size in bytes, and the backends it says it was built with.
+fn build(root: &Path) -> Result<(u64, String)> {
+    let dir = root.join("probe");
     empty_dir(&dir.join("src"))?;
     let engine = repo()
         .canonicalize()
         .map_err(|e| format!("the repository: {e}"))?;
     let engine = engine.to_string_lossy().replace('\\', "/");
     let manifest = format!(
-        "[package]\nname = \"probe-{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
-         [dependencies]\nsidevoice-engine = {{ path = \"{engine}\", default-features = {sherpa} }}\n\n\
+        "[package]\nname = \"probe\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
+         [dependencies]\nsidevoice-engine = {{ path = \"{engine}\" }}\n\n\
          [profile.release]\nstrip = true\n\n[workspace]\n"
     );
     write(&dir.join("Cargo.toml"), manifest.as_bytes())?;
     write(&dir.join("src/main.rs"), PROBE.as_bytes())?;
     // The engine's own lock, so that the probe builds the versions it is tested with.
     write(&dir.join("Cargo.lock"), &read(&repo().join("Cargo.lock"))?)?;
-    let target = shared_target.to_string_lossy();
-    run_in(&dir, "cargo build --release --target-dir", &[&target])?;
-    let binary = shared_target
+    let target = root.join("target");
+    run_in(
+        &dir,
+        "cargo build --release --target-dir",
+        &[&target.to_string_lossy()],
+    )?;
+    let binary = target
         .join("release")
-        .join(format!("probe-{name}{}", env::consts::EXE_SUFFIX));
+        .join(format!("probe{}", env::consts::EXE_SUFFIX));
     let backends = run_in(&dir, &binary.to_string_lossy(), &[])?;
-    if backends.contains("sherpa-onnx") != sherpa {
-        return Err(format!("probe-{name} has the backends {backends:?}"));
-    }
     let bytes = std::fs::metadata(&binary)
         .map_err(|e| format!("{}: {e}", binary.display()))?
         .len();
-    Ok(bytes)
+    Ok((bytes, backends))
 }
