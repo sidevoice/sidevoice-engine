@@ -237,8 +237,8 @@ pub(crate) fn report_detections(
 pub(crate) struct EndOfTurnRule {
     /// The silence after the speech, in seconds.
     pub(crate) pause_s: f64,
-    /// Where the clip is cut, as a fraction of its length.
-    pub(crate) cut_at: f64,
+    /// Where the clip may be cut, as fractions of its length: its loudest 20 ms in there.
+    pub(crate) cut_within: [f64; 2],
     /// The probability at or above which a turn is complete.
     pub(crate) threshold: f32,
 }

@@ -81,7 +81,7 @@ fn the_plan_names_bundled_builds_and_has_a_sentence_for_each_language() {
 fn a_plan_with_a_language_and_no_sentence_for_it_is_refused() {
     let json = r#"{"max_wer": 0.2, "sentences": {}, "tts": [{"build": "m/b", "voices": {"es": null}}],
         "stt": {}, "clips": [], "vad": {"builds": [], "silence_s": 1, "tolerance_s": 0.3, "min_coverage": 0.5},
-        "end_of_turn": {"builds": [], "pause_s": 0.2, "cut_at": 0.5, "threshold": 0.5}}"#;
+        "end_of_turn": {"builds": [], "pause_s": 0.2, "cut_within": [0.3, 0.7], "threshold": 0.5}}"#;
     assert!(plan(json).is_err());
     assert!(plan(r#"{"max_wer": 0.2}"#).is_err(), "strict");
 }
@@ -139,12 +139,19 @@ fn a_turn_is_heard_whole_and_cut_each_with_its_pause_and_judged_by_both() {
     let plan = EndOfTurnPlan {
         builds: Vec::new(),
         pause_s: 0.5,
-        cut_at: 0.5,
+        cut_within: [0.3, 0.7],
         threshold: 0.5,
     };
-    let (whole, cut) = end_of_turn::heard(&[0.5; 8], 4, &plan);
-    assert_eq!(whole, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.0]);
-    assert_eq!(cut, [0.5, 0.5, 0.5, 0.5, 0.0, 0.0]);
+    // At 100 Hz, frames of 2 samples: the loudest one in 30–70 % is samples 10 and 11, cut after 10.
+    let mut clip = vec![0.1; 20];
+    clip[10] = 0.9;
+    clip[11] = 0.9;
+    clip[2] = 1.0;
+    assert_eq!(end_of_turn::cut_point(&clip, 100, plan.cut_within), 11);
+    let (whole, cut) = end_of_turn::heard(&clip, 100, &plan);
+    assert_eq!(whole.len(), 20 + 50);
+    assert_eq!(cut.len(), 11 + 50);
+    assert!(cut[11..].iter().all(|s| *s == 0.0));
     assert_eq!(end_of_turn::judge(0.9, 0.1, &plan), Ok(()));
     assert!(
         end_of_turn::judge(0.4, 0.1, &plan).is_err(),

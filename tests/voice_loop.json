@@ -56,7 +56,10 @@
       "smart-turn-v3.2/onnxruntime-int8"
     ],
     "pause_s": 0.2,
-    "cut_at": 0.5,
+    "cut_within": [
+      0.3,
+      0.7
+    ],
     "threshold": 0.5
   },
   "vad": {

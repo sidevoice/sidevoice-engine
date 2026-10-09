@@ -10,8 +10,8 @@
 //! normalised word error rate (`voice_loop/wer.rs`); the test fails if any is above the plan's one `max_wer`, or if
 //! anything fails to install, load, speak or transcribe. Each voice activity detector of the plan then hears each clip
 //! between two stretches of silence, through a stream fed 20 ms at a time, and must find its speech there and nowhere
-//! else (`voice_loop/vad.rs`). Each end-of-turn model hears each clip whole and cut half way, each followed by a
-//! short pause, and must call the first a complete turn and the second not (`voice_loop/end_of_turn.rs`).
+//! else (`voice_loop/vad.rs`). Each end-of-turn model hears each clip whole and cut inside a word, each followed
+//! by a short pause, and must call the first a complete turn and the second not (`voice_loop/end_of_turn.rs`).
 //!
 //! It downloads about 1.5 GB the first time, so it is ignored unless asked for; the `e2e` workflow asks, on each native
 //! platform, through `cargo xtask e2e`:

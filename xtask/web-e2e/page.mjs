@@ -85,6 +85,18 @@ function resample(samples, from, to) {
   return out;
 }
 
+/** Where a clip is cut inside a word, as the native loop cuts it (`tests/voice_loop/end_of_turn.rs`): the middle of its
+ * loudest 20 ms between the fractions `within` of its length. */
+function cutPoint(samples, rate, within) {
+  const frame = Math.max(1, Math.floor(rate / 50));
+  const from = Math.floor(Math.floor(samples.length * within[0]) / frame);
+  const to = Math.max(from + 1, Math.floor(Math.floor(samples.length * within[1]) / frame));
+  const energy = (at) => samples.subarray(at * frame, (at + 1) * frame).reduce((sum, s) => sum + s * s, 0);
+  let loudest = from;
+  for (let at = from; at < to; at++) if (energy(at) > energy(loudest)) loudest = at;
+  return Math.min(samples.length, loudest * frame + Math.floor(frame / 2));
+}
+
 /** `samples` at `rate` as a 16-bit WAV file. */
 function toWav(samples, rate) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -246,7 +258,7 @@ try {
   vad.free();
   detector.free();
 
-  // The end-of-turn model: each clip whole and cut half way, each followed by the same pause.
+  // The end-of-turn model: each clip whole and cut inside a word, each followed by the same pause.
   const turn = await engine.load(plan.endOfTurn.model, plan.endOfTurn.build);
   await check(
     "smart-turn loads as an end-of-turn model only",
@@ -265,7 +277,7 @@ try {
         out.set(audio);
         return out;
       };
-      const cut = samples.subarray(0, Math.floor(samples.length * plan.endOfTurn.cutAt));
+      const cut = samples.subarray(0, cutPoint(samples, rate, plan.endOfTurn.cutWithin));
       start = performance.now();
       row.whole = await endOfTurn.probability(followed(samples), rate);
       row.cut = await endOfTurn.probability(followed(cut), rate);
