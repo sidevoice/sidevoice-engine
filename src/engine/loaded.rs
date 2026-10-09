@@ -1,8 +1,8 @@
-//! A model in memory, as the app holds it: [`LoadedModel`], and what it can do, [`Stt`], [`Tts`] and [`Vad`] (in
-//! `vad`). Every `LoadedModel` of one build shares one model in memory (`Resident`), and that model holds its backend's
-//! library: so the model is unloaded when the last `LoadedModel` of its build (or a `VadStream` of it) is dropped, and
-//! the library when the last model of its backend is. Calls on one model are one at a time: a second waits for the
-//! first to end; a voice activity stream has a state of its own and runs on its own.
+//! A model in memory, as the app holds it: [`LoadedModel`], and what it can do, [`Stt`], [`Tts`], [`Vad`] (in `vad`)
+//! and [`EndOfTurn`] (in `end_of_turn`). Every `LoadedModel` of one build shares one model in memory (`Resident`), and
+//! that model holds its backend's library: so the model is unloaded when the last `LoadedModel` of its build (or a
+//! `VadStream` of it) is dropped, and the library when the last model of its backend is. Calls on one model are one at
+//! a time: a second waits for the first to end; a voice activity stream has a state of its own and runs on its own.
 
 use std::sync::Arc;
 
@@ -13,8 +13,10 @@ use crate::backend::{BackendModel, Library};
 use crate::catalog::{Capability, Voice};
 use crate::{Error, Result};
 
+mod end_of_turn;
 mod vad;
 
+pub use end_of_turn::EndOfTurn;
 pub use vad::{Vad, VadEvent, VadFrame, VadOptions, VadOutput, VadStream};
 
 /// The sample rate every speech-to-text backend takes (`SttModel::transcribe`).
@@ -29,6 +31,8 @@ pub(super) struct Resident {
     )]
     library: Arc<dyn Library>,
     capabilities: Vec<Capability>,
+    /// How many seconds of a turn it hears, for an end-of-turn classifier.
+    end_of_turn_seconds: Option<u32>,
     /// The model's languages and declared voices, from the catalogue: what describes the voices the backend has.
     languages: Vec<String>,
     voices: Vec<Voice>,
@@ -60,10 +64,15 @@ impl Resident {
         if model.as_vad().is_some() {
             capabilities.push(Capability::Vad);
         }
+        let end_of_turn_seconds = model.as_end_of_turn().map(|model| model.seconds());
+        if end_of_turn_seconds.is_some() {
+            capabilities.push(Capability::EndOfTurn);
+        }
         Arc::new(Self {
             model: Mutex::new(model),
             library,
             capabilities,
+            end_of_turn_seconds,
             languages,
             voices,
         })
@@ -151,6 +160,14 @@ impl LoadedModel {
         self.capabilities()
             .contains(&Capability::Vad)
             .then_some(Vad(self))
+    }
+
+    /// The model as an end-of-turn classifier, if it is one.
+    #[must_use]
+    pub fn as_end_of_turn(&self) -> Option<EndOfTurn<'_>> {
+        self.capabilities()
+            .contains(&Capability::EndOfTurn)
+            .then_some(EndOfTurn(self))
     }
 }
 

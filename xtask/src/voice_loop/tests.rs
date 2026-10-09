@@ -50,3 +50,23 @@ fn a_detection_is_the_clips_speech_between_its_silences() {
     };
     assert_eq!(judge(&failed, &rule).unwrap_err(), "`detection-failed`");
 }
+
+#[test]
+fn a_turn_is_complete_whole_and_not_cut() {
+    use super::{judge_turn, EndOfTurnRule, Turn};
+    let rule = EndOfTurnRule {
+        pause_s: 0.2,
+        cut_at: 0.5,
+        threshold: 0.5,
+    };
+    let turn = |whole, cut| Turn {
+        pair: "clip → model".into(),
+        whole,
+        cut,
+        error: None,
+    };
+    assert_eq!(judge_turn(&turn(Some(0.9), Some(0.1)), &rule), Ok(()));
+    assert!(judge_turn(&turn(Some(0.4), Some(0.1)), &rule).is_err());
+    assert!(judge_turn(&turn(Some(0.9), Some(0.5)), &rule).is_err());
+    assert!(judge_turn(&turn(None, Some(0.1)), &rule).is_err());
+}

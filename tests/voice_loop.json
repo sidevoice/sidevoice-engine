@@ -51,6 +51,14 @@
       "parakeet-tdt-0.6b-v3/sherpa-onnx-int8"
     ]
   },
+  "end_of_turn": {
+    "builds": [
+      "smart-turn-v3.2/onnxruntime-int8"
+    ],
+    "pause_s": 0.2,
+    "cut_at": 0.5,
+    "threshold": 0.5
+  },
   "vad": {
     "builds": [
       "silero-vad/sherpa-onnx-fp32"

@@ -34,8 +34,8 @@ pub use catalog::{
     MemorySource, ModelEntry, ModelFile, Problem, Requires, Voice,
 };
 pub use engine::{
-    Audio, ConfigError, Engine, LoadedModel, Model, ModelBuild, Stt, Tts, Vad, VadEvent, VadFrame,
-    VadOptions, VadOutput, VadStream,
+    Audio, ConfigError, EndOfTurn, Engine, LoadedModel, Model, ModelBuild, Stt, Tts, Vad, VadEvent,
+    VadFrame, VadOptions, VadOutput, VadStream,
 };
 pub use host::{
     Accelerator, Capabilities, Credentials, Download, Fetcher, FolderWriter, Host, HttpClient,

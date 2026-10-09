@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 /// What a model can do. A model can do several (`capabilities` in the catalogue), and the list grows (`llm`, ...):
 /// it is `#[non_exhaustive]`, so match it with a wildcard arm. The catalogue names each by a stable id: "stt", "tts",
-/// "vad".
+/// "vad", "end-of-turn".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
@@ -13,4 +13,7 @@ pub enum Capability {
     Tts,
     /// Voice activity detection: where speech starts and ends in a stream of audio.
     Vad,
+    /// End of turn: whether a speaker who paused has finished what they were saying.
+    #[serde(rename = "end-of-turn")]
+    EndOfTurn,
 }

@@ -27,7 +27,7 @@ mod tests;
 pub use audio::Audio;
 pub use error::ConfigError;
 pub use loaded::{
-    LoadedModel, Stt, Tts, Vad, VadEvent, VadFrame, VadOptions, VadOutput, VadStream,
+    EndOfTurn, LoadedModel, Stt, Tts, Vad, VadEvent, VadFrame, VadOptions, VadOutput, VadStream,
 };
 pub use model::{Model, ModelBuild};
 

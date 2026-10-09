@@ -30,6 +30,8 @@ const { samples: speech, sampleRate } = await kokoro.asTts().speak("Hola", "ef_d
 const silero = await engine.load("silero-vad");
 const mic = await silero.asVad().stream({ minSilenceMs: 500 }); // a state of its own; mic.sampleRate is 16000
 const { frames, events } = await mic.accept(pcm); // events: { type: "speech-start", at } | { type: "speech-end", start, end }
+const smartTurn = await engine.load("smart-turn-v3.2");
+const p = await smartTurn.asEndOfTurn().probability(turnSoFar, 48000); // the probability the speaker has finished
 stt.free(); // the model leaves memory once its LoadedModel and the Stt and Tts it handed out are freed
 whisper.free(); // (or collected)
 ```

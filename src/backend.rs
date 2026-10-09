@@ -131,11 +131,12 @@ mod registry;
 pub(crate) mod remote;
 mod requirement;
 mod segmenter;
+pub(crate) mod smart_turn;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use library::{Library, Load};
-pub(crate) use loaded_model::{BackendModel, VadModel, VadStreamModel, Window};
+pub(crate) use loaded_model::{BackendModel, EndOfTurnModel, VadModel, VadStreamModel, Window};
 #[cfg(test)]
 pub(crate) use loaded_model::{SttModel, TtsModel};
 pub(crate) use registry::{built_in, find};
@@ -216,6 +217,7 @@ pub(crate) const KNOWN: &[BackendId] = &[
     "whisper-cpp",
     "openai",
     "elevenlabs",
+    "onnxruntime",
 ];
 
 /// Whether `backend` is one of [`KNOWN`].

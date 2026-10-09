@@ -70,6 +70,10 @@ whisper-rs = { version = "=0.16.0", features = ["metal"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bzip2 = "=0.6.1"
 futures-core = "0.3.31"
+# The ONNX Runtime backend (src/backend/implementations/onnx_runtime.rs): `ort`'s safe API over the ONNX Runtime
+# sherpa-onnx already links (below), never a runtime of its own: `alternative-backend` makes `ort-sys` link and download
+# nothing, and the backend hands `ort` the linked runtime's C API. API 17 is what it asks of a runtime (1.17 or later).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17", "alternative-backend"] }
 reqwest = { version = "=0.13.0", default-features = false, features = ["rustls", "stream"] }
 sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
 tar = { version = "0.4.46", default-features = false }

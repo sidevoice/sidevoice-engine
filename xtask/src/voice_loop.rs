@@ -230,3 +230,82 @@ pub(crate) fn report_detections(
     }
     Ok(())
 }
+
+/// How an end-of-turn model is judged on a clip heard whole and cut, each followed by a pause: the plan's
+/// `end_of_turn`, less its builds (the same rule as `tests/voice_loop/end_of_turn.rs`).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct EndOfTurnRule {
+    /// The silence after the speech, in seconds.
+    pub(crate) pause_s: f64,
+    /// Where the clip is cut, as a fraction of its length.
+    pub(crate) cut_at: f64,
+    /// The probability at or above which a turn is complete.
+    pub(crate) threshold: f32,
+}
+
+/// One clip heard by one end-of-turn model: the probabilities of the whole and the cut clip, or why there are none.
+pub(crate) struct Turn {
+    pub(crate) pair: String,
+    pub(crate) whole: Option<f32>,
+    pub(crate) cut: Option<f32>,
+    pub(crate) error: Option<String>,
+}
+
+/// Whether the whole clip is a complete turn and the cut one is not; why not otherwise.
+pub(crate) fn judge_turn(turn: &Turn, rule: &EndOfTurnRule) -> Result<()> {
+    if let Some(error) = &turn.error {
+        return Err(format!("`{error}`"));
+    }
+    let (Some(whole), Some(cut)) = (turn.whole, turn.cut) else {
+        return Err("no probability".into());
+    };
+    if whole < rule.threshold {
+        return Err(format!(
+            "the whole clip is not a complete turn ({whole:.2} < {:.2})",
+            rule.threshold
+        ));
+    }
+    if cut >= rule.threshold {
+        return Err(format!(
+            "the cut clip is a complete turn ({cut:.2} ≥ {:.2})",
+            rule.threshold
+        ));
+    }
+    Ok(())
+}
+
+/// Prints the table of turns, adds it to `$GITHUB_STEP_SUMMARY` when set, and fails if any turn failed.
+pub(crate) fn report_turns(title: &str, turns: &[Turn], rule: &EndOfTurnRule) -> Result<()> {
+    let mut table = String::from(
+        "| Clip → end-of-turn model | P(complete), whole | P(complete), cut | Verdict |\n|---|---|---|---|\n",
+    );
+    let probability = |p: Option<f32>| p.map_or_else(|| "–".to_owned(), |p| format!("{p:.2}"));
+    let mut failed = 0;
+    for turn in turns {
+        let verdict = judge_turn(turn, rule);
+        failed += usize::from(verdict.is_err());
+        let verdict = verdict.map_or_else(|why| format!("✗ {why}"), |()| "ok".into());
+        table.push_str(&format!(
+            "| {} | {} | {} | {verdict} |\n",
+            turn.pair,
+            probability(turn.whole),
+            probability(turn.cut)
+        ));
+    }
+    let verdict = format!(
+        "{} of {} clips: complete whole, not complete cut.",
+        turns.len() - failed,
+        turns.len()
+    );
+    println!("\n{table}\n{verdict}");
+    if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {
+        let mut text =
+            String::from_utf8_lossy(&fs::read(&summary).unwrap_or_default()).into_owned();
+        text.push_str(&format!("## {title}\n\n{table}\n{verdict}\n"));
+        write(Path::new(&summary), text.as_bytes())?;
+    }
+    if failed > 0 || turns.is_empty() {
+        return Err(format!("{failed} of {} turns failed", turns.len()));
+    }
+    Ok(())
+}

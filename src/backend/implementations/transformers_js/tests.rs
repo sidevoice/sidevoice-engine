@@ -28,6 +28,7 @@ fn a_build_is_the_model_its_files_say() {
     ];
     assert_eq!(Kind::of(&installed(&supertonic)), Ok(Kind::Supertonic));
     assert_eq!(Kind::of(&installed(&["vad"])), Ok(Kind::Silero));
+    assert_eq!(Kind::of(&installed(&["smart_turn"])), Ok(Kind::SmartTurn));
     for unknown in [&["model"][..], &["encoder"], &[]] {
         assert_eq!(
             Kind::of(&installed(unknown)).map_err(|e| e.code),

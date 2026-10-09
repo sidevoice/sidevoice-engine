@@ -5,7 +5,8 @@
 //! loop's recorded clips (`tests/voice_loop.json`) with the plan's speech-to-text build, each once told its language and
 //! once with none (the model detects it), and what each text-to-speech build says in its language's sentence; then the
 //! voice activity build hears each clip between two silences, through a stream, judged by the native loop's rule
-//! (`voice_loop.rs`). `xtask/web-e2e/run.mjs` serves the page and drives Chrome.
+//! (`voice_loop.rs`); and the end-of-turn build hears each clip whole and cut, by that loop's rule too.
+//! `xtask/web-e2e/run.mjs` serves the page and drives Chrome.
 //!
 //! What it runs is data, `xtask/web-e2e.json`: the accelerators the page reports, the speech-to-text build, and each
 //! text-to-speech build with its voice and language. Every check the page makes must pass, and every transcript must
@@ -22,7 +23,10 @@ use std::process::{Command, Stdio};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::voice_loop::{fetch, primary, report, report_detections, Clip, Detection, Row, VadRule};
+use crate::voice_loop::{
+    fetch, primary, report, report_detections, report_turns, Clip, Detection, EndOfTurnRule, Row,
+    Turn, VadRule,
+};
 use crate::{empty_dir, npm, read, repo, run_in, write, Result};
 
 const PAGE: &str = include_str!("../web-e2e/page.mjs");
@@ -38,6 +42,8 @@ struct Plan {
     stt: Build,
     /// What detects speech.
     vad: Build,
+    /// What tells a complete turn.
+    end_of_turn: Build,
     /// What speaks.
     tts: Vec<Speaker>,
 }
@@ -67,6 +73,7 @@ struct Shared {
     sentences: BTreeMap<String, String>,
     clips: Vec<Clip>,
     vad: VadRule,
+    end_of_turn: EndOfTurnRule,
 }
 
 /// What the page posts.
@@ -79,6 +86,8 @@ struct Report {
     rows: Vec<PageRow>,
     #[serde(default)]
     detections: Vec<PageDetection>,
+    #[serde(default)]
+    turns: Vec<PageTurn>,
     #[serde(default)]
     error: Option<Value>,
 }
@@ -97,6 +106,16 @@ struct PageRow {
     language: String,
     said: String,
     heard: Option<String>,
+    error: Option<String>,
+}
+
+/// One clip heard by the end-of-turn model, whole and cut.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageTurn {
+    pair: String,
+    whole: Option<f32>,
+    cut: Option<f32>,
     error: Option<String>,
 }
 
@@ -182,6 +201,12 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             "build": plan.vad.build,
             "silenceS": shared.vad.silence_s,
         },
+        "endOfTurn": {
+            "model": plan.end_of_turn.model,
+            "build": plan.end_of_turn.build,
+            "pauseS": shared.end_of_turn.pause_s,
+            "cutAt": shared.end_of_turn.cut_at,
+        },
         "tts": speakers,
         "clips": page_clips,
     });
@@ -257,6 +282,18 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
         .collect();
     let title = format!("Voice activity (web: headless Chrome, {accelerators})");
     let detected = report_detections(&title, &detections, &shared.vad);
+    let turns: Vec<Turn> = page
+        .turns
+        .into_iter()
+        .map(|turn| Turn {
+            pair: turn.pair,
+            whole: turn.whole,
+            cut: turn.cut,
+            error: turn.error,
+        })
+        .collect();
+    let title = format!("End of turn (web: headless Chrome, {accelerators})");
+    let ended = report_turns(&title, &turns, &shared.end_of_turn);
     if !failed.is_empty() {
         return Err(format!(
             "{} check(s) failed: {}",
@@ -264,7 +301,7 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             failed.join("; ")
         ));
     }
-    judged.and(detected)
+    judged.and(detected).and(ended)
 }
 
 fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8], what: &str) -> Result<T> {

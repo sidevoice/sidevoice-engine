@@ -1,8 +1,8 @@
 // The web voice loop's page (`cargo xtask web-e2e`, served by run.mjs): the npm package `@sidevoice/engine` as a page
 // uses it, through its public interface only. It checks install, cancel, uninstall and the loaded model's
 // capabilities, then transcribes the plan's recorded clips and what each text-to-speech model says, has the voice
-// activity detector hear each clip between two silences, and posts what it found to /report; xtask judges the
-// transcripts and the detections. What it logs is posted to /log, and each model's speech to /speech/.
+// activity detector hear each clip between two silences, has the end-of-turn model hear each clip whole and cut,
+// and posts what it found to /report; xtask judges the transcripts, the detections and the turns. What it logs is posted to /log, and each model's speech to /speech/.
 import init, { WebEngine } from "@sidevoice/engine";
 
 const post = (path, body) => fetch(path, { method: "POST", body });
@@ -22,7 +22,7 @@ for (const level of ["warn", "error"]) {
 addEventListener("error", (event) => log("page error:", String(event.message)));
 addEventListener("unhandledrejection", (event) => log("unhandled rejection:", String(event.reason?.code ?? event.reason)));
 
-const report = { checks: [], rows: [], detections: [] };
+const report = { checks: [], rows: [], detections: [], turns: [] };
 const check = (name, ok, detail = "") => {
   report.checks.push({ name, ok: Boolean(ok), detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
   return log(ok ? "ok:" : "FAILED:", name, detail);
@@ -245,6 +245,39 @@ try {
   await check("frames on the web carry the model's probability", probabilities > 0, probabilities);
   vad.free();
   detector.free();
+
+  // The end-of-turn model: each clip whole and cut half way, each followed by the same pause.
+  const turn = await engine.load(plan.endOfTurn.model, plan.endOfTurn.build);
+  await check(
+    "smart-turn loads as an end-of-turn model only",
+    turn.capabilities().join() === "end-of-turn" && turn.asStt() === undefined && turn.asVad() === undefined,
+    turn.capabilities(),
+  );
+  const endOfTurn = turn.asEndOfTurn();
+  await check("smart-turn hears the last 8 s of a turn", endOfTurn.seconds === 8, endOfTurn.seconds);
+  for (const clip of plan.clips) {
+    const row = { pair: `clip ${clip.name} → ${plan.endOfTurn.build}` };
+    try {
+      const { samples, rate } = wav(await (await fetch(clip.file)).arrayBuffer());
+      const pause = new Float32Array(Math.floor(plan.endOfTurn.pauseS * rate));
+      const followed = (audio) => {
+        const out = new Float32Array(audio.length + pause.length);
+        out.set(audio);
+        return out;
+      };
+      const cut = samples.subarray(0, Math.floor(samples.length * plan.endOfTurn.cutAt));
+      start = performance.now();
+      row.whole = await endOfTurn.probability(followed(samples), rate);
+      row.cut = await endOfTurn.probability(followed(cut), rate);
+      await log(`${row.pair}: ${since(start)}: whole ${row.whole}, cut ${row.cut}`);
+    } catch (error) {
+      row.error = error?.code ?? String(error);
+      await log(`${row.pair}: failed:`, row.error, String(error?.stack ?? ""));
+    }
+    report.turns.push(row);
+  }
+  endOfTurn.free();
+  turn.free();
 
   stt.free();
   whisper.free();

@@ -3,7 +3,7 @@
 //!
 //! A thin wrapper over [`Engine`]: the same operations under JavaScript's names (`models`, `install`, `uninstall`,
 //! `load`, and on what `load` returns, `capabilities`, `asStt().transcribe`, `asTts().voices` and `speak`, and
-//! `asVad().stream`, whose stream `accept`s audio), with a
+//! `asVad().stream`, whose stream `accept`s audio, and `asEndOfTurn().probability`), with a
 //! progress callback and an `AbortSignal` where the engine takes a [`ProgressSink`](crate::ProgressSink) and a
 //! [`Cancel`]. Every failure rejects with an `Error` that carries the engine's stable `code` and its `params`, which
 //! the page translates; its message is the code too.
@@ -45,7 +45,7 @@ export interface ModelBuild {
   available: boolean; reasons: Reason[]; installed: boolean;
 }
 export interface Model {
-  id: string; family: string; capabilities: ("stt" | "tts" | "vad")[]; parametersM: number; languages: string[];
+  id: string; family: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; parametersM: number; languages: string[];
   license: string;
   voices: Voice[]; installed: boolean; builds: ModelBuild[]; recommendedBuild?: string;
 }
@@ -189,8 +189,8 @@ impl WebLoadedModel {
         self.loaded.build().to_owned()
     }
 
-    /// What it can do: `"stt"`, `"tts"`, `"vad"`.
-    #[wasm_bindgen(unchecked_return_type = "(\"stt\" | \"tts\" | \"vad\")[]")]
+    /// What it can do: `"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`.
+    #[wasm_bindgen(unchecked_return_type = "(\"stt\" | \"tts\" | \"vad\" | \"end-of-turn\")[]")]
     pub fn capabilities(&self) -> Vec<String> {
         let capabilities = self.loaded.capabilities().iter();
         capabilities
@@ -218,6 +218,14 @@ impl WebLoadedModel {
     #[wasm_bindgen(js_name = asVad)]
     pub fn as_vad(&self) -> Option<WebVad> {
         (self.loaded.capabilities().contains(&Capability::Vad)).then(|| WebVad {
+            loaded: self.loaded.clone(),
+        })
+    }
+
+    /// The model as an end-of-turn classifier, if it is one.
+    #[wasm_bindgen(js_name = asEndOfTurn)]
+    pub fn as_end_of_turn(&self) -> Option<WebEndOfTurn> {
+        (self.loaded.capabilities().contains(&Capability::EndOfTurn)).then(|| WebEndOfTurn {
             loaded: self.loaded.clone(),
         })
     }
@@ -287,6 +295,40 @@ impl WebTts {
             let tts = loaded.as_tts().ok_or(Error::new("model-cannot-speak"))?;
             let audio = tts.speak(&text, &voice, language.as_deref(), speed).await?;
             Ok(values::audio(&audio))
+        })
+    }
+}
+
+/// A loaded model, as an end-of-turn classifier.
+#[wasm_bindgen(js_name = EndOfTurn)]
+pub struct WebEndOfTurn {
+    loaded: LoadedModel,
+}
+
+#[wasm_bindgen(js_class = EndOfTurn)]
+impl WebEndOfTurn {
+    /// How many seconds of the end of a turn the model hears: earlier audio does not count.
+    #[wasm_bindgen(getter)]
+    pub fn seconds(&self) -> u32 {
+        self.loaded
+            .as_end_of_turn()
+            .map_or(0, |model| model.seconds())
+    }
+
+    /// The probability, from 0 to 1, that the turn in `audio` (mono samples at `sampleRate` Hz, from its start to now)
+    /// is complete; the engine keeps the last `seconds` and resamples them.
+    #[wasm_bindgen(unchecked_return_type = "Promise<number>")]
+    pub fn probability(
+        &self,
+        audio: Vec<f32>,
+        #[wasm_bindgen(js_name = sampleRate)] sample_rate: u32,
+    ) -> Promise {
+        let loaded = self.loaded.clone();
+        promise(async move {
+            let model = loaded
+                .as_end_of_turn()
+                .ok_or(Error::new("model-cannot-end-turns"))?;
+            Ok(model.probability(&audio, sample_rate).await?.into())
         })
     }
 }

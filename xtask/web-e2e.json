@@ -6,6 +6,10 @@
     "model": "whisper-base",
     "build": "whisper-base/transformers-js-q8"
   },
+  "end_of_turn": {
+    "model": "smart-turn-v3.2",
+    "build": "smart-turn-v3.2/transformers-js-int8"
+  },
   "vad": {
     "model": "silero-vad",
     "build": "silero-vad/transformers-js-fp32"

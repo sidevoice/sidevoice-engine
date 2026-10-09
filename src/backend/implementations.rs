@@ -6,6 +6,7 @@
 
 mod elevenlabs;
 mod mlx;
+mod onnx_runtime;
 mod openai;
 mod sherpa_onnx;
 mod transformers_js;
