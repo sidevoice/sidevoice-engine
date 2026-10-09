@@ -10,6 +10,8 @@ description = "Build tooling for the engine: the npm package, the release assets
 # preserve_order: `pin-catalog` rewrites the family files with their keys where they were.
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
+# npm's `shasum` of a tarball (SHA-1), to tell whether a staged version is this build (`npm-publish`).
+sha1 = "0.10"
 serde = { version = "1", features = ["derive"] }
 # `sherpa-libs` unpacks sherpa-onnx's archive itself, as the engine does (the same crates), so that a laptop needs no
 # bzip2 tool.

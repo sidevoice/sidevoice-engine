@@ -7,7 +7,8 @@
 //! - `manifest DIR [--tag vX.Y.Z]`: the npm tarball in DIR renamed as published (`sidevoice-engine-nightly.tgz` for
 //!   the nightly) and `SHA256SUMS` written over DIR (xtask/src/release.rs).
 //! - `publish DIR TAG`: DIR attached to the GitHub Release TAG, read back, verified, and the Release published.
-//! - `npm-publish TAG`: the tarball of the Release TAG (a `vX.Y.Z`), verified, published to npm.
+//! - `npm-publish TAG`: the tarball of the Release TAG (a `vX.Y.Z`), verified, staged on npm for the operator to
+//!   approve.
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
 //! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
