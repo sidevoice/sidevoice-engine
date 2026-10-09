@@ -1,4 +1,6 @@
-use serde::Deserialize;
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Deserializer};
 
 use crate::host::Accelerator;
 use crate::install::Artifact;
@@ -25,6 +27,36 @@ pub struct BuildEntry {
     pub memory: Memory,
     /// Every file the backend needs to load it, configuration and tokenizer included.
     pub files: Vec<ModelFile>,
+    /// sherpa-onnx builds only: where each argument of a call goes, for a model that reads it from its config rather than
+    /// per call. Keyed by the interface's argument name ([`CALL_ARGUMENTS`]: `language`), each the sherpa-onnx config
+    /// paths (below `OfflineRecognizerConfig.model_config`) that take its value: Whisper's `whisper.language`, Canary's
+    /// `canary.src_lang` and `canary.tgt_lang` (it transcribes when both are the language). One path or a list. Empty,
+    /// no argument reaches the config (Whisper then detects the language). sidevoice-engine#46.
+    #[serde(default, deserialize_with = "call_params")]
+    pub call_params: BTreeMap<String, Vec<String>>,
+}
+
+/// The arguments of a call a build's `call_params` may name: `language`, the BCP 47 tag `Stt::transcribe` takes.
+pub(crate) const CALL_ARGUMENTS: &[&str] = &["language"];
+
+/// `call_params` as written: each argument's path, or its list of paths.
+fn call_params<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Vec<String>>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Paths {
+        One(String),
+        Many(Vec<String>),
+    }
+    let written = BTreeMap::<String, Paths>::deserialize(deserializer)?;
+    Ok(written
+        .into_iter()
+        .map(|(argument, paths)| match paths {
+            Paths::One(path) => (argument, vec![path]),
+            Paths::Many(paths) => (argument, paths),
+        })
+        .collect())
 }
 
 /// What a build strictly needs beyond its backend and its memory: only constraints that make it unusable when not
