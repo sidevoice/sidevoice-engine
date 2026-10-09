@@ -114,7 +114,11 @@ impl Library for Linked {
                 &build.call_params,
             )?),
             Kind::Tts => Box::new(Synthesizer::load(&config::tts(files, provider)?, files)?),
-            Kind::Vad => Box::new(Detector::load(config::vad(files, provider)?)?),
+            Kind::Vad => Box::new(Detector::load(config::vad(
+                files,
+                &build.config,
+                provider,
+            )?)?),
         })
     }
 }

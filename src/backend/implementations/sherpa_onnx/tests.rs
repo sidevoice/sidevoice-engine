@@ -3,11 +3,12 @@
 //! fails without its files, and the ONNX metadata reader. Running real models is
 //! `inference_tests.rs`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufReader, Cursor};
 
 use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig, VadModelConfig};
 
+use super::detector::Detector;
 use super::recognizer::{primary_subtag, recent, KEPT};
 use super::synthesizer::espeak_voice;
 use super::{config, model_metadata, provider, text, Kind, SherpaOnnx, SPEC};
@@ -86,6 +87,11 @@ fn every_sherpa_onnx_build_in_the_catalogue_names_config_fields_its_family_takes
                 };
                 assert!(known, "{}: no sherpa-onnx field {}", build.id, file.key);
             }
+            for path in build.config.keys() {
+                let number = model.capabilities.contains(&Capability::Vad)
+                    && config::vad_number(&mut VadModelConfig::default(), path).is_some();
+                assert!(number, "{}: no sherpa-onnx number {path}", build.id);
+            }
             for (argument, paths) in &build.call_params {
                 for path in paths {
                     let field =
@@ -140,11 +146,23 @@ fn a_key_names_the_config_field_it_fills_and_an_unknown_one_is_refused() {
         "an STT path is not a TTS one"
     );
     let files = installed(&[("silero_vad.model", "s.onnx")]);
-    let vad = config::vad(&files, "cpu").expect("a detector config");
+    let values = [
+        ("silero_vad.window_size".to_owned(), 512),
+        ("sample_rate".to_owned(), 16_000),
+    ]
+    .into();
+    let vad = config::vad(&files, &values, "cpu").expect("a detector config");
     assert_eq!(vad.silero_vad.model.as_deref(), Some("s.onnx"));
+    assert_eq!((vad.silero_vad.window_size, vad.sample_rate), (512, 16_000));
+    let unknown = [("silero_vad.windowsize".to_owned(), 512)].into();
+    assert_eq!(
+        code(config::vad(&files, &unknown, "cpu").map(drop)),
+        "unsupported-model",
+        "a number no field has"
+    );
     assert_eq!((vad.provider.as_deref(), vad.num_threads), (Some("cpu"), 1));
     assert_eq!(
-        code(config::vad(&tokens, "cpu").map(drop)),
+        code(config::vad(&tokens, &BTreeMap::new(), "cpu").map(drop)),
         "unsupported-model",
         "an STT path is not a detector one"
     );
@@ -221,8 +239,24 @@ fn a_model_missing_a_file_does_not_load() {
         code(load(Accelerator::Cpu, &[("kokoro.voices", "v.bin")])),
         "model-load-failed"
     );
+    // A detector that does not say its window and rate is refused before sherpa-onnx is asked; one that does, for its
+    // missing file.
     assert_eq!(
         code(load(Accelerator::Cpu, &[("silero_vad.model", "s.onnx")])),
+        "unsupported-model"
+    );
+    let mut config = sherpa_onnx::VadModelConfig::default();
+    config.silero_vad.model = Some("s.onnx".into());
+    config.silero_vad.window_size = 512;
+    let no_rate = Detector::load(config.clone()).map(drop).unwrap_err().code;
+    assert_eq!(no_rate, "unsupported-model");
+    config.sample_rate = 16_000;
+    config.ten_vad.window_size = 256;
+    let two_windows = Detector::load(config.clone()).map(drop).unwrap_err().code;
+    assert_eq!(two_windows, "unsupported-model");
+    config.ten_vad.window_size = 0;
+    assert_eq!(
+        Detector::load(config).map(drop).unwrap_err().code,
         "model-load-failed"
     );
 }

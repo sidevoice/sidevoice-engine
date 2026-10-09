@@ -311,7 +311,10 @@ sherpa-onnx build may also have `call_params`: where each argument of a call goe
 the model is created, as the paths of the fields that take it (`{"language": "whisper.language"}`; Canary's
 `["canary.src_lang", "canary.tgt_lang"]`). Its keys are checked against the calls' arguments when the catalogue is,
 and its paths against the generated fields by the backend's tests; when a call's value changes, the model's
-recognizer is made again, and the last two are kept. A url is
+recognizer is made again, and the last two are kept. A sherpa-onnx build may also have `config`: numbers its config takes that the
+engine must know, by path, checked against the numbers the crate has (`{"silero_vad.window_size": 512, "sample_rate":
+16000}`, Silero's window and rate, which its streams are fed by). sherpa-onnx has its own defaults for them, but does not
+tell them back, so they are data, never constants in code. A url is
 pinned to a revision (a Hugging Face commit); a GitHub release asset cannot be, so it is marked `mutable` and only its
 digest pins it. A model lists every build that exists for it, for every backend the engine knows (`KNOWN`,
 in `src/backend.rs`), whether or not this build of the engine implements that backend (the resolver rejects those with

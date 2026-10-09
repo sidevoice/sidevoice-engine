@@ -5,6 +5,11 @@
 //! sherpa-onnx's C API (1.13.8) tells whether a stream is in speech and hands over each segment as it ends; it does
 //! not tell the probability of each window, so frames carry none. Its detector cuts a segment that outlasts
 //! `max_speech_duration`; ending a turn is the caller's, so that is set past any turn ([`MAX_SPEECH_S`]).
+//!
+//! The window a stream is fed by and the rate it takes are the model's, and data: its build's `config` sets them
+//! (`silero_vad.window_size`, `sample_rate`), and the detector reads them back from the config. sherpa-onnx would fill
+//! in its own defaults for what is left at 0 (`SHERPA_ONNX_OR` in its C API), but does not tell them back, and a stream
+//! must know its window: so a build that does not say them is `unsupported-model`.
 
 use std::ops::Range;
 
@@ -15,40 +20,39 @@ use crate::backend::{BackendModel, VadModel, VadStreamModel, Window};
 use crate::engine::VadOptions;
 use crate::{Error, Result};
 
-/// The rate sherpa-onnx's detectors take.
-const SAMPLE_RATE: u32 = 16_000;
-
-/// The samples Silero takes at a time at 16 kHz (v5 needs exactly these), and TEN VAD's hop.
-const SILERO_WINDOW: usize = 512;
-const TEN_WINDOW: usize = 256;
-
 /// How long a segment may run before sherpa-onnx cuts it: an hour, which no turn reaches.
 const MAX_SPEECH_S: f32 = 3_600.0;
 
 /// The seconds of audio a detector's buffer holds at first; it grows when speech runs longer.
 const BUFFER_S: f32 = 60.0;
 
-/// A voice activity detector in memory: the config its streams are made from.
+/// A voice activity detector in memory: the config its streams are made from, and the window and rate it says.
 pub(super) struct Detector {
     config: VadModelConfig,
     window: usize,
+    sample_rate: u32,
 }
 
 impl Detector {
-    /// From `config`, the build's files in it (`config.rs`), which it checks by making a detector with the default
-    /// options. Fails with `unsupported-model` for a config with no model, and `model-load-failed`.
-    pub(super) fn load(mut config: VadModelConfig) -> Result<Self> {
-        let window = if config.silero_vad.model.is_some() {
-            SILERO_WINDOW
-        } else if config.ten_vad.model.is_some() {
-            TEN_WINDOW
-        } else {
+    /// From `config`, the build's files and numbers in it (`config.rs`), which it checks by making a detector with the
+    /// default options. Fails with `unsupported-model` for a config that does not say its window (one model's
+    /// `window_size`) and its rate, and `model-load-failed`.
+    pub(super) fn load(config: VadModelConfig) -> Result<Self> {
+        let windows = [config.silero_vad.window_size, config.ten_vad.window_size];
+        let mut said = windows.into_iter().filter(|window| *window > 0);
+        let (Some(window), None) = (said.next(), said.next()) else {
             return Err(Error::new("unsupported-model"));
         };
-        config.sample_rate = SAMPLE_RATE as i32;
-        config.silero_vad.window_size = SILERO_WINDOW as i32;
-        config.ten_vad.window_size = TEN_WINDOW as i32;
-        let detector = Self { config, window };
+        let sample_rate = u32::try_from(config.sample_rate)
+            .ok()
+            .filter(|rate| *rate > 0)
+            .ok_or(Error::new("unsupported-model"))?;
+        let window = usize::try_from(window).map_err(|_| Error::new("unsupported-model"))?;
+        let detector = Self {
+            config,
+            window,
+            sample_rate,
+        };
         detector.detector(&VadOptions::default())?;
         Ok(detector)
     }
@@ -91,7 +95,7 @@ impl BackendModel for Detector {
 
 impl VadModel for Detector {
     fn sample_rate(&self) -> u32 {
-        SAMPLE_RATE
+        self.sample_rate
     }
 
     fn window(&self) -> usize {

@@ -16,6 +16,10 @@
           "id": "silero-vad/sherpa-onnx-fp32",
           "backend": "sherpa-onnx",
           "precision": "fp32",
+          "config": {
+            "silero_vad.window_size": 512,
+            "sample_rate": 16000
+          },
           "files": [
             {
               "key": "silero_vad.model",
