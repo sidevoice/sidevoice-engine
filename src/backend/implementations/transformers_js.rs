@@ -1,7 +1,7 @@
 // transformers.js is a JavaScript module of the npm package: it only exists in the web build.
 #![cfg(web)]
-//! transformers.js, on ONNX Runtime Web: speech to text with Whisper, text to speech with Kokoro and Supertonic, and
-//! voice activity detection with Silero, on WebGPU or WebAssembly.
+//! transformers.js, on ONNX Runtime Web: speech to text with Whisper, text to speech with Kokoro and Supertonic, voice
+//! activity detection with Silero and end of turn with smart-turn, on WebGPU or WebAssembly.
 //!
 //! # Binding
 //!
@@ -24,6 +24,7 @@
 //! - Supertonic: `text_encoder`, `latent_denoiser`, `voice_decoder` (each with its external data), a `voices/<id>` per
 //!   voice, its config and tokenizer (the `text-to-speech` pipeline).
 //! - Silero VAD: `vad`, its ONNX model alone (a custom model, run window by window: `silero.rs`).
+//! - smart-turn: `smart_turn`, its ONNX model alone (a custom model, given features made in Rust: `smart_turn.rs`).
 //!
 //! The build's `precision` is transformers.js's `dtype` ("q8", "fp16", "fp32"), which picks the ONNX files by suffix.
 //!
@@ -54,6 +55,7 @@ mod hub;
 mod kokoro;
 mod phonemes;
 mod silero;
+mod smart_turn;
 mod supertonic;
 #[cfg(test)]
 mod tests;
@@ -67,7 +69,7 @@ const SPEC: BackendSpec = BackendSpec {
     id: "transformers-js",
     name: "Transformers.js",
     description:
-        "Models in the browser on ONNX Runtime Web: Whisper, Kokoro, Supertonic and Silero VAD.",
+        "Models in the browser on ONNX Runtime Web: Whisper, Kokoro, Supertonic, Silero VAD and smart-turn.",
     upstream: "https://github.com/huggingface/transformers.js",
     accelerators: &[Accelerator::WebGpu, Accelerator::Wasm],
     requirements: &[],
@@ -129,6 +131,7 @@ impl Library for TransformersJsLibrary {
             Kind::Kokoro => Box::new(kokoro::Kokoro::load(model, files).await?),
             Kind::Supertonic => Box::new(supertonic::Supertonic::load(model, files).await?),
             Kind::Silero => Box::new(silero::Silero::load(model).await?),
+            Kind::SmartTurn => Box::new(smart_turn::SmartTurn::load(model, build).await?),
         })
     }
 }
@@ -164,11 +167,12 @@ enum Kind {
     Kokoro,
     Supertonic,
     Silero,
+    SmartTurn,
 }
 
 impl Kind {
     /// `encoder` and `decoder` make it Whisper, `text_encoder` and `latent_denoiser` Supertonic, a `model` with
-    /// `voices/…` Kokoro, and `vad` Silero; anything else is `unsupported-model`.
+    /// `voices/…` Kokoro, `vad` Silero and `smart_turn` smart-turn; anything else is `unsupported-model`.
     fn of(files: &Installed) -> Result<Self> {
         let has = |key| files.file(key).is_some();
         if has("encoder") && has("decoder") {
@@ -179,6 +183,8 @@ impl Kind {
             Ok(Self::Kokoro)
         } else if has("vad") {
             Ok(Self::Silero)
+        } else if has(smart_turn::KEY) {
+            Ok(Self::SmartTurn)
         } else {
             Err(Error::new("unsupported-model"))
         }

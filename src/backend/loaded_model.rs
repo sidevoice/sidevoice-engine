@@ -25,6 +25,10 @@ pub(crate) trait BackendModel: MaybeSend {
     fn as_vad(&mut self) -> Option<&mut dyn VadModel> {
         None
     }
+    /// The model as an end-of-turn classifier, if it is one.
+    fn as_end_of_turn(&mut self) -> Option<&mut dyn EndOfTurnModel> {
+        None
+    }
     /// The memory it takes, when the backend can tell.
     #[allow(dead_code, reason = "the engine does not read it yet")]
     fn memory_mb(&self) -> Option<u32>;
@@ -93,4 +97,14 @@ pub(crate) struct Window {
     pub(crate) probability: Option<f32>,
     /// The speech that ended with this window, from its first sample to the one after its last.
     pub(crate) ended: Vec<Range<u64>>,
+}
+
+/// An end-of-turn classifier: how likely it is that a speaker who paused has finished.
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+pub(crate) trait EndOfTurnModel: MaybeSend {
+    /// How many seconds of the end of a turn it hears: earlier audio does not count.
+    fn seconds(&self) -> u32;
+    /// The probability, from 0 to 1, that the turn in `pcm` (mono 16 kHz, from its start to now) is complete.
+    async fn probability(&mut self, pcm: &[f32]) -> Result<f32>;
 }

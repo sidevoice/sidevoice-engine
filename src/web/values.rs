@@ -107,12 +107,13 @@ pub(super) fn audio(audio: &Audio) -> JsValue {
     ])
 }
 
-/// A capability's id, as the catalogue names it: `stt`, `tts`, `vad`.
+/// A capability's id, as the catalogue names it: `stt`, `tts`, `vad`, `end-of-turn`.
 pub(super) fn capability(capability: Capability) -> &'static str {
     match capability {
         Capability::Stt => "stt",
         Capability::Tts => "tts",
         Capability::Vad => "vad",
+        Capability::EndOfTurn => "end-of-turn",
     }
 }
 

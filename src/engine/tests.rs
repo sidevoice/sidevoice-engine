@@ -125,6 +125,9 @@ fn a_loaded_models_futures_are_send(loaded: &LoadedModel, stream: &mut VadStream
     if let Some(vad) = loaded.as_vad() {
         sent(vad.stream(VadOptions::default()));
     }
+    if let Some(end_of_turn) = loaded.as_end_of_turn() {
+        sent(end_of_turn.probability(&[], 16_000));
+    }
     sent(stream.accept(&[]));
 }
 
@@ -150,9 +153,9 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     let backends: &[&str] = if cfg!(target_arch = "wasm32") {
         &["transformers-js"]
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        &["mlx", "sherpa-onnx", "whisper-cpp"]
+        &["mlx", "sherpa-onnx", "whisper-cpp", "onnxruntime"]
     } else {
-        &["sherpa-onnx", "whisper-cpp"]
+        &["sherpa-onnx", "whisper-cpp", "onnxruntime"]
     };
 
     let stt = offered(Capability::Stt);
@@ -222,6 +225,25 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         "sherpa-onnx"
     };
     assert_eq!(vad, [("silero-vad".to_owned(), backend.to_owned())]);
+
+    let end_of_turn = offered(Capability::EndOfTurn);
+    let backend = if cfg!(target_arch = "wasm32") {
+        "transformers-js"
+    } else {
+        "onnxruntime"
+    };
+    assert_eq!(
+        end_of_turn,
+        [("smart-turn-v3.2".to_owned(), backend.to_owned())]
+    );
+    // Ranked by catalogue order until sidevoice-engine#4: fp32 first, where it fits.
+    let all = block_on(engine.models()).expect("models");
+    let smart_turn = all
+        .iter()
+        .find(|model| model.id == "smart-turn-v3.2")
+        .expect("smart-turn");
+    let recommended = smart_turn.recommended_build.as_deref().unwrap_or_default();
+    assert!(recommended.ends_with("-fp32"), "{recommended}");
 }
 
 /// A file of a fake build: `https://models/<id>`, holding `<id>`'s bytes.

@@ -6,6 +6,7 @@ use std::fs;
 use sidevoice_engine::{BundledCatalog, CatalogSource, ModelEntry};
 
 use super::audio::{read_wav, resample, wav};
+use super::end_of_turn::{self, EndOfTurnPlan};
 use super::vad::{judge, padded, VadPlan};
 use super::wer::{normalised, wer};
 use super::{plan, plan_path, primary};
@@ -69,13 +70,31 @@ fn the_plan_names_bundled_builds_and_has_a_sentence_for_each_language() {
     for detector in &plan.vad.builds {
         assert!(bundled(detector), "{detector}");
     }
+    assert!(!plan.end_of_turn.builds.is_empty());
+    for model in &plan.end_of_turn.builds {
+        assert!(bundled(&model.build), "{}", model.build);
+        for language in &model.required {
+            assert!(
+                plan.stt.contains_key(language),
+                "{language}: no clip hears it"
+            );
+        }
+    }
+    assert!(
+        plan.end_of_turn
+            .builds
+            .iter()
+            .any(|model| !model.required.is_empty()),
+        "something is required"
+    );
     assert_eq!(primary("es-ES"), "es");
 }
 
 #[test]
 fn a_plan_with_a_language_and_no_sentence_for_it_is_refused() {
     let json = r#"{"max_wer": 0.2, "sentences": {}, "tts": [{"build": "m/b", "voices": {"es": null}}],
-        "stt": {}, "clips": [], "vad": {"builds": [], "silence_s": 1, "tolerance_s": 0.3, "min_coverage": 0.5}}"#;
+        "stt": {}, "clips": [], "vad": {"builds": [], "silence_s": 1, "tolerance_s": 0.3, "min_coverage": 0.5},
+        "end_of_turn": {"builds": [], "pause_s": 0.2, "pause_floor": 0.01, "threshold": 0.5}}"#;
     assert!(plan(json).is_err());
     assert!(plan(r#"{"max_wer": 0.2}"#).is_err(), "strict");
 }
@@ -126,4 +145,27 @@ fn a_detection_is_the_clips_speech_between_its_silences() {
         why(&[1.0..5.0], true),
         "the speech had not ended when the audio did"
     );
+}
+
+#[test]
+fn a_turn_is_heard_whole_and_cut_each_with_its_pause_and_judged_by_both() {
+    let plan = EndOfTurnPlan {
+        builds: Vec::new(),
+        pause_s: 0.5,
+        pause_floor: 0.01,
+        threshold: 0.5,
+    };
+    // At 10 Hz, windows of one sample: speech in 1..3 and in 4..8, the longer, cut in its middle.
+    let clip = [0.0, 0.5, 0.5, 0.0, 0.5, 0.5, 0.5, 0.5, 0.0, 0.0];
+    assert_eq!(end_of_turn::cut_point(&clip, 10, plan.pause_floor), 6);
+    let (whole, cut) = end_of_turn::heard(&clip, 10, &plan);
+    assert_eq!(whole.len(), 10 + 5);
+    assert_eq!(cut.len(), 6 + 5);
+    assert!(cut[6..].iter().all(|s| *s == 0.0));
+    assert_eq!(end_of_turn::judge(0.9, 0.1, &plan), Ok(()));
+    assert!(
+        end_of_turn::judge(0.4, 0.1, &plan).is_err(),
+        "whole not complete"
+    );
+    assert!(end_of_turn::judge(0.9, 0.5, &plan).is_err(), "cut complete");
 }

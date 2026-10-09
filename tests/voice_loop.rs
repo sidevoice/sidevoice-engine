@@ -10,7 +10,8 @@
 //! normalised word error rate (`voice_loop/wer.rs`); the test fails if any is above the plan's one `max_wer`, or if
 //! anything fails to install, load, speak or transcribe. Each voice activity detector of the plan then hears each clip
 //! between two stretches of silence, through a stream fed 20 ms at a time, and must find its speech there and nowhere
-//! else (`voice_loop/vad.rs`).
+//! else (`voice_loop/vad.rs`). Each end-of-turn model hears each clip whole and cut mid-phrase, each followed
+//! by a short pause, and must call the first a complete turn and the second not (`voice_loop/end_of_turn.rs`).
 //!
 //! It downloads about 1.5 GB the first time, so it is ignored unless asked for; the `e2e` workflow asks, on each native
 //! platform, through `cargo xtask e2e`:
@@ -42,6 +43,8 @@ use sidevoice_engine::{
 
 #[path = "voice_loop/audio.rs"]
 mod audio;
+#[path = "voice_loop/end_of_turn.rs"]
+mod end_of_turn;
 #[path = "voice_loop/tests.rs"]
 mod tests;
 #[path = "voice_loop/vad.rs"]
@@ -69,6 +72,8 @@ struct Plan {
     clips: Vec<Clip>,
     /// The voice activity detectors that hear the clips, and how they are judged.
     vad: vad::VadPlan,
+    /// The end-of-turn models that hear the clips, whole and cut, and how they are judged.
+    end_of_turn: end_of_turn::EndOfTurnPlan,
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,7 +208,7 @@ fn run() -> Result<()> {
                 audio,
             ));
         }
-        recorded.push((what, samples, rate));
+        recorded.push((what, samples, rate, clip.language.clone()));
     }
     let mut detections = Vec::new();
     for build in &plan.vad.builds {
@@ -211,14 +216,56 @@ fn run() -> Result<()> {
         let vad = loaded
             .as_vad()
             .ok_or(format!("{build}: not a voice activity detector"))?;
-        for (what, samples, rate) in &recorded {
+        for (what, samples, rate, _) in &recorded {
             detections.push(detect(&vad, build, what, (samples, *rate), &plan.vad));
+        }
+    }
+    let mut turns = Vec::new();
+    for wanted in &plan.end_of_turn.builds {
+        let build = &wanted.build;
+        let loaded = load(&engine, build, &mut loaded_on)?;
+        let model = loaded
+            .as_end_of_turn()
+            .ok_or(format!("{build}: not an end-of-turn model"))?;
+        for (what, samples, rate, language) in &recorded {
+            let (whole, cut) = end_of_turn::heard(samples, *rate, &plan.end_of_turn);
+            let probability = |audio: &[f32]| {
+                block_on(model.probability(audio, *rate)).map_err(|e| format!("`{}`", e.code))
+            };
+            let (whole, cut) = (probability(&whole), probability(&cut));
+            let verdict = match (&whole, &cut) {
+                (Ok(whole), Ok(cut)) => end_of_turn::judge(*whole, *cut, &plan.end_of_turn),
+                (Err(why), _) | (_, Err(why)) => Err(why.clone()),
+            };
+            // What the cut clip says, as the language's first speech-to-text build hears it.
+            let cut_audio = end_of_turn::heard(samples, *rate, &plan.end_of_turn).1;
+            let listener = plan.stt.get(language).and_then(|builds| builds.first());
+            let cut_says = listener
+                .and_then(|listener| listeners.get(listener))
+                .and_then(LoadedModel::as_stt)
+                .map(|stt| block_on(stt.transcribe(&cut_audio, *rate, Some(language))))
+                .map_or_else(
+                    || "–".to_owned(),
+                    |heard| heard.unwrap_or_else(|e| format!("`{}`", e.code)),
+                );
+            let pair = format!("{what} → {build}");
+            let required = wanted.required.contains(language);
+            println!("{pair}: whole {whole:?}, cut {cut:?} ({cut_says:?}): {verdict:?}");
+            turns.push(end_of_turn::Turn {
+                pair,
+                whole: whole.ok(),
+                cut: cut.ok(),
+                cut_says,
+                required,
+                verdict,
+            });
         }
     }
     report(
         &rows,
         plan.max_wer,
         &detections,
+        &turns,
         &loaded_on,
         &dir.join("summary.md"),
     )
@@ -408,13 +455,14 @@ fn fetch(host: &NativeHost, clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Prints the tables (transcripts, then detections) and the accelerator each build was loaded on, writes them to
-/// `summary` with a heading for this platform, and fails if any row failed or is above `max_wer`, or any detection
-/// failed.
+/// Prints the tables (transcripts, detections, turns) and the accelerator each build was loaded on, writes them to
+/// `summary` with a heading for this platform, and fails if any row failed or is above `max_wer`, or any detection or
+/// turn failed.
 fn report(
     rows: &[Row],
     max_wer: f64,
     detections: &[Detection],
+    turns: &[end_of_turn::Turn],
     loaded_on: &BTreeMap<String, Option<Accelerator>>,
     summary: &Path,
 ) -> Result<()> {
@@ -458,17 +506,18 @@ fn report(
             &detection.verdict,
         )
     }));
+    let (ended, unended) = end_of_turn::table(turns);
     let mut builds = String::from("Builds, and the accelerator the engine loaded each on:\n\n");
     for (build, accelerator) in loaded_on {
         let on =
             accelerator.map_or_else(|| "?".to_owned(), |accelerator| format!("{accelerator:?}"));
         builds.push_str(&format!("- `{build}`: {on}\n"));
     }
-    println!("\n{table}\n{verdict}\n\n{detected}\n{builds}");
+    println!("\n{table}\n{verdict}\n\n{detected}\n{ended}\n{builds}");
     let heading = format!("## Voice loop ({} {})", env::consts::OS, env::consts::ARCH);
     write(
         summary,
-        format!("{heading}\n\n{table}\n{verdict}\n\n{detected}\n{builds}").as_bytes(),
+        format!("{heading}\n\n{table}\n{verdict}\n\n{detected}\n{ended}\n{builds}").as_bytes(),
     )?;
     if bad > 0 || rows.is_empty() {
         return Err(format!("{bad} of {} comparisons failed", rows.len()));
@@ -477,6 +526,12 @@ fn report(
         return Err(format!(
             "{missed} of {} detections failed",
             detections.len()
+        ));
+    }
+    if unended > 0 || turns.is_empty() {
+        return Err(format!(
+            "{unended} required turns of {} failed",
+            turns.len()
         ));
     }
     Ok(())

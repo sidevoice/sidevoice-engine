@@ -41,6 +41,15 @@ fn a_served_model_finds_its_files_by_local_path_and_by_url_and_nothing_else() {
             .as_deref(),
         Some("sidevoice-engine/bb")
     );
+    // A file at the root, asked for with an empty subfolder.
+    assert_eq!(
+        models.location("m1//config.json").as_deref(),
+        Some("sidevoice-engine/aa")
+    );
+    assert_eq!(
+        models.location("m1/resolve/main//config.json").as_deref(),
+        Some("sidevoice-engine/aa")
+    );
     // A file the build does not have, another model's name, or no path: nothing.
     for path in ["m1/generation_config.json", "m2/config.json", "m1", ""] {
         assert_eq!(models.location(path), None, "{path:?}");
