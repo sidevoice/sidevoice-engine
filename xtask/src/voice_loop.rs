@@ -31,8 +31,6 @@ pub(crate) struct Row {
     pub(crate) language: String,
     pub(crate) said: String,
     pub(crate) heard: Result<String>,
-    /// The highest word error rate it may have, when it is not the plan's.
-    pub(crate) max_wer: Option<f64>,
 }
 
 /// The clip, from `clips` or downloaded into it, checked against its digest either way.
@@ -56,26 +54,16 @@ pub(crate) fn fetch(clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Prints the table, writes it to `$GITHUB_STEP_SUMMARY` when set, and fails if any row failed or is above its highest
-/// word error rate: its own, or `default`.
-pub(crate) fn report(title: &str, rows: &[Row], default: f64) -> Result<()> {
+/// Prints the table, writes it to `$GITHUB_STEP_SUMMARY` when set, and fails if any row failed or is above `max_wer`.
+pub(crate) fn report(title: &str, rows: &[Row], max_wer: f64) -> Result<()> {
     let mut table =
         String::from("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
     let mut bad = 0;
     for row in rows {
-        let max_wer = row.max_wer.unwrap_or(default);
         let (got, wer, ok) = match &row.heard {
             Ok(heard) => {
                 let wer = crate::wer::wer(&row.said, heard);
-                let own = match row.max_wer {
-                    Some(own) => format!(" (≤ {:.0}%)", own * 100.0),
-                    None => String::new(),
-                };
-                let mark = if wer <= max_wer {
-                    own
-                } else {
-                    format!("{own} ✗")
-                };
+                let mark = if wer <= max_wer { "" } else { " ✗" };
                 (
                     heard.clone(),
                     format!("{:.0}%{mark}", wer * 100.0),
@@ -95,11 +83,10 @@ pub(crate) fn report(title: &str, rows: &[Row], default: f64) -> Result<()> {
         ));
     }
     let verdict = format!(
-        "{} of {} within {:.0}% WER, or the voice's own limit where the plan gives one (normalised: lower case, no \
-         punctuation, vowel accents folded).",
+        "{} of {} within {:.0}% WER (normalised: lower case, no punctuation, vowel accents folded).",
         rows.len() - bad,
         rows.len(),
-        default * 100.0
+        max_wer * 100.0
     );
     println!("\n{table}\n{verdict}");
     if let Some(summary) = env::var_os("GITHUB_STEP_SUMMARY") {

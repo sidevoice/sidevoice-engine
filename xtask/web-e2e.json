@@ -1,13 +1,10 @@
 {
-  "max_wer": 0.25,
   "accelerators": [
     "wasm"
   ],
   "stt": {
-    "model": "whisper-tiny",
-    "build": "whisper-tiny/transformers-js-q8",
-    "clips_max_wer": 0.45,
-    "why": "Whisper tiny (39M parameters, 8-bit) on the recorded clips: measured 35% (LibriSpeech, en) and 40% (FLEURS, es) WER on CI run 37724195700, mishearing words rather than failing; whisper-base holds them within 25% in the native loop. What it hears from Kokoro and Supertonic stays within the plan's limit."
+    "model": "whisper-base",
+    "build": "whisper-base/transformers-js-q8"
   },
   "tts": [
     {

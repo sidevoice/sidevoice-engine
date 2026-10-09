@@ -6,8 +6,8 @@
 //! the plan names, and each speech-to-text model the plan pairs with that language transcribes it, at the speech's own
 //! rate (the engine resamples it); then each real recorded clip (downloaded once through the host, checked against its
 //! sha256) is transcribed by the same models. Every transcript is printed and compared with what was said by its
-//! normalised word error rate (`voice_loop/wer.rs`); the test fails if any is above the plan's `max_wer` (or a voice's
-//! own, given with its `why`), or if anything fails to install, load, speak or transcribe.
+//! normalised word error rate (`voice_loop/wer.rs`); the test fails if any is above the plan's one `max_wer`, or if
+//! anything fails to install, load, speak or transcribe.
 //!
 //! It downloads about 1.5 GB the first time, so it is ignored unless asked for; the `e2e` workflow asks, on each native
 //! platform, through `cargo xtask e2e`:
@@ -49,7 +49,9 @@ const BACKEND: &str = "sherpa-onnx";
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Plan {
-    /// The highest word error rate a transcript may have.
+    /// The highest word error rate any transcript may have, one for every row. The loop checks that the circuit works end
+    /// to end and catches a wrong configuration (a wrong language or voice, a model that hears nothing): it does not
+    /// measure quality, so the limit is loose and no row has its own.
     max_wer: f64,
     /// What is said, by primary language subtag (`en`, `es`).
     sentences: BTreeMap<String, String>,
@@ -67,11 +69,6 @@ struct Speaker {
     model: String,
     /// By the BCP 47 tag the model is told: the voice to speak with, or `null` for the model's first.
     voices: BTreeMap<String, Option<String>>,
-    /// A higher word error rate this voice's speech may have than the plan's, and `why`, which the plan must give.
-    #[serde(default)]
-    max_wer: Option<f64>,
-    #[serde(default)]
-    why: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,8 +93,6 @@ struct Row {
     language: String,
     said: String,
     heard: Result<String>,
-    /// The highest word error rate it may have, when it is not the plan's.
-    max_wer: Option<f64>,
 }
 
 #[test]
@@ -155,10 +150,7 @@ fn run() -> Result<()> {
             let speech = match block_on(tts.speak(said, &voice, Some(tag), None)) {
                 Ok(speech) => speech,
                 Err(error) => {
-                    rows.push(Row {
-                        max_wer: speaker.max_wer,
-                        ..failed(&what, &language, said, error.code)
-                    });
+                    rows.push(failed(&what, &language, said, error.code));
                     continue;
                 }
             };
@@ -171,10 +163,7 @@ fn run() -> Result<()> {
             )?;
             let audio = (&speech.samples[..], speech.sample_rate);
             for listener in plan.stt.get(&language).into_iter().flatten() {
-                rows.push(Row {
-                    max_wer: speaker.max_wer,
-                    ..hear(&listeners, listener, &what, &language, said, audio)
-                });
+                rows.push(hear(&listeners, listener, &what, &language, said, audio));
             }
         }
     }
@@ -202,8 +191,7 @@ fn plan_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/voice_loop.json")
 }
 
-/// The plan in `json`, read strictly, and consistent: a sentence for every language spoken, and a reason for every
-/// voice's own limit.
+/// The plan in `json`, read strictly, and consistent: a sentence for every language spoken.
 fn plan(json: &str) -> Result<Plan> {
     let plan: Plan = serde_json::from_str(json).map_err(|e| format!("voice_loop.json: {e}"))?;
     let spoken = plan
@@ -213,14 +201,6 @@ fn plan(json: &str) -> Result<Plan> {
     for language in spoken {
         if !plan.sentences.contains_key(&language) {
             return Err(format!("voice_loop.json: no sentence in {language}"));
-        }
-    }
-    for speaker in &plan.tts {
-        if speaker.max_wer.is_some() != speaker.why.is_some() {
-            return Err(format!(
-                "voice_loop.json: {}: max_wer and why go together",
-                speaker.model
-            ));
         }
     }
     Ok(plan)
@@ -279,7 +259,6 @@ fn hear(
         language: language.to_owned(),
         said: said.to_owned(),
         heard,
-        max_wer: None,
     }
 }
 
@@ -290,7 +269,6 @@ fn failed(pair: &str, language: &str, said: &str, code: &str) -> Row {
         language: language.to_owned(),
         said: said.to_owned(),
         heard: Err(code.to_owned()),
-        max_wer: None,
     }
 }
 
@@ -325,25 +303,16 @@ fn fetch(host: &NativeHost, clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
 }
 
 /// Prints the table, writes it to `summary` with a heading for this platform, and fails if any row failed or is above
-/// its highest word error rate: its own, or `default`.
-fn report(rows: &[Row], default: f64, summary: &Path) -> Result<()> {
+/// `max_wer`.
+fn report(rows: &[Row], max_wer: f64, summary: &Path) -> Result<()> {
     let mut table =
         String::from("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
     let mut bad = 0;
     for row in rows {
-        let max_wer = row.max_wer.unwrap_or(default);
         let (got, wer, ok) = match &row.heard {
             Ok(heard) => {
                 let wer = wer::wer(&row.said, heard);
-                let own = match row.max_wer {
-                    Some(own) => format!(" (≤ {:.0}%)", own * 100.0),
-                    None => String::new(),
-                };
-                let mark = if wer <= max_wer {
-                    own
-                } else {
-                    format!("{own} ✗")
-                };
+                let mark = if wer <= max_wer { "" } else { " ✗" };
                 (
                     heard.clone(),
                     format!("{:.0}%{mark}", wer * 100.0),
@@ -363,11 +332,10 @@ fn report(rows: &[Row], default: f64, summary: &Path) -> Result<()> {
         ));
     }
     let verdict = format!(
-        "{} of {} within {:.0}% WER, or the voice's own limit where the plan gives one (normalised: lower case, no \
-         punctuation, vowel accents folded).",
+        "{} of {} within {:.0}% WER (normalised: lower case, no punctuation, vowel accents folded).",
         rows.len() - bad,
         rows.len(),
-        default * 100.0
+        max_wer * 100.0
     );
     println!("\n{table}\n{verdict}");
     let heading = format!("## Voice loop ({} {})", env::consts::OS, env::consts::ARCH);

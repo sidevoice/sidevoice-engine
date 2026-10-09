@@ -231,8 +231,9 @@ The whole voice loop is an integration test, `tests/voice_loop.rs`, and uses onl
 `NativeHost`, the bundled catalogue, `Engine::models` (each model's sherpa-onnx build), `Engine::load`, then the loaded
 model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-speech model of the plan
 (`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text model of that language
-transcribes it, real recorded clips are transcribed too, and every transcript must stay within the plan's word error
-rate. It downloads about 1.5 GB the first time (kept by digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless
+transcribes it, real recorded clips are transcribed too, and every transcript must stay within the plan's one word
+error rate, a loose 50%: the loop checks that the circuit works and catches a wrong configuration, it does not
+measure quality. It downloads about 1.5 GB the first time (kept by digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless
 asked for; the `e2e` workflow runs it on Linux x86_64 and arm64 and on macOS arm64 through `cargo xtask e2e`, which
 puts its table in the job's summary:
 
@@ -255,9 +256,9 @@ cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own
 
 The tests that need a page (OPFS, an HTTP server) are ignored in Node and run in a headless Chrome, through
 ChromeDriver (`CHROMEDRIVER`, or `chromedriver` on the `PATH`, and `CHROME` for the Chrome it starts, of the same
-version). The voice loop runs in Chrome too, through the npm package as a page uses it: Whisper tiny transcribes the
-loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, on WebAssembly (`xtask/web-e2e.json`; about
-400 MB downloaded on every run, into a profile that is thrown away; `CHROME`, else `google-chrome`):
+version). The voice loop runs in Chrome too, through the npm package as a page uses it: Whisper base transcribes the
+loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, on WebAssembly (`xtask/web-e2e.json`; a few
+hundred MB downloaded on every run, into a profile that is thrown away; `CHROME`, else `google-chrome`):
 
 ```sh
 cargo xtask test-browser

@@ -138,7 +138,6 @@ try {
       pair: `${plan.stt.model} ← clip ${clip.name}`,
       language: clip.language,
       said: clip.text,
-      maxWer: plan.stt.clips_max_wer ?? null,
     };
     try {
       const { samples, rate } = wav(await (await fetch(clip.file)).arrayBuffer());
@@ -157,7 +156,6 @@ try {
       pair: `${plan.stt.model} ← ${speaker.model} (${speaker.voice})`,
       language: speaker.language,
       said: speaker.sentence,
-      maxWer: speaker.max_wer ?? null,
     };
     try {
       start = performance.now();

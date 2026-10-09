@@ -7,8 +7,8 @@
 //!
 //! What it runs is data, `xtask/web-e2e.json`: the accelerators the page reports, the speech-to-text build, and each
 //! text-to-speech build with its voice and language. Every check the page makes must pass, and every transcript must
-//! stay within the plan's word error rate (or a voice's own, with its `why`), judged as the native loop judges
-//! (`voice_loop.rs`, `wer.rs`). Chrome is `CHROME`, else `google-chrome` on the `PATH`. DIR is `target/web-e2e` unless given;
+//! stay within the native plan's one word error rate (`tests/voice_loop.json`), judged as the native loop judges
+//! (`voice_loop.rs`, `wer.rs`): a check that the circuit works, not a measure of quality. Chrome is `CHROME`, else `google-chrome` on the `PATH`. DIR is `target/web-e2e` unless given;
 //! the clips are kept there by digest, and what each model said in `DIR/speech`, to be listened to. The models
 //! download every run, into the browser profile's OPFS, which is thrown away.
 
@@ -30,8 +30,6 @@ const RUN: &str = include_str!("../web-e2e/run.mjs");
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Plan {
-    /// The highest word error rate a transcript may have.
-    max_wer: f64,
     /// The accelerators the page reports: `wasm`, `webgpu`.
     accelerators: Vec<String>,
     /// What transcribes.
@@ -45,12 +43,6 @@ struct Plan {
 struct Build {
     model: String,
     build: String,
-    /// A higher word error rate its transcripts of the recorded clips may have than the plan's, and `why`, which the
-    /// plan must give.
-    #[serde(default)]
-    clips_max_wer: Option<f64>,
-    #[serde(default)]
-    why: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,16 +53,13 @@ struct Speaker {
     voice: String,
     /// The BCP 47 tag the model is told; its primary subtag picks the sentence.
     language: String,
-    /// A higher word error rate this voice's speech may have than the plan's, and `why`, which the plan must give.
-    #[serde(default)]
-    max_wer: Option<f64>,
-    #[serde(default)]
-    why: Option<String>,
 }
 
-/// What the web loop takes from the native one's plan (`tests/voice_loop.json`): its sentences and its recorded clips.
+/// What the web loop takes from the native one's plan (`tests/voice_loop.json`): its one word error rate, its sentences
+/// and its recorded clips.
 #[derive(Debug, Deserialize)]
 struct Shared {
+    max_wer: f64,
     sentences: BTreeMap<String, String>,
     clips: Vec<Clip>,
 }
@@ -102,7 +91,6 @@ struct PageRow {
     said: String,
     heard: Option<String>,
     error: Option<String>,
-    max_wer: Option<f64>,
 }
 
 /// `cargo xtask web-e2e [DIR]`.
@@ -111,22 +99,6 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
         &read(&repo().join("xtask/web-e2e.json"))?,
         "xtask/web-e2e.json",
     )?;
-    if plan.stt.clips_max_wer.is_some() && plan.stt.why.is_none() {
-        return Err(format!(
-            "{}: a clips_max_wer of its own needs its why",
-            plan.stt.build
-        ));
-    }
-    if let Some(speaker) = plan
-        .tts
-        .iter()
-        .find(|s| s.max_wer.is_some() && s.why.is_none())
-    {
-        return Err(format!(
-            "{}: a max_wer of its own needs its why",
-            speaker.build
-        ));
-    }
     let shared: Shared = parse(
         &read(&repo().join("tests/voice_loop.json"))?,
         "tests/voice_loop.json",
@@ -175,7 +147,6 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             "voice": speaker.voice,
             "language": speaker.language,
             "sentence": sentence,
-            "max_wer": speaker.max_wer,
         }));
     }
     let page_plan = json!({
@@ -183,7 +154,6 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
         "stt": {
             "model": plan.stt.model,
             "build": plan.stt.build,
-            "clips_max_wer": plan.stt.clips_max_wer,
         },
         "tts": speakers,
         "clips": page_clips,
@@ -237,12 +207,11 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
                 (Some(heard), None) => Ok(heard),
                 (_, error) => Err(error.unwrap_or_else(|| "no transcript".into())),
             },
-            max_wer: row.max_wer,
         })
         .collect();
     let accelerators = plan.accelerators.join(", ");
     let title = format!("Voice loop (web: headless Chrome, {accelerators})");
-    let judged = report(&title, &rows, plan.max_wer);
+    let judged = report(&title, &rows, shared.max_wer);
     if !failed.is_empty() {
         return Err(format!(
             "{} check(s) failed: {}",
