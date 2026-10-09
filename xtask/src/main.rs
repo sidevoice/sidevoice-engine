@@ -16,6 +16,10 @@
 //!   (xtask/src/link_size.rs).
 //! - `sherpa-libs [DIR | --linked | --pin | --check]`: sherpa-onnx's prebuilt static libraries for this machine, checked
 //!   against `xtask/sherpa-onnx-libs.json` and unpacked for `SHERPA_ONNX_LIB_DIR` (xtask/src/sherpa_libs.rs).
+//! - `test-browser`: the engine's wasm32 tests in a headless Chrome, those that need a page (OPFS) included
+//!   (xtask/src/test_browser.rs).
+//! - `web-e2e [DIR]`: the voice loop for real in a headless Chrome, through the npm package: Whisper transcribes the
+//!   recorded clips, and hears Kokoro and Supertonic back (xtask/src/web_e2e.rs, plan in xtask/web-e2e.json).
 
 mod catalog;
 mod e2e;
@@ -24,6 +28,10 @@ mod npm;
 mod release;
 mod sherpa_fields;
 mod sherpa_libs;
+mod test_browser;
+mod voice_loop;
+mod web_e2e;
+mod wer;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -35,7 +43,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-catalog [--check] | e2e [DIR] | link-size \
+     | pin-catalog [--check] | e2e [DIR] | link-size | test-browser | web-e2e [DIR] \
      | sherpa-libs [DIR | --linked | --pin | --check]";
 
 fn main() -> ExitCode {
@@ -58,6 +66,9 @@ fn main() -> ExitCode {
         ["sherpa-libs", "--pin"] => sherpa_libs::pin(false),
         ["sherpa-libs", "--check"] => sherpa_libs::pin(true),
         ["sherpa-libs", dir] => sherpa_libs::fetch(Some(dir)),
+        ["test-browser"] => test_browser::run(),
+        ["web-e2e"] => web_e2e::run(None),
+        ["web-e2e", dir] => web_e2e::run(Some(dir)),
         _ => Err(USAGE.into()),
     };
     if let Err(error) = &result {

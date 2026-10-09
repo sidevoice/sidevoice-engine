@@ -12,8 +12,8 @@
 //! A file's `archive_path` (the file or directory inside an archive that its key names) is left as it is.
 //!
 //! A build with no `memory`, or an `estimated` one, gets its estimate: its weights (the files whose name, or path
-//! inside their archive, ends in `.onnx`, `.bin`, `.npz`, `.safetensors` or `.gguf`; an archive counted once, at its
-//! size) plus 30%, in MB rounded up to a multiple of 10. A `declared` or `measured` figure is left as it is.
+//! inside their archive, ends in `.onnx`, `.onnx_data` (external weights), `.bin`, `.npz`, `.safetensors` or `.gguf`;
+//! an archive counted once, at its size) plus 30%, in MB rounded up to a multiple of 10. A `declared` or `measured` figure is left as it is.
 //! A model with a `languages_source` gets its `languages` from it: today, Whisper's, from the `LANGUAGES` table of
 //! openai/whisper's tokenizer at a pinned commit.
 //!
@@ -29,7 +29,14 @@ use crate::{empty_dir, read, repo, run_in, sha256, write, Result};
 
 const HUB: &str = "https://huggingface.co/";
 const RELEASES: &str = "https://github.com/";
-const WEIGHTS: [&str; 5] = [".onnx", ".bin", ".npz", ".safetensors", ".gguf"];
+const WEIGHTS: [&str; 6] = [
+    ".onnx",
+    ".onnx_data",
+    ".bin",
+    ".npz",
+    ".safetensors",
+    ".gguf",
+];
 const BASIS: &str = "weights size + 30%";
 
 /// What an API says about one file.

@@ -51,7 +51,14 @@ impl Resolver {
     }
 
     /// Every model that can do `capability`, offered with a build that fits, and every build that cannot run here,
-    /// with why: what the web bridge lists.
+    /// with why. The engine lists [`Model`](crate::Model)s now, with every build ranked; only the tests read offers.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "the engine lists models instead; its tests still read offers"
+        )
+    )]
     pub(crate) fn offers(
         &self,
         catalog: &Catalog,

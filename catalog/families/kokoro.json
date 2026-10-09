@@ -144,23 +144,20 @@
           ]
         },
         {
-          "id": "kokoro-82m-v0.19/transformers-js-fp16",
+          "id": "kokoro-82m-v0.19/transformers-js-fp32",
           "backend": "transformers-js",
-          "precision": "fp16",
+          "precision": "fp32",
           "requires": {
             "accelerators": [
               "webgpu"
-            ],
-            "webgpu_features": [
-              "shader-f16"
             ]
           },
           "files": [
             {
               "key": "model",
-              "url": "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/f46687f7e41512228ae953af24a11b2640ea0f22/onnx/model_fp16.onnx",
-              "sha256": "fe5c2134605431ee1b2585aee3e59069ddde2aa1111d6213c1ed3fc7da2bb368",
-              "bytes": 163227585
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/f46687f7e41512228ae953af24a11b2640ea0f22/onnx/model.onnx",
+              "sha256": "53a71ac22a70778d57162e4f92eafc62852d9e04a4460b20638d2424796e6037",
+              "bytes": 325525037
             },
             {
               "key": "config",
@@ -248,7 +245,7 @@
             }
           ],
           "memory": {
-            "mb": 210,
+            "mb": 420,
             "source": "estimated",
             "basis": "weights size + 30%"
           }
@@ -258,6 +255,9 @@
           "backend": "transformers-js",
           "precision": "q8",
           "requires": {
+            "accelerators": [
+              "wasm"
+            ],
             "wasm_max_mb": 2048
           },
           "files": [
@@ -811,23 +811,20 @@
           }
         },
         {
-          "id": "kokoro-82m-v1.0/transformers-js-fp16",
+          "id": "kokoro-82m-v1.0/transformers-js-fp32",
           "backend": "transformers-js",
-          "precision": "fp16",
+          "precision": "fp32",
           "requires": {
             "accelerators": [
               "webgpu"
-            ],
-            "webgpu_features": [
-              "shader-f16"
             ]
           },
           "files": [
             {
               "key": "model",
-              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/onnx/model_fp16.onnx",
-              "sha256": "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a",
-              "bytes": 163234740
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/onnx/model.onnx",
+              "sha256": "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb",
+              "bytes": 325532232
             },
             {
               "key": "config",
@@ -1014,10 +1011,88 @@
               "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/bm_fable.bin",
               "sha256": "f889083196807b4adb15e9204252165f503b8d33d3982e681c52443c49d798f1",
               "bytes": 522240
+            },
+            {
+              "key": "voices/ef_dora",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/ef_dora.bin",
+              "sha256": "f66ec66bd295acb18372e37008533a9a3228483ccd294e7538d5d9294ac9a532",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/em_alex",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/em_alex.bin",
+              "sha256": "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/em_santa",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/em_santa.bin",
+              "sha256": "ad43b774e1ca24d05c6161297d8aeb770ac3d29bb95daf516727af5f7d543683",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/ff_siwis",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/ff_siwis.bin",
+              "sha256": "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hf_alpha",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hf_alpha.bin",
+              "sha256": "040be6a4425411cc01fda5fd06693c76bfa78572632852bc8cda9c99232ffb56",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hf_beta",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hf_beta.bin",
+              "sha256": "cd83ae0bb9b2e4e4fb92b4973bd8d1822ca0036d3c498bf4fc89aa8e33917cc7",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hm_omega",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hm_omega.bin",
+              "sha256": "b02d9222d9ed00ce26b302173a862c2c93f96cc40b5c422b8d14910b9ff34137",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hm_psi",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hm_psi.bin",
+              "sha256": "644daf88ba8aeb7bd08950bbdcd4453bb280864e49dc4df93fabc6be32e03f37",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/if_sara",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/if_sara.bin",
+              "sha256": "409b69248798fcdc2542330c76953d230710f19b057e59cb82fdc3c4cf71265c",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/im_nicola",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/im_nicola.bin",
+              "sha256": "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/pf_dora",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/pf_dora.bin",
+              "sha256": "3da7b5b2d91847ebf5646f57631af6ececae3c29a89cd300f06edf9aa6cfe9ee",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/pm_alex",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/pm_alex.bin",
+              "sha256": "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/pm_santa",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/pm_santa.bin",
+              "sha256": "8b012db3185778afe2e45a62cbad69db73021774fe68dda634bcc748a982eede",
+              "bytes": 522240
             }
           ],
           "memory": {
-            "mb": 230,
+            "mb": 440,
             "source": "estimated",
             "basis": "weights size + 30%"
           }
@@ -1027,6 +1102,9 @@
           "backend": "transformers-js",
           "precision": "q8",
           "requires": {
+            "accelerators": [
+              "wasm"
+            ],
             "wasm_max_mb": 2048
           },
           "files": [
@@ -1221,10 +1299,88 @@
               "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/bm_fable.bin",
               "sha256": "f889083196807b4adb15e9204252165f503b8d33d3982e681c52443c49d798f1",
               "bytes": 522240
+            },
+            {
+              "key": "voices/ef_dora",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/ef_dora.bin",
+              "sha256": "f66ec66bd295acb18372e37008533a9a3228483ccd294e7538d5d9294ac9a532",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/em_alex",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/em_alex.bin",
+              "sha256": "27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c96c7bd6b83e95",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/em_santa",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/em_santa.bin",
+              "sha256": "ad43b774e1ca24d05c6161297d8aeb770ac3d29bb95daf516727af5f7d543683",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/ff_siwis",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/ff_siwis.bin",
+              "sha256": "a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hf_alpha",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hf_alpha.bin",
+              "sha256": "040be6a4425411cc01fda5fd06693c76bfa78572632852bc8cda9c99232ffb56",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hf_beta",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hf_beta.bin",
+              "sha256": "cd83ae0bb9b2e4e4fb92b4973bd8d1822ca0036d3c498bf4fc89aa8e33917cc7",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hm_omega",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hm_omega.bin",
+              "sha256": "b02d9222d9ed00ce26b302173a862c2c93f96cc40b5c422b8d14910b9ff34137",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/hm_psi",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/hm_psi.bin",
+              "sha256": "644daf88ba8aeb7bd08950bbdcd4453bb280864e49dc4df93fabc6be32e03f37",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/if_sara",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/if_sara.bin",
+              "sha256": "409b69248798fcdc2542330c76953d230710f19b057e59cb82fdc3c4cf71265c",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/im_nicola",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/im_nicola.bin",
+              "sha256": "bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/pf_dora",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/pf_dora.bin",
+              "sha256": "3da7b5b2d91847ebf5646f57631af6ececae3c29a89cd300f06edf9aa6cfe9ee",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/pm_alex",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/pm_alex.bin",
+              "sha256": "0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a",
+              "bytes": 522240
+            },
+            {
+              "key": "voices/pm_santa",
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/pm_santa.bin",
+              "sha256": "8b012db3185778afe2e45a62cbad69db73021774fe68dda634bcc748a982eede",
+              "bytes": 522240
             }
           ],
           "memory": {
-            "mb": 140,
+            "mb": 150,
             "source": "estimated",
             "basis": "weights size + 30%"
           }

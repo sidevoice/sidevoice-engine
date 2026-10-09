@@ -13,8 +13,8 @@ use crate::backend::{self, Backend, BackendInfo};
 use crate::catalog::{BuildEntry, Catalog, CatalogSource, ModelEntry, ModelFile};
 use crate::host::{Accelerator, Host};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
-use crate::resolver::{Offer, Reason, Rejection, Resolver};
-use crate::{Capability, Error, Result};
+use crate::resolver::{Reason, Rejection, Resolver};
+use crate::{Error, Result};
 
 mod audio;
 mod error;
@@ -254,17 +254,6 @@ impl Engine {
         let resident = Resident::new(model, Arc::clone(&library), languages, entry.voices.clone());
         lock(&self.memory).remember(id, &library, &build.id, &resident);
         Ok(LoadedModel::new(&entry.id, &build.id, resident))
-    }
-
-    /// Every model that can do `capability`, offered with a build that fits, and every build that cannot run here,
-    /// with why: what the web bridge lists, until it takes [`Engine::models`].
-    #[cfg_attr(
-        not(web),
-        allow(dead_code, reason = "only the web bridge lists offers")
-    )]
-    pub(crate) fn offers(&self, capability: Capability) -> Vec<Offer> {
-        let caps = self.host.capabilities();
-        (self.resolver).offers(&self.catalog, &self.backends, &caps, capability)
     }
 
     /// Every model of the catalogue, in catalogue order.

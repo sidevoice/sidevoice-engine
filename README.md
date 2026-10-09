@@ -41,7 +41,8 @@ merges, its CI keeps the npm package it built for 7 days, as the Actions artifac
 
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
 files. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
-every native build, the browser's to come in the web build (#8). The `Host` interface stays open, so tests and other
+every native build, and in the web build the page's, built by `WebEngine.create(host)` from what the page reports,
+with the engine's own storage (OPFS, the browser's private file system) and downloads (`fetch`). The `Host` interface stays open, so tests and other
 platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
@@ -124,11 +125,13 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
   engine expects a model directory, or looks at names, extensions and subfolders, finds what it expects; `load`
   gets those paths. Natively a folder's files are hard links to the blobs (no privilege needed, and on one volume,
   since everything is under the data directory); where the file system refuses a link, the file is copied, which
-  costs the space twice and works the same. The browser's OPFS has no links: there the folder will hold a copy of
-  each file, and the host will keep which folders use each blob. A build is installed when its folder is stored,
-  which happens only once every file is in it; its files stay when its model leaves memory. Uninstalling
-  (`Engine::uninstall`) removes the folder, then each of its blobs no other folder links (natively, a blob whose
-  link count is back to 1; where the platform does not tell the count, Windows in stable Rust, blobs are kept).
+  costs the space twice and works the same. The browser's OPFS has no links: there each folder holds a copy of each
+  file, made in `partial/` and moved into `models/` when the folder is committed, and `folders.json` lists which
+  blobs each stored folder holds (writing it is what commits a folder, and it says whether a blob is still needed). A
+  build is installed when its folder is stored, which happens only once every file is in it; its files stay when its
+  model leaves memory. Uninstalling (`Engine::uninstall`) removes the folder, then each of its blobs no other folder
+  links (natively, a blob whose link count is back to 1; where the platform does not tell the count, Windows in
+  stable Rust, blobs are kept; on the web, a blob no folder in `folders.json` lists).
 - **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
   `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
   one archive (Kokoro: `kokoro.model` and `kokoro.data_dir`, espeak-ng's data, from one tarball). Each distinct
@@ -143,14 +146,15 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
 
 ## Status
 
-The catalogue, the installer, the lifecycle and the native host work, and so do two real backends, natively:
+The catalogue, the installer, the lifecycle and the native host work, and so do three real backends:
 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
-| `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic | the CPU | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested) | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2 | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
-MLX and transformers.js are stubs, and the browser's host is not bridged yet.
+In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub.
 
 ## Layout
 
@@ -174,9 +178,10 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   engine.rs       Engine: models, install, uninstall, load; engine/: model (Model, ModelBuild: what models lists),
                   loaded (LoadedModel, Stt, Tts), audio (Audio, resampling), memory (weak references: one library
                   per backend, one model per build), error (ConfigError)
-  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine; web/host.rs,
-                  the JavaScript host (JsHost) as the engine sees it; web/host/: capabilities (reading what it
-                  reports), storage (WebStorage), fetcher (WebFetcher)
+  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LoadedModel, Stt,
+                  Tts; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
+                  file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
+                  capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`)
   maybe_send.rs   Send/Sync in native builds only
 catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
 build.rs        the three cfg aliases: web, native, apple_silicon
@@ -239,7 +244,8 @@ The whole voice loop is an integration test, `tests/voice_loop.rs`, and uses onl
 model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-speech build of the plan
 (`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text build of that language
 transcribes it (Whisper base on sherpa-onnx and on whisper.cpp among them), real recorded clips are transcribed too,
-and every transcript must stay within the plan's word error rate. It downloads about 1.5 GB the first time (kept by
+and every transcript must stay within the plan's one word error rate, a loose 50%: the loop checks that the circuit
+works and catches a wrong configuration, it does not measure quality. It downloads about 1.5 GB the first time (kept by
 digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless asked for; the `e2e` workflow runs it on Linux x86_64 and
 arm64 and on macOS arm64 through `cargo xtask e2e`, which puts its table, and the accelerator each build was loaded
 on, in the job's summary:
@@ -259,6 +265,17 @@ cargo test --locked --target wasm32-unknown-unknown --lib
 cargo xtask npm        # target/npm/sidevoice-engine-X.Y.Z.tgz
 cargo xtask npm-smoke
 cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own tests
+```
+
+The tests that need a page (OPFS, an HTTP server) are ignored in Node and run in a headless Chrome, through
+ChromeDriver (`CHROMEDRIVER`, or `chromedriver` on the `PATH`, and `CHROME` for the Chrome it starts, of the same
+version). The voice loop runs in Chrome too, through the npm package as a page uses it: Whisper base transcribes the
+loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, on WebAssembly (`xtask/web-e2e.json`; a few
+hundred MB downloaded on every run, into a profile that is thrown away; `CHROME`, else `google-chrome`):
+
+```sh
+cargo xtask test-browser
+cargo xtask web-e2e [DIR]
 ```
 
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in

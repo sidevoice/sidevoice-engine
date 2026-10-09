@@ -20,8 +20,8 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
 
 - **The engine has no remote providers.** Those stay in sidevoice-core; to the core, the device is one more provider.
 - **The platform is injected** through `Host` (capabilities, storage, fetching). The engine ships the host of each
-  kind of build, chosen by the same aliases as the backends (`src/host/native.rs`, `NativeHost`; the browser's to
-  come), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
+  kind of build, chosen by the same aliases as the backends (`src/host/native.rs`, `NativeHost`; the page's,
+  `src/web/host.rs`), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
   network or the browser; the rest of the engine goes through `Host`.
 - **Backends are internal, optional and lazy.** Which exist in a build is a compile-time decision (the cfg aliases
   `web`, `native`, `apple_silicon` from `build.rs`); a backend file carries a single `#![cfg(alias)]` only when its
