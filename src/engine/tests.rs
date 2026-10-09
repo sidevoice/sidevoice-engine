@@ -265,7 +265,8 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         [("smart-turn-v3.2".to_owned(), backend.to_owned())]
     );
     // Ranked by catalogue order until sidevoice-engine#4: fp32 first, where it fits.
-    let smart_turn = models
+    let all = block_on(engine.models()).expect("models");
+    let smart_turn = all
         .iter()
         .find(|model| model.id == "smart-turn-v3.2")
         .expect("smart-turn");
