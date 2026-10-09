@@ -138,13 +138,13 @@ impl Extractor {
     }
 }
 
-/// Lets the page run whatever is waiting (input, rendering, other work), then carries on: `scheduler.yield()` where
-/// the page has it, else a message to itself, which no timer clamps.
+/// Lets the page run whatever is waiting (input, rendering, other tasks), then carries on: a message to itself, queued
+/// behind the page's other tasks (no timer clamps it). Not `scheduler.yield()`, whose continuation goes ahead of the
+/// page's ordinary tasks: they would still wait for the whole extraction.
 #[cfg(web)]
 async fn yield_now() {
     #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
 export function yieldToPage() {
-  if (globalThis.scheduler?.yield) return globalThis.scheduler.yield();
   return new Promise((resolve) => {
     const channel = new MessageChannel();
     channel.port1.onmessage = () => { channel.port1.close(); resolve(); };

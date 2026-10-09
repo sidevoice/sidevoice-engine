@@ -69,8 +69,9 @@ fn chunked_extraction_gives_the_same_features() {
     assert_eq!(chunked, features(&signal()));
 }
 
-/// In a page, extraction lets the page run between chunks: a task the page queued while it ran gets to run before it
-/// ends, once per chunk, rather than wait for the whole extraction (which would block the page as long as it lasts).
+/// In a page, extraction lets the page run between chunks: an ordinary task the page queued while it ran gets to run
+/// before it ends, once per chunk, rather than wait for the whole extraction (which would block the page as long as
+/// it lasts). In Node and in Chrome alike.
 #[cfg(web)]
 mod in_a_page {
     use wasm_bindgen::prelude::*;
