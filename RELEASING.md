@@ -9,7 +9,8 @@ The engine reaches its consumers in two ways:
 - **Native consumers** (the desktop app, later the core) depend on the crate at a git tag and compile them
   themselves: source, no binaries.
 - **The web** gets `@sidevoice/engine` on npm: the wasm32 build of the crate as `wasm-bindgen --target web`
-  emits it, with its `package.json`. Published for `vX.Y.Z` releases only ([npm](#npm)).
+  emits it, with its `package.json`. Staged for `vX.Y.Z` releases only, and on npm once the operator approves it
+  ([npm](#npm)).
 
 ## What each act means
 
@@ -17,7 +18,8 @@ The engine reaches its consumers in two ways:
 |---|---|---|
 | Open / update a PR | anyone | `ci`: format and Clippy (Linux and macOS), the native tests on every target, the wasm32 tests in Node, and the npm package built and installed as a consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing; the package is kept 7 days as the artifact `engine-npm-<head sha>` ([A pull request's package](#a-pull-requests-package)). **PR title is a conventional commit**. |
 | Squash-merge into `main` | reviewer | The PR title becomes the commit. `release` runs: the wasm32 tests, the npm package built and smoke-tested; then it attests the assets, attaches them to the **`nightly`** pre-release, reads them back, verifies them and publishes it. Never on npm. release-please opens or updates the **release PR** ("chore(main): release X.Y.Z"). |
-| Merge the release PR | a maintainer | **This is the release.** release-please tags `vX.Y.Z` and creates a draft GitHub Release whose notes are that version's changelog; `release` runs from the tag, attaches and verifies the assets, and publishes the Release; then it publishes `@sidevoice/engine@X.Y.Z` to npm. |
+| Merge the release PR | a maintainer | **This is the release.** release-please tags `vX.Y.Z` and creates a draft GitHub Release whose notes are that version's changelog; `release` runs from the tag, attaches and verifies the assets, and publishes the Release; then it **stages** `@sidevoice/engine@X.Y.Z` on npm. |
+| Approve the staged `@sidevoice/engine` on npmjs.com | the operator (2FA) | The version is on npm: `npm install @sidevoice/engine` gets it (dist-tag `latest`, or `next` for a candidate). |
 
 Everything besides the GitHub steps is either plain `cargo` or code in `xtask/` (`cargo xtask npm | npm-smoke |
 manifest | publish | npm-publish`, each described at the top of `xtask/src/main.rs`: thin calls to `cargo`,
@@ -36,7 +38,7 @@ manifest | publish | npm-publish`, each described at the top of `xtask/src/main.
 The wasm32 tests and `cargo xtask npm` need the wasm-bindgen CLI (`wasm-bindgen`, `wasm-bindgen-test-runner`) on the
 `PATH`, at the version of the `wasm-bindgen` crate in `Cargo.lock`. In CI, `.github/actions/setup` installs it with
 `taiki-e/install-action`, which checks the release binary against the SHA-256 it pins; bump that version with the
-crate's. npm is the one on the `PATH`; publishing needs 11.5.1 or later (the release workflow sets up Node.js 24).
+crate's. npm is the one on the `PATH`, except for staging, which runs the npm `cargo xtask npm-publish` pins ([npm](#npm)).
 
 A native consumer pins a release by its tag:
 
@@ -48,7 +50,7 @@ sidevoice-engine = { git = "https://github.com/sidevoice/sidevoice-engine", tag 
 
 Every GitHub Release (and the nightly) carries:
 
-- `sidevoice-engine-X.Y.Z.tgz`: the npm package exactly as `npm publish` sends it (on the nightly,
+- `sidevoice-engine-X.Y.Z.tgz`: the npm package exactly as `npm stage publish` sends it (on the nightly,
   `sidevoice-engine-nightly.tgz`, a fixed name whose download URL never changes; the version inside is the crate's).
 - `SHA256SUMS`.
 - `attestation.sigstore.json`: one SLSA provenance attestation whose subject is the tarball.
@@ -69,41 +71,61 @@ Release itself.
 
 ## npm
 
-Every `vX.Y.Z` release (never the nightly) is published to npm as `@sidevoice/engine` at that version: dist-tag
-`latest`, or `next` for a version with a `-` suffix (a release candidate).
+Every `vX.Y.Z` release (never the nightly) goes to npm as `@sidevoice/engine` at that version, dist-tag `latest`, or
+`next` for a version with a `-` suffix (a release candidate). **Every version is staged, and the operator approves
+it.** Nothing reaches npm without the operator's approval: that is the organisation's policy, and the package allows staged
+publishing only.
 
-Only the release workflow publishes, by npm's **trusted publishing** (OIDC) with provenance: no npm token exists.
-The job `publish-npm` ("Publish to npm") in `release.yml` runs after the GitHub Release is published, for versioned
-releases only, as one step, `cargo xtask npm-publish vX.Y.Z`:
+Only the release workflow stages, by npm's **trusted publishing** (OIDC) with provenance: no npm token exists. The
+job `publish-npm` ("Stage on npm") in `release.yml` runs after the GitHub Release is published, for versioned
+releases only, as one step, `cargo xtask npm-publish vX.Y.Z` (`xtask/src/npm/publish.rs`, after
+sidevoice-connector's):
 
 1. It downloads the Release's assets and checks `sidevoice-engine-X.Y.Z.tgz` against `SHA256SUMS` and the
    attestation (`gh attestation verify`, signer `release.yml` on `main`, GitHub-hosted runner): npm gets the bytes
    GitHub Releases has, nothing rebuilt.
-2. It publishes that tarball with `npm publish --access public --provenance --tag latest|next` (npm 11.5.1 or later;
-   it fails clearly with an older one). A version already published with the same bytes (compared with what
-   `npm pack @sidevoice/engine@X.Y.Z` fetches from the registry) is skipped, so a re-run carries on; with other
-   bytes it fails: **npm versions are immutable** (a published version can never be replaced, only deprecated), so a
-   bad release is fixed by the next version.
+2. It runs the npm CLI pinned in `xtask/src/npm/publish.rs` (`NPM_VERSION`, installed into `target/npm-cli`;
+   staged publishing needs `npm stage`), with a configuration of its own: no `.npmrc`, no token or npm setting from
+   the environment. Trusted publishing needs Node.js 22.14 or later; the job sets up Node.js 24.
+3. It checks that trusted publishing accepts this run (the same OIDC exchange npm makes) before staging anything. If
+   it does not, the job fails, naming what to set, and nothing is staged.
+4. It **stages** the tarball: `npm stage publish --access public --provenance --tag latest|next`.
+
+Re-running carries on:
+
+- A version already **published** with the same bytes (compared with what `npm pack @sidevoice/engine@X.Y.Z`
+  fetches from the registry) is skipped. With other bytes the job fails: **npm versions are immutable**. A published
+  version can never be replaced, only deprecated, so a bad release is fixed by the next version.
+- A version already **staged** with the same bytes (its `shasum`) is skipped, and its stage id printed again. With
+  other bytes the job fails: reject that one first.
+- Whether a version is staged is asked of the registry with this run's trusted-publishing token. If the registry
+  does not answer that token, staging goes ahead. If npm then refuses because the version is staged already, the error
+  says to approve or reject it.
+
+**Success means "staged, awaiting the operator's approval".** The job's last line and its summary give the stage id
+and how to approve it: on npmjs.com (`@sidevoice/engine` → staged versions) or with `npm stage approve <id>`, both
+with 2FA. A staged version can also be rejected (`npm stage reject <id>`). Until it is approved, nothing new is on
+npm, and `npm install @sidevoice/engine` keeps resolving the previous version.
 
 ### Before the first versioned release
 
-The operator sets this up once on npmjs.com, before the first release PR is merged; until then the `publish-npm` job
-fails and nothing reaches npm (the GitHub Release is published regardless):
+The operator sets this up once on npmjs.com, before the first release PR is merged. Until then the `publish-npm` job
+fails and nothing reaches npm; the GitHub Release is published regardless.
 
 1. **The scope and the name.** `@sidevoice/engine` lives in the `@sidevoice` organisation, which must allow its
    members to create public packages. A trusted publisher is configured on the package's settings page, which only
-   exists once the package does: publish it once by hand, from an account in the org, as a public `0.0.0`
+   exists once the package does. So publish it once by hand, from an account in the org, as a public `0.0.0`
    placeholder (`npm publish --access public`), so the name is ours.
-2. **The trusted publisher.** `@sidevoice/engine` → Settings → Trusted publisher → GitHub Actions: organisation
-   `sidevoice`, repository `sidevoice-engine`, no environment, and the workflow filename npm checks. **npm checks
-   the workflow that starts the run, not one it calls**: a version is released by `release-please.yml`, which calls
-   `release.yml` (`workflow_call`), so the filename to enter is **`release-please.yml`**. The job's error names the
-   filename it saw when it does not match.
-3. **No tokens.** In the package's access settings, require 2FA and disallow tokens: only trusted publishing
+2. **The trusted publisher.** `@sidevoice/engine` → Settings → Trusted publisher → GitHub Actions:
+   - organisation `sidevoice`, repository `sidevoice-engine`, no environment;
+   - **staged publishing**;
+   - the workflow filename npm checks. **npm checks the workflow that starts the run, not one it calls.** A version
+     is released by `release-please.yml`, which calls `release.yml` (`workflow_call`), so the filename to enter is
+     **`release-please.yml`**. The job's error names the filename it saw when it does not match.
+3. **No tokens.** In the package's access settings, require 2FA and disallow tokens, so only trusted publishing
    remains.
 
-Every workflow on the way grants `id-token: write`, and the job sets up Node.js 24, which brings npm 11: trusted
-publishing needs 11.5.1 or later, and `cargo xtask npm-publish` checks it.
+Every workflow on the way grants `id-token: write`.
 
 ## Which version comes next
 
