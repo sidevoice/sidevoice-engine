@@ -4,7 +4,9 @@
 //! empty elsewhere. A file reaches the registry's
 //! `BackendFactory` itself (`crate::backend::registry`), so nothing outside it changes when a backend comes or goes.
 
+mod elevenlabs;
 mod mlx;
+mod openai;
 mod sherpa_onnx;
 mod transformers_js;
 mod whisper_cpp;

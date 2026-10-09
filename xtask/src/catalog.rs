@@ -13,7 +13,8 @@
 //!
 //! A build with no `memory`, or an `estimated` one, gets its estimate: its weights (the files whose name, or path
 //! inside their archive, ends in `.onnx`, `.onnx_data` (external weights), `.bin`, `.npz`, `.safetensors` or `.gguf`;
-//! an archive counted once, at its size) plus 30%, in MB rounded up to a multiple of 10. A `declared` or `measured` figure is left as it is.
+//! an archive counted once, at its size) plus 30%, in MB rounded up to a multiple of 10; a remote build's (one with an
+//! `api_model`) is 0. A `declared` or `measured` figure is left as it is.
 //! A model with a `languages_source` gets its `languages` from it: today, Whisper's, from the `LANGUAGES` table of
 //! openai/whisper's tokenizer at a pinned commit.
 //!
@@ -38,6 +39,7 @@ const WEIGHTS: [&str; 6] = [
     ".gguf",
 ];
 const BASIS: &str = "weights size + 30%";
+const REMOTE_BASIS: &str = "a remote build: it runs on its provider's servers";
 
 /// What an API says about one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,8 +155,12 @@ fn repin(doc: &mut Value, hub: &mut impl Hub) -> Result<Vec<String>> {
             }
             let source = build["memory"]["source"].as_str();
             if source.is_none_or(|source| source == "estimated") {
-                let memory =
-                    json!({"mb": estimate_mb(weights), "source": "estimated", "basis": BASIS});
+                // A remote build runs on its provider's servers: it takes nothing here.
+                let memory = if build["api_model"].is_string() {
+                    json!({"mb": 0, "source": "estimated", "basis": REMOTE_BASIS})
+                } else {
+                    json!({"mb": estimate_mb(weights), "source": "estimated", "basis": BASIS})
+                };
                 if build["memory"] != memory {
                     stale.push(format!("{id} memory"));
                     build["memory"] = memory;

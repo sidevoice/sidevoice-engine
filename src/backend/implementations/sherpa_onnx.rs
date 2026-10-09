@@ -46,8 +46,7 @@
 use async_trait::async_trait;
 
 use crate::backend::registry::BackendFactory;
-use crate::backend::{Backend, BackendModel, BackendSpec, Library};
-use crate::catalog::BuildEntry;
+use crate::backend::{Backend, BackendModel, BackendSpec, Library, Load};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
@@ -77,6 +76,7 @@ const SPEC: BackendSpec = BackendSpec {
     // Core ML is not in the linked libraries (see *Accelerators*).
     accelerators: &[Accelerator::Cpu],
     requirements: &[],
+    provider: None,
 };
 
 inventory::submit! { BackendFactory(|| Box::new(SherpaOnnx)) }
@@ -100,14 +100,10 @@ struct Linked;
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 impl Library for Linked {
-    async fn load(
-        &self,
-        build: &BuildEntry,
-        accelerator: Accelerator,
-        files: &Installed,
-    ) -> Result<Box<dyn BackendModel>> {
+    async fn load(&self, load: Load<'_>) -> Result<Box<dyn BackendModel>> {
+        let (build, files) = (load.build, load.files);
         let kind = Kind::of(files)?;
-        let provider = provider(accelerator)?;
+        let provider = provider(load.accelerator)?;
         Ok(match kind {
             Kind::Stt => Box::new(Recognizer::load(
                 config::recognizer(files, provider)?,

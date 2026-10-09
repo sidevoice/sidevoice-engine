@@ -3,7 +3,7 @@
 /// The list is fixed: each accelerator needs backend code anyway, and a fixed list lets the funnel, the catalogue and
 /// the app name it. Adding one is a change to the engine. It is `#[non_exhaustive]`, so adding one is not a breaking
 /// change: match it with a wildcard arm. A JavaScript host and the catalogue name each by a stable id: "cpu", "cuda",
-/// "coreml", "metal", "webgpu", "wasm".
+/// "coreml", "metal", "webgpu", "wasm", "remote".
 ///
 /// Each variant says when a host reports it: what it can see, not whether it works.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize)]
@@ -23,4 +23,7 @@ pub enum Accelerator {
     WebGpu,
     /// The CPU from a page, through WebAssembly. Every page reports it.
     Wasm,
+    /// A provider's servers, reached over the network: what a remote backend runs on. No host reports it: every host
+    /// has one, through its HTTP ([`Capabilities::has`](crate::Capabilities::has) says so).
+    Remote,
 }

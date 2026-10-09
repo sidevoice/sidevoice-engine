@@ -78,6 +78,18 @@
 //! `invalid-text` (the text has a character the backend cannot take) and `detection-failed` (the audio could not be
 //! run through the voice activity detector).
 //!
+//! ## Remote backends
+//!
+//! A remote backend runs models on a provider's servers (OpenAI, ElevenLabs), and says so in its record
+//! ([`BackendSpec::provider`]). Its builds have no files, only the provider's id of the model (`api_model`): installing
+//! one only checks that the host has the provider's key, and nothing is stored. Its accelerator is
+//! [`Accelerator::Remote`], which every host has. Its `load` makes no call; its model calls the provider through the
+//! host ([`Host::http`](crate::Host::http)), with the key the host hands it for that call
+//! ([`Host::credentials`](crate::Host::credentials)), and keeps no key. A remote model fails with the shared codes, and
+//! these: `credential-missing` (the host has no key for the provider), `credential-rejected` (the provider refused it),
+//! `rate-limited` (the provider asks to slow down), and the host's `request-failed` (no answer) and
+//! `credentials-failed` (the keys could not be read).
+//!
 //! ## Binding the library
 //!
 //! The design is that nothing heavy is linked into the app: a backend's engine library is downloaded when a model
@@ -116,12 +128,13 @@ mod implementations;
 mod library;
 mod loaded_model;
 mod registry;
+pub(crate) mod remote;
 mod requirement;
 mod segmenter;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use library::Library;
+pub(crate) use library::{Library, Load};
 pub(crate) use loaded_model::{BackendModel, VadModel, VadStreamModel, Window};
 #[cfg(test)]
 pub(crate) use loaded_model::{SttModel, TtsModel};
@@ -160,6 +173,10 @@ pub(crate) struct BackendSpec {
     pub(crate) accelerators: &'static [Accelerator],
     /// What the machine must meet, whatever the model: each one a check on the capabilities.
     pub(crate) requirements: &'static [&'static dyn Requirement],
+    /// For a remote backend, the provider whose API it calls, by the id the host's [`Credentials`](crate::Credentials)
+    /// know its key by (`"openai"`); `None` for a backend that runs models here. A remote backend's builds have no
+    /// files: installing one only checks that the host has the key, and its models make their calls through the host.
+    pub(crate) provider: Option<&'static str>,
 }
 
 /// What runs models: its data ([`BackendSpec`]), which of its accelerators work here, and opening its library.
@@ -192,11 +209,33 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
 /// Every backend id a catalogue may name: the [`BackendSpec::id`] of each backend, in whichever build of the engine it
 /// is compiled, and the ids of backends whose code is still to come, which the catalogue may already name. A build
 /// naming any other is a catalogue problem (`UnknownBackend`).
-pub(crate) const KNOWN: &[BackendId] = &["sherpa-onnx", "mlx", "transformers-js", "whisper-cpp"];
+pub(crate) const KNOWN: &[BackendId] = &[
+    "sherpa-onnx",
+    "mlx",
+    "transformers-js",
+    "whisper-cpp",
+    "openai",
+    "elevenlabs",
+];
 
 /// Whether `backend` is one of [`KNOWN`].
 pub(crate) fn is_known(backend: &str) -> bool {
     KNOWN.contains(&backend)
+}
+
+/// Whether `backend` is a remote backend of this build ([`BackendSpec::provider`]). Remote backends compile into every
+/// build: they run nothing here.
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "the engine asks its own backends; the catalogue's tests ask the registry"
+    )
+)]
+pub(crate) fn is_remote(backend: &str) -> bool {
+    built_in()
+        .iter()
+        .any(|built| built.spec().id == backend && built.spec().provider.is_some())
 }
 
 /// A backend compiled into this build, as [`Engine::backends`](crate::Engine::backends) lists it.

@@ -15,7 +15,7 @@ use crate::backend::{Backend, BackendModel};
 use crate::catalog::{BundledCatalog, Capability, CatalogSource};
 use crate::host::Accelerator;
 use crate::install::Installed;
-use crate::test_support::{build, ready};
+use crate::test_support::{build, ready, Loading};
 use crate::Result;
 
 #[test]
@@ -206,7 +206,8 @@ fn a_language_without_a_region_takes_the_voices() {
 fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn BackendModel>> {
     let files = installed(files);
     let library = ready(SherpaOnnx.open(&files))?;
-    ready(library.load(&build("test", "sherpa-onnx", 0), accelerator, &files))
+    let (loading, build) = (Loading::new(), build("test", "sherpa-onnx", 0));
+    ready(library.load(loading.of(&build, accelerator, &files)))
 }
 
 #[test]

@@ -34,10 +34,10 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
-    /// Whether the host reports `accelerator`.
+    /// Whether the host reports `accelerator`; [`Accelerator::Remote`] always: every host makes API calls.
     #[must_use]
     pub fn has(&self, accelerator: Accelerator) -> bool {
-        self.accelerators.contains(&accelerator)
+        accelerator == Accelerator::Remote || self.accelerators.contains(&accelerator)
     }
 }
 

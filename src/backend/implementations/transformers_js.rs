@@ -44,8 +44,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::backend::registry::BackendFactory;
-use crate::backend::{Backend, BackendModel, BackendSpec, Library};
-use crate::catalog::BuildEntry;
+use crate::backend::{Backend, BackendModel, BackendSpec, Library, Load};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
@@ -71,6 +70,7 @@ const SPEC: BackendSpec = BackendSpec {
     upstream: "https://github.com/huggingface/transformers.js",
     accelerators: &[Accelerator::WebGpu, Accelerator::Wasm],
     requirements: &[],
+    provider: None,
 };
 
 inventory::submit! { BackendFactory(|| Box::new(TransformersJs)) }
@@ -111,17 +111,13 @@ struct TransformersJsLibrary {
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 impl Library for TransformersJsLibrary {
-    async fn load(
-        &self,
-        build: &BuildEntry,
-        accelerator: Accelerator,
-        files: &Installed,
-    ) -> Result<Box<dyn BackendModel>> {
+    async fn load(&self, load: Load<'_>) -> Result<Box<dyn BackendModel>> {
+        let (build, files) = (load.build, load.files);
         let kind = Kind::of(files)?;
         let model = Model {
             module: self.module.clone(),
             served: Hub::serve(&self.hub, build, files)?,
-            device: device(accelerator)?,
+            device: device(load.accelerator)?,
             dtype: build.precision.clone(),
         };
         Ok(match kind {

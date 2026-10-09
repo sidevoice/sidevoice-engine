@@ -17,17 +17,18 @@ Reading your coding agent's plans, diffs and summaries all day is tiring. **Side
 already have with your agent into a voice call. The agent keeps its context and keeps writing as usual; it also
 speaks its replies, and you answer by voice and can interrupt it — from the sofa or on a walk, not only at your desk.
 
-**sidevoice-engine** is what runs voice models on the device itself. It knows a catalogue of local models, works out
-which build of each fits on this machine, picks one per stage of the voice pipeline, and takes it from absent to
-ready: installing, loading, and saying why when it cannot. It has no remote providers: to the rest of Sidevoice, the
-device is one more provider.
+**sidevoice-engine** is what runs voice models for Sidevoice: on the device itself, or on a provider's servers. It knows
+one catalogue of local and remote models, works out which build of each fits on this machine, picks one per stage of
+the voice pipeline, and takes it from absent to ready: installing, loading, and saying why when it cannot. A remote
+model (OpenAI, ElevenLabs) is used through the same interface as a local one; the app supplies its key, the engine
+never stores one.
 
 ## How it fits
 
 | Piece | Role |
 |---|---|
-| **sidevoice-engine** (this repository) | Local models: the catalogue, which build fits here, the choice per stage and its lifecycle. |
-| [sidevoice-core](https://github.com/sidevoice/sidevoice-core) | The conversations and the voice pipeline, next to the agents; it keeps the remote providers. |
+| **sidevoice-engine** (this repository) | Models, local and remote: the catalogue, which build fits here, the choice per stage and its lifecycle. |
+| [sidevoice-core](https://github.com/sidevoice/sidevoice-core) | The conversations, next to the agents. The voice pipeline is leaving it for sidevoice-voice, built on this engine (sidevoice-core#89). |
 | [sidevoice-connector](https://github.com/sidevoice/sidevoice-connector) | What you install on the machine where your agents run. It gives them their voice tools and runs the core. |
 | [sidevoice-desktop](https://github.com/sidevoice/sidevoice-desktop) | The app you call from. |
 | [sidevoice-web](https://github.com/sidevoice/sidevoice-web) | The call interface the app bundles; it can also be served as a static site. |
@@ -39,11 +40,11 @@ pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)). To try a p
 merges, its CI keeps the npm package it built for 7 days, as the Actions artifact `engine-npm-<head sha>`
 ([`RELEASING.md`](RELEASING.md#a-pull-requests-package)).
 
-The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
-files. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
+The platform is injected: a `Host` gives the engine the machine's capabilities, its storage, a way to fetch files,
+its HTTP for API calls, and the keys of remote providers. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
 every native build, and in the web build the page's, built by `WebEngine.create(host)` from what the page reports,
-with the engine's own storage (OPFS, the browser's private file system) and downloads (`fetch`). The `Host` interface stays open, so tests and other
-platforms bring their own. The backends that run models are internal
+with the engine's own storage (OPFS, the browser's private file system), downloads and API calls (`fetch`). The
+`Host` interface stays open, so tests and other platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
 now, two backends are the exception: native builds link sherpa-onnx statically, through the official crate, and
@@ -156,15 +157,40 @@ let heard = mic.accept(&pcm_at_16_khz).await?; // VadOutput { frames, events: [S
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
 
+## Remote models and their keys
+
+A remote model is a catalogue model like any other, with builds of a remote backend (`openai`, `elevenlabs`): it is
+listed by `Engine::models`, installed, loaded and called through the same `LoadedModel` (`as_stt`, `as_tts`,
+`voices`), and runs on the `remote` accelerator, which every host has.
+
+- **Its build has no files**, only the provider's id of the model (`api_model`) and, in `call_params`, the request
+  field a call's language goes in (OpenAI's `language`, ElevenLabs' `language_code`; none for a model that refuses
+  one). Installing it only checks that the host has the provider's key (`credential-missing` otherwise), and stores
+  nothing; it is `installed` while the host has the key. Uninstalling removes nothing.
+- **Keys are the app's.** The engine asks the host for a provider's key each time it needs one (`Host::credentials`,
+  the `Credentials` trait) and keeps it only for that call. A native app passes where its keys are:
+  `NativeHost::new(dir)?.with_credentials(keychain)`, any `Credentials` (the OS keychain on desktop); without, the host
+  has none. A page's host may have `credential(provider)`, returning (or resolving to) the key, or `null`, from the
+  browser's storage.
+- **Calls go through the host's HTTP** (`Host::http`, the `HttpClient` trait): `reqwest` natively, `fetch` on the web.
+  Loading makes no call, except that an ElevenLabs text-to-speech model lists the account's voices. Speech comes back
+  as 16-bit PCM at 24 kHz; a turn is sent as a 16-bit WAV at 16 kHz. Streaming is not used (sidevoice-engine#35).
+- **What fails** has its codes: `credential-missing`, `credential-rejected` (401 or 403), `rate-limited` (429), the
+  shared `transcription-failed`, `speech-failed`, `unknown-voice`, and the host's `request-failed` (no answer) and
+  `credentials-failed` (the keys could not be read).
+
 ## Status
 
-The catalogue, the installer, the lifecycle and the native host work, and so do three real backends:
+The catalogue, the installer, the lifecycle and the native host work, and so do three local backends and two remote
+ones:
 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
 | `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window) | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
+| `openai` | speech to text with `gpt-4o-transcribe` and `gpt-4o-mini-transcribe`; text to speech with `gpt-4o-mini-tts` | OpenAI's servers, natively and in the browser | the host's HTTP (`/v1/audio/transcriptions`, `/v1/audio/speech`), with the app's key |
+| `elevenlabs` | speech to text with Scribe v2; text to speech with Flash v2.5 and Multilingual v2, with the account's voices | ElevenLabs' servers, natively and in the browser | the host's HTTP (`/v1/speech-to-text`, `/v1/text-to-speech`), with the app's key |
 
 In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub.
 
@@ -175,15 +201,17 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   lib.rs          the front door: declares the packages, exports the public API
   host.rs         Host: the platform contract; host/: capabilities (what a host reports, and
                   capabilities/accelerator.rs), storage (Storage, StorageWriter, FolderWriter: blobs and build folders),
-                  fetcher (Fetcher, Download), native (NativeHost, native builds only: native/directory.rs, its
-                  storage, and native/http.rs, its downloads)
+                  fetcher (Fetcher, Download), http (HttpClient: API calls), credentials (Credentials: the keys of
+                  remote providers), native (NativeHost, native builds only: native/directory.rs, its storage, and
+                  native/http.rs, its downloads and API calls)
   catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
                   and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements, the ids a catalogue may name
                   (KNOWN) and BackendInfo (what Engine::backends lists); backend/: requirement, registry, library
                   (what open returns, which loads models), loaded_model (what load returns: SttModel, TtsModel,
                   VadModel and its streams), segmenter (speech from per-window probabilities, by sherpa-onnx's
-                  rules), implementations/ (one file per backend)
+                  rules), remote (what the remote backends share: the provider through the host, forms, PCM),
+                  implementations/ (one file per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
   install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
                   download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
@@ -195,7 +223,8 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LoadedModel, Stt,
                   Tts, Vad, VadStream; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
                   file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
-                  capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`)
+                  capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`, for
+                  downloads and API calls)
   maybe_send.rs   Send/Sync in native builds only
 catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
 build.rs        the three cfg aliases: web, native, apple_silicon

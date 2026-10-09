@@ -33,7 +33,9 @@ async fn rejection(promise: Promise) -> String {
 #[wasm_bindgen_test]
 async fn a_web_engine_lists_every_model_with_its_web_builds_first() {
     let engine = engine().await;
-    assert_eq!(engine.backends(), ["transformers-js"]);
+    let mut backends = engine.backends();
+    backends.sort_unstable();
+    assert_eq!(backends, ["elevenlabs", "openai", "transformers-js"]);
     // Whether a model is installed is asked of storage: without OPFS (Node), there is no answer.
     if crate::web::opfs::root().await.is_err() {
         assert_eq!(rejection(engine.models()).await, "storage-failed");

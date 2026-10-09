@@ -15,7 +15,7 @@ fn every_bundled_family_parses_and_the_merge_has_no_problems() {
     assert_eq!(
         catalog
             .expect("bundled catalogue")
-            .check(&crate::backend::is_known),
+            .check(&crate::backend::is_known, &crate::backend::is_remote),
         []
     );
 }
@@ -206,10 +206,11 @@ fn each_bundled_familys_id_is_its_files_name() {
     }
 }
 
-/// `call_params` is sherpa-onnx's: it says where a call's argument goes in a config only that backend has. Whisper's
-/// builds map the language, and Canary's map it to both its source and its target (so that it transcribes).
+/// `call_params` says where a call's argument goes in a sherpa-onnx config, or in a remote build's request. Whisper's
+/// builds map the language, Canary's map it to both its source and its target (so that it transcribes), and the
+/// remote builds to their providers' fields.
 #[test]
-fn only_sherpa_onnx_builds_map_a_calls_arguments_into_their_config() {
+fn only_sherpa_onnx_and_remote_builds_map_a_calls_arguments() {
     let fragment = BundledCatalog.load().expect("bundled catalogue");
     let builds: Vec<_> = fragment
         .families
@@ -219,7 +220,9 @@ fn only_sherpa_onnx_builds_map_a_calls_arguments_into_their_config() {
         .collect();
     for build in &builds {
         if !build.call_params.is_empty() {
-            assert_eq!(build.backend, "sherpa-onnx", "{}", build.id);
+            let backend = build.backend.as_str();
+            let mapped = backend == "sherpa-onnx" || crate::backend::is_remote(backend);
+            assert!(mapped, "{}", build.id);
         }
     }
     let language = |id: &str| {
@@ -237,5 +240,35 @@ fn only_sherpa_onnx_builds_map_a_calls_arguments_into_their_config() {
     assert_eq!(
         language("canary-180m-flash/sherpa-onnx-int8"),
         ["canary.src_lang", "canary.tgt_lang"]
+    );
+}
+
+/// A remote build sends the language where its provider takes it, and none where the provider refuses one.
+#[test]
+fn remote_builds_map_the_language_to_their_providers_fields() {
+    let fragment = BundledCatalog.load().expect("bundled catalogue");
+    let field = |id: &str| {
+        let build = fragment
+            .families
+            .iter()
+            .flat_map(|family| &family.models)
+            .flat_map(|model| &model.builds)
+            .find(|build| build.id == id)
+            .expect(id);
+        assert!(build.files.is_empty() && build.api_model.is_some(), "{id}");
+        build
+            .call_params
+            .get("language")
+            .cloned()
+            .unwrap_or_default()
+    };
+    assert_eq!(field("gpt-4o-transcribe/openai"), ["language"]);
+    assert_eq!(field("gpt-4o-mini-tts/openai"), Vec::<String>::new());
+    assert_eq!(field("scribe_v2/elevenlabs"), ["language_code"]);
+    assert_eq!(field("eleven_flash_v2_5/elevenlabs"), ["language_code"]);
+    assert_eq!(
+        field("eleven_multilingual_v2/elevenlabs"),
+        Vec::<String>::new(),
+        "Multilingual v2 refuses a language_code"
     );
 }

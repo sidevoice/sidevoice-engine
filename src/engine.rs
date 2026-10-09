@@ -9,10 +9,10 @@
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::backend::{self, Backend, BackendInfo};
+use crate::backend::{self, Backend, BackendInfo, Load};
 use crate::catalog::{BuildEntry, Catalog, CatalogSource, ModelEntry, ModelFile};
 use crate::host::{Accelerator, Host};
-use crate::install::{Artifact, Cancel, Installer, ProgressSink};
+use crate::install::{Artifact, Cancel, Installed, Installer, ProgressSink};
 use crate::resolver::{Reason, Rejection, Resolver};
 use crate::{Error, Result};
 
@@ -39,7 +39,8 @@ use memory::Memory;
 /// It holds no model itself: a [`LoadedModel`] does, and the model stays in memory while one of its build lives.
 /// Loading a build that is already in memory returns it again, and a backend's models share its library.
 pub struct Engine {
-    host: Box<dyn Host>,
+    /// Shared with the remote models it loads, which make their calls through it.
+    host: Arc<dyn Host>,
     catalog: Catalog,
     backends: Vec<Box<dyn Backend>>,
     resolver: Resolver,
@@ -82,12 +83,20 @@ impl Engine {
     ) -> Result<Self, ConfigError> {
         let catalog = Catalog::merge(&sources).map_err(ConfigError::Source)?;
         let compiled: Vec<_> = backends.iter().map(|backend| backend.spec().id).collect();
-        let problems = catalog.check(&|id| backend::is_known(id) || compiled.contains(&id));
+        let remote: Vec<_> = backends
+            .iter()
+            .filter(|backend| backend.spec().provider.is_some())
+            .map(|backend| backend.spec().id)
+            .collect();
+        let problems = catalog.check(
+            &|id| backend::is_known(id) || compiled.contains(&id),
+            &|id| remote.contains(&id),
+        );
         if !problems.is_empty() {
             return Err(ConfigError::Catalog(problems));
         }
         Ok(Self {
-            host,
+            host: Arc::from(host),
             catalog,
             backends,
             resolver: Resolver::default(),
@@ -172,7 +181,10 @@ impl Engine {
         cancel: &Cancel,
     ) -> Result<()> {
         let (_, build, _) = self.choose(model, build).await?;
-        let (_, artifacts) = self.artifacts(build)?;
+        let (backend, artifacts) = self.artifacts(build)?;
+        if let Some(provider) = backend.spec().provider {
+            return self.credential(provider).await;
+        }
         self.installer
             .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
             .await
@@ -198,6 +210,9 @@ impl Engine {
             return Err(Error::new("model-in-use"));
         }
         for build in &entry.builds {
+            if self.provider(build).is_some() {
+                continue;
+            }
             let artifacts = match self.artifacts(build) {
                 Ok((_, artifacts)) => artifacts,
                 Err(_) => build.files.iter().map(ModelFile::artifact).collect(),
@@ -209,9 +224,31 @@ impl Engine {
         Ok(())
     }
 
-    /// Whether `build`'s folder is stored, which it only is with every file in it.
+    /// Whether `build`'s folder is stored, which it only is with every file in it; for a remote build, whether the host
+    /// has its provider's key.
     async fn is_installed(&self, build: &BuildEntry) -> Result<bool> {
+        if let Some(provider) = self.provider(build) {
+            return Ok(self
+                .host
+                .credentials()
+                .credential(provider)
+                .await?
+                .is_some());
+        }
         Ok(self.host.storage().find_folder(&build.id).await?.is_some())
+    }
+
+    /// The provider `build` calls, if it is a remote build.
+    fn provider(&self, build: &BuildEntry) -> Option<&'static str> {
+        backend::find(&self.backends, &build.backend).and_then(|backend| backend.spec().provider)
+    }
+
+    /// That the host has `provider`'s key (`credential-missing` otherwise): all installing a remote build takes.
+    async fn credential(&self, provider: &str) -> Result<()> {
+        match self.host.credentials().credential(provider).await? {
+            Some(_) => Ok(()),
+            None => Err(Error::new("credential-missing")),
+        }
     }
 
     /// Loads `build` of the model `model`, or, with `None`, an installed build that runs here, else the recommended
@@ -235,10 +272,17 @@ impl Engine {
             return Ok(LoadedModel::new(&entry.id, &build.id, resident));
         }
         let (backend, artifacts) = self.artifacts(build)?;
-        let files = self
-            .installer
-            .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
-            .await?;
+        let files = match backend.spec().provider {
+            Some(provider) => {
+                self.credential(provider).await?;
+                Installed::default()
+            }
+            None => {
+                self.installer
+                    .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
+                    .await?
+            }
+        };
         cancel.check()?;
         let _loading = self.loading.lock().await;
         // Another load of this build may have finished while this one waited.
@@ -251,7 +295,14 @@ impl Engine {
             Some(library) => library,
             None => Arc::from(backend.open(&files).await?),
         };
-        let model = library.load(build, accelerator, &files).await?;
+        let load = Load {
+            model: entry,
+            build,
+            accelerator,
+            files: &files,
+            host: &self.host,
+        };
+        let model = library.load(load).await?;
         let languages = entry.languages.clone();
         let resident = Resident::new(model, Arc::clone(&library), languages, entry.voices.clone());
         lock(&self.memory).remember(id, &library, &build.id, &resident);

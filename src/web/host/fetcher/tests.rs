@@ -1,5 +1,5 @@
 use super::WebFetcher;
-use crate::{Download, Fetcher};
+use crate::{Download, Fetcher, HttpClient, HttpRequest};
 use wasm_bindgen_test::wasm_bindgen_test;
 
 /// Every part of `download`, in order.
@@ -56,4 +56,45 @@ async fn dropping_a_download_part_way_stops_it() {
     // Dropped unread: the stream is cancelled and the request aborted, without a panic or an unhandled rejection.
     download.size();
     drop(download);
+}
+
+fn get(url: &str) -> HttpRequest {
+    HttpRequest {
+        method: "GET",
+        url: url.to_owned(),
+        headers: vec![("accept".into(), "*/*".into())],
+        body: Vec::new(),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn an_api_call_resolves_with_its_status_and_whole_body() {
+    let response = WebFetcher
+        .send(get("data:application/json;base64,eyJ0ZXh0IjoiaG9sYSJ9"))
+        .await
+        .expect("answered");
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, br#"{"text":"hola"}"#);
+}
+
+#[wasm_bindgen_test]
+async fn an_api_call_with_no_answer_fails_with_request_failed() {
+    for url in ["http://127.0.0.1:9/nothing", "not a url"] {
+        let failed = WebFetcher.send(get(url)).await.err();
+        assert_eq!(
+            failed.map(|error| error.code),
+            Some("request-failed"),
+            "{url}"
+        );
+    }
+}
+
+#[wasm_bindgen_test]
+#[ignore = "an HTTP error status needs a server: the browser run's (cargo xtask test-browser)"]
+async fn an_http_error_status_is_an_answer_for_an_api_call() {
+    let response = WebFetcher
+        .send(get("/sidevoice-engine-no-such-file"))
+        .await
+        .expect("answered");
+    assert_eq!(response.status, 404);
 }

@@ -31,6 +31,7 @@ impl FixedProbeBackend {
                 upstream: "https://example.com",
                 accelerators: &[Accelerator::CoreMl, Accelerator::Cpu],
                 requirements: &[&MinCores(4)],
+                provider: None,
             },
             probe,
         })
@@ -225,6 +226,7 @@ fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
                 upstream: "https://example.com",
                 accelerators: &[Accelerator::WebGpu, Accelerator::Wasm],
                 requirements: &[],
+                provider: None,
             }))
         };
         let caps = Capabilities {
@@ -298,6 +300,7 @@ fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
         upstream: "https://example.com",
         accelerators: &[Accelerator::Wasm],
         requirements: &[],
+        provider: None,
     });
     let (os, arch) = match runs {
         Runs::Page => ("web", "wasm32"),

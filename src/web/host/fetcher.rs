@@ -1,13 +1,13 @@
 //! The web build's downloads: the page's `fetch`, its body read as a stream a part at a time, stopped through an
-//! `AbortController` when the download is dropped. And what reads any such stream, a download or a stored file
-//! ([`StreamDownload`]).
+//! `AbortController` when the download is dropped. Its API calls: `fetch` too, the whole body read at once. And what
+//! reads any such stream, a download or a stored file ([`StreamDownload`]).
 
 use js_sys::{Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{AbortController, Blob, ReadableStream, ReadableStreamDefaultReader, Response};
 
-use crate::{async_trait, Download, Error, Fetcher, Result};
+use crate::{async_trait, Download, Error, Fetcher, HttpClient, HttpRequest, HttpResponse, Result};
 
 #[cfg(test)]
 mod tests;
@@ -146,4 +146,50 @@ fn failed(what: &str, cause: &JsValue) -> Error {
         cause,
     );
     Error::new("download-failed")
+}
+
+#[async_trait(?Send)]
+impl HttpClient for WebFetcher {
+    /// Through the global `fetch`; the page's CORS rules apply, and the providers the remote backends call allow it.
+    /// Fails with `request-failed` when there is no answer, the cause in the console (never the headers).
+    async fn send(&self, request: HttpRequest) -> Result<HttpResponse> {
+        let failed = |cause: &JsValue| {
+            web_sys::console::warn_3(
+                &"sidevoice-engine: request failed:".into(),
+                &request.url.as_str().into(),
+                cause,
+            );
+            Error::new("request-failed")
+        };
+        let headers = js_sys::Object::new();
+        for (name, value) in &request.headers {
+            Reflect::set(&headers, &name.into(), &value.into()).expect("a plain object");
+        }
+        let init = js_sys::Object::new();
+        Reflect::set(&init, &"method".into(), &request.method.into()).expect("a plain object");
+        Reflect::set(&init, &"headers".into(), &headers).expect("a plain object");
+        if !request.body.is_empty() {
+            let body = Uint8Array::from(request.body.as_slice());
+            Reflect::set(&init, &"body".into(), &body).expect("a plain object");
+        }
+        let fetch = Reflect::get(&js_sys::global(), &"fetch".into())
+            .ok()
+            .and_then(|fetch| fetch.dyn_into::<js_sys::Function>().ok())
+            .ok_or_else(|| failed(&"no fetch here".into()))?;
+        let promise = fetch
+            .call2(&JsValue::UNDEFINED, &request.url.as_str().into(), &init)
+            .map_err(|error| failed(&error))?;
+        let response: Response = JsFuture::from(js_sys::Promise::from(promise))
+            .await
+            .map_err(|error| failed(&error))?
+            .unchecked_into();
+        let buffer = response.array_buffer().map_err(|error| failed(&error))?;
+        let buffer = JsFuture::from(buffer)
+            .await
+            .map_err(|error| failed(&error))?;
+        Ok(HttpResponse {
+            status: response.status(),
+            body: Uint8Array::new(&buffer).to_vec(),
+        })
+    }
 }

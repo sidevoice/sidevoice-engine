@@ -6,7 +6,7 @@ use super::{language_id, WhisperCpp, SPEC};
 use crate::backend::{Backend, BackendModel};
 use crate::host::Accelerator;
 use crate::install::Installed;
-use crate::test_support::{block_on, build};
+use crate::test_support::{block_on, build, Loading};
 use crate::Result;
 
 #[test]
@@ -26,7 +26,8 @@ fn load(accelerator: Accelerator, files: &[(&str, &str)]) -> Result<Box<dyn Back
             .collect(),
     };
     let library = block_on(WhisperCpp.open(&Installed::default())).expect("the linked library");
-    block_on(library.load(&build("test", "whisper-cpp", 0), accelerator, &files))
+    let (loading, build) = (Loading::new(), build("test", "whisper-cpp", 0));
+    block_on(library.load(loading.of(&build, accelerator, &files)))
 }
 
 fn code(result: Result<Box<dyn BackendModel>>) -> &'static str {

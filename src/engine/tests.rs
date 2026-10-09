@@ -13,7 +13,7 @@ use std::sync::Arc;
 #[cfg(native)]
 use std::task::{Context, Poll};
 
-use crate::backend::{Backend, BackendModel, BackendSpec, Library, SttModel, TtsModel};
+use crate::backend::{Backend, BackendModel, BackendSpec, Library, Load, SttModel, TtsModel};
 use crate::catalog::{CatalogFragment, CatalogSource};
 use crate::install::Installed;
 use crate::test_support::{
@@ -127,11 +127,11 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         offered
     };
     let backends: &[&str] = if cfg!(target_arch = "wasm32") {
-        &["transformers-js"]
+        &["transformers-js", "openai", "elevenlabs"]
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        &["mlx", "sherpa-onnx", "whisper-cpp"]
+        &["mlx", "sherpa-onnx", "whisper-cpp", "openai", "elevenlabs"]
     } else {
-        &["sherpa-onnx", "whisper-cpp"]
+        &["sherpa-onnx", "whisper-cpp", "openai", "elevenlabs"]
     };
 
     let stt = offered(Capability::Stt);
@@ -142,6 +142,9 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         assert_eq!(
             models,
             [
+                "gpt-4o-mini-transcribe",
+                "gpt-4o-transcribe",
+                "scribe_v2",
                 "whisper-base",
                 "whisper-large-v3-turbo",
                 "whisper-small",
@@ -154,8 +157,11 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
             [
                 "canary-180m-flash",
                 "fastconformer-es-large",
+                "gpt-4o-mini-transcribe",
+                "gpt-4o-transcribe",
                 "parakeet-tdt-0.6b-v3",
                 "qwen3-asr-0.6b",
+                "scribe_v2",
                 "whisper-base",
                 "whisper-large-v3",
                 "whisper-large-v3-turbo",
@@ -174,6 +180,9 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         assert_eq!(
             tts,
             [
+                ("eleven_flash_v2_5".to_owned(), "elevenlabs".to_owned()),
+                ("eleven_multilingual_v2".to_owned(), "elevenlabs".to_owned()),
+                ("gpt-4o-mini-tts".to_owned(), "openai".to_owned()),
                 web("kokoro-82m-v0.19"),
                 web("kokoro-82m-v1.0"),
                 web("supertonic-2")
@@ -184,6 +193,9 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         assert_eq!(
             models,
             [
+                "eleven_flash_v2_5",
+                "eleven_multilingual_v2",
+                "gpt-4o-mini-tts",
                 "kokoro-82m-v0.19",
                 "kokoro-82m-v1.0",
                 "piper-en_US-ljspeech-medium",
@@ -191,7 +203,10 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
                 "supertonic-3"
             ]
         );
-        assert!(tts.iter().all(|(_, backend)| backend == "sherpa-onnx"));
+        let remote = ["openai", "elevenlabs"];
+        assert!(tts
+            .iter()
+            .all(|(_, backend)| backend == "sherpa-onnx" || remote.contains(&backend.as_str())));
     }
 
     let vad = offered(Capability::Vad);
@@ -275,6 +290,7 @@ const FAKE: BackendSpec = BackendSpec {
     upstream: "https://example.com",
     accelerators: &[Accelerator::Cpu],
     requirements: &[],
+    provider: None,
 };
 
 #[cfg_attr(native, async_trait)]
@@ -302,16 +318,11 @@ impl Drop for FakeLibrary {
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 impl Library for FakeLibrary {
-    async fn load(
-        &self,
-        build: &BuildEntry,
-        _accelerator: Accelerator,
-        files: &Installed,
-    ) -> Result<Box<dyn BackendModel>> {
-        if build.id.starts_with("broken") {
+    async fn load(&self, load: Load<'_>) -> Result<Box<dyn BackendModel>> {
+        if load.build.id.starts_with("broken") {
             return Err(Error::new("model-load-failed"));
         }
-        assert!(files.file("model.onnx").is_some());
+        assert!(load.files.file("model.onnx").is_some());
         self.0.loaded.fetch_add(1, Ordering::Relaxed);
         Ok(Box::new(FakeModel(self.0.clone())))
     }
@@ -662,4 +673,66 @@ fn audio_is_resampled_linearly() {
         super::audio::resample(&[0.0; 48_000], 48_000, 16_000).len(),
         16_000
     );
+}
+
+/// One remote model, OpenAI's `gpt-4o-transcribe`, on the real `openai` backend.
+struct RemoteModels;
+
+impl CatalogSource for RemoteModels {
+    fn load(&self) -> Result<CatalogFragment> {
+        let mut remote = build("gpt-4o-transcribe/openai", "openai", 0);
+        remote.files.clear();
+        remote.api_model = Some("gpt-4o-transcribe".to_owned());
+        Ok(CatalogFragment {
+            families: vec![family(
+                "openai",
+                vec![model("gpt-4o-transcribe", Capability::Stt, vec![remote])],
+            )],
+        })
+    }
+}
+
+#[test]
+fn a_remote_model_is_installed_when_the_host_has_its_key_and_calls_through_the_host() {
+    let host = MemoryHost::default();
+    let provider = host.remote();
+    let engine = Engine::new(Box::new(host), vec![Box::new(RemoteModels)]).expect("engine");
+    let listed = |engine: &Engine| {
+        let models = block_on(engine.models()).expect("models");
+        models.into_iter().next().expect("the remote model")
+    };
+    let model = listed(&engine);
+    let build = &model.builds[0];
+    assert!(build.available && !build.installed);
+    assert_eq!(build.accelerator, Some(Accelerator::Remote));
+    assert_eq!(build.download_bytes, 0);
+
+    let code = |result: Result<()>| result.unwrap_err().code;
+    let install = || block_on(engine.install("gpt-4o-transcribe", None, &|_| {}, &Cancel::new()));
+    assert_eq!(code(install()), "credential-missing");
+    provider.key("openai", "sk-test");
+    install().expect("installed: the host has the key");
+    assert!(listed(&engine).installed);
+    assert!(provider.requests().is_empty(), "installing calls nothing");
+
+    provider.answer(
+        "https://api.openai.com/v1/audio/transcriptions",
+        200,
+        br#"{"text": "hi"}"#,
+    );
+    let loaded =
+        block_on(engine.load("gpt-4o-transcribe", None, &|_| {}, &Cancel::new())).expect("loaded");
+    let stt = loaded.as_stt().expect("speech to text");
+    assert_eq!(
+        block_on(stt.transcribe(&[0.0; 800], 8_000, None)).as_deref(),
+        Ok("hi")
+    );
+    assert_eq!(provider.requests().len(), 1);
+
+    assert_eq!(
+        code(block_on(engine.uninstall("gpt-4o-transcribe"))),
+        "model-in-use"
+    );
+    drop(loaded);
+    block_on(engine.uninstall("gpt-4o-transcribe")).expect("nothing to remove");
 }

@@ -18,6 +18,7 @@ const SPEC: BackendSpec = BackendSpec {
     upstream: "https://github.com/ml-explore/mlx",
     accelerators: &[Accelerator::Metal],
     requirements: &[&MinMemoryMb(8_192)],
+    provider: None,
 };
 
 inventory::submit! { BackendFactory(|| Box::new(Mlx)) }

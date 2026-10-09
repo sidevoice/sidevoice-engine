@@ -8,9 +8,9 @@
 //! [`Cancel`]. Every failure rejects with an `Error` that carries the engine's stable `code` and its `params`, which
 //! the page translates; its message is the code too.
 //!
-//! Inside: `host` (the JavaScript host as the engine sees it, with the web build's storage and downloads), `opfs` (the
-//! browser's private file system, which the storage and the transformers.js backend use) and `values` (the engine's
-//! values as JavaScript objects).
+//! Inside: `host` (the JavaScript host as the engine sees it, with the web build's storage, downloads and API calls),
+//! `opfs` (the browser's private file system, which the storage and the transformers.js backend use) and `values` (the
+//! engine's values as JavaScript objects).
 
 use std::future::Future;
 use std::pin::pin;
@@ -69,15 +69,17 @@ pub struct WebEngine {
 
 #[wasm_bindgen]
 impl WebEngine {
-    /// Asks the host for its capabilities once, and builds the engine on the bundled catalogue. Rejects with
-    /// `host-capabilities` when the host's `capabilities()` fails, `host-capabilities-<field>` when what it reports is
-    /// malformed.
+    /// Asks the host for its capabilities once, and builds the engine on the bundled catalogue. The host may also have
+    /// `credential(provider)`, which returns (or resolves to) the key of a remote provider (`"openai"`, `"elevenlabs"`)
+    /// or `null`: the engine asks it each time a remote model is installed, loaded or called, and keeps no key.
+    /// Rejects with `host-capabilities` when the host's `capabilities()` fails, `host-capabilities-<field>` when what it
+    /// reports is malformed.
     pub async fn create(host: JsHost) -> Result<WebEngine, JsValue> {
         let caps = host
             .capabilities()
             .await
             .map_err(|_| coded(Error::new("host-capabilities")))?;
-        let host = WebHost::from_capabilities(&caps).map_err(|error| {
+        let host = WebHost::new(host, &caps).map_err(|error| {
             let error = JsValue::from(error);
             let code = Reflect::get(&error, &"message".into()).unwrap_or_default();
             set(&error, "code", &code);

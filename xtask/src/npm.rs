@@ -11,8 +11,8 @@ use crate::{empty_dir, metadata, read, repo, run_in, sh, write, Result};
 const PACKAGE: &str = "@sidevoice/engine";
 /// The library name, after which wasm-bindgen names its output.
 const STEM: &str = "sidevoice_engine";
-/// The backends the web build registers: what `npm-smoke` must find in the packaged build.
-const WEB_BACKENDS: &[&str] = &["transformers-js"];
+/// The backends the web build registers, sorted: what `npm-smoke` must find in the packaged build.
+const WEB_BACKENDS: &[&str] = &["elevenlabs", "openai", "transformers-js"];
 /// The oldest npm that publishes by trusted publishing.
 const MIN_NPM: [u64; 3] = [11, 5, 1];
 const SMOKE_JS: &str = include_str!("../npm/smoke.mjs");
@@ -85,8 +85,15 @@ pub(crate) fn smoke() -> Result<()> {
     write(&dir.join("smoke.mjs"), SMOKE_JS.as_bytes())?;
     let report = run_in(&dir, &format!("node smoke.mjs {STEM}_bg.wasm"), &[])?;
     let report = parse(report.as_bytes(), "smoke.mjs")?;
-    let (found, want) = (&report["backends"], json!(WEB_BACKENDS));
-    if *found != want {
+    let mut found: Vec<&str> = report["backends"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    found.sort_unstable();
+    let (found, want) = (json!(found), json!(WEB_BACKENDS));
+    if found != want {
         return Err(format!(
             "the packaged engine has the backends {found}, not {want}"
         ));

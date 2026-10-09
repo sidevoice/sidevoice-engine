@@ -25,6 +25,7 @@ fn every_accelerator_has_its_id_and_other_ids_name_none() {
         ("metal", Accelerator::Metal),
         ("webgpu", Accelerator::WebGpu),
         ("wasm", Accelerator::Wasm),
+        ("remote", Accelerator::Remote),
     ];
     for (id, expected) in named {
         assert_eq!(accelerator(id), Some(expected));
@@ -37,7 +38,8 @@ fn every_accelerator_has_its_id_and_other_ids_name_none() {
             | Accelerator::CoreMl
             | Accelerator::Metal
             | Accelerator::WebGpu
-            | Accelerator::Wasm => {}
+            | Accelerator::Wasm
+            | Accelerator::Remote => {}
         }
     }
     assert_eq!(accelerator("npu"), None);

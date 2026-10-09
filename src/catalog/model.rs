@@ -21,10 +21,11 @@ pub struct ModelEntry {
     pub id: String,
     /// What it can do.
     pub capabilities: Vec<Capability>,
-    /// Its size, in millions of parameters.
+    /// Its size, in millions of parameters; 0 when its publisher does not say (a remote model).
     pub parameters_m: u32,
     /// The languages it handles, each a BCP 47 tag ("en-US", "es", ...): never "multi", and never an accent the source
-    /// does not state.
+    /// does not state. Empty when its source declares none: a voice activity detector hears speech in any
+    /// language, and some providers publish no list for a remote model (OpenAI).
     pub languages: Vec<String>,
     /// Where `languages` comes from, when it is generated rather than written: `cargo xtask pin-catalog` reads the
     /// list from it (Whisper's, from openai/whisper's tokenizer at a pinned commit).
@@ -34,7 +35,8 @@ pub struct ModelEntry {
     /// and the catalogue does not describe gets the model's languages and no gender.
     #[serde(default)]
     pub voices: Vec<Voice>,
-    /// Its licence, as an SPDX id, from its source.
+    /// Its licence, as an SPDX id, from its source; `LicenseRef-proprietary` for a remote model, used under its
+    /// provider's terms.
     pub license: String,
     /// Every way to run it, in no particular order: which one fits best here is the resolver's to rank.
     pub builds: Vec<BuildEntry>,

@@ -125,6 +125,7 @@ fn accelerator(accelerator: Accelerator) -> &'static str {
         Accelerator::Metal => "metal",
         Accelerator::WebGpu => "webgpu",
         Accelerator::Wasm => "wasm",
+        Accelerator::Remote => "remote",
     }
 }
 

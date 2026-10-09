@@ -18,20 +18,30 @@ pub struct BuildEntry {
     pub backend: String,
     /// The format's own name for its precision, as its backend uses it: "int8", "q8", "fp16", "q5_1", "4bit", ....
     /// Informational only, to tell builds apart (the transformers.js loader may pass it on as its `dtype`): nothing
-    /// else interprets it.
+    /// else interprets it. `remote` for a remote build, whose provider does not say.
     pub precision: String,
     /// Hard constraints only; absent, there are none.
     #[serde(default)]
     pub requires: Requires,
     /// The memory it takes to run, and where that figure comes from.
     pub memory: Memory,
-    /// Every file the backend needs to load it, configuration and tokenizer included.
+    /// Every file the backend needs to load it, configuration and tokenizer included; none for a remote build.
+    #[serde(default)]
     pub files: Vec<ModelFile>,
-    /// sherpa-onnx builds only: where each argument of a call goes, for a model that reads it from its config rather than
-    /// per call. Keyed by the interface's argument name ([`CALL_ARGUMENTS`]: `language`), each the sherpa-onnx config
-    /// paths (below `OfflineRecognizerConfig.model_config`) that take its value: Whisper's `whisper.language`, Canary's
-    /// `canary.src_lang` and `canary.tgt_lang` (it transcribes when both are the language). One path or a list. Empty,
-    /// no argument reaches the config (Whisper then detects the language). sidevoice-engine#46.
+    /// A remote build only: the provider's id of the model, which its API is called with (`gpt-4o-transcribe`,
+    /// `scribe_v2`).
+    #[serde(default)]
+    pub api_model: Option<String>,
+    /// Where each argument of a call goes, for a model that takes it somewhere of its own. Keyed by the interface's
+    /// argument name ([`CALL_ARGUMENTS`]: `language`); one path or a list. Empty, no argument reaches the model that
+    /// way.
+    ///
+    /// - A sherpa-onnx build, for a model that reads it from its config rather than per call: the config paths (below
+    ///   `OfflineRecognizerConfig.model_config`) that take its value: Whisper's `whisper.language`, Canary's
+    ///   `canary.src_lang` and `canary.tgt_lang` (it transcribes when both are the language). Without, Whisper detects
+    ///   the language (sidevoice-engine#46).
+    /// - A remote build: the request field that carries it (OpenAI's `language`, ElevenLabs' `language_code`). A model
+    ///   whose API takes none maps none.
     #[serde(default, deserialize_with = "call_params")]
     pub call_params: BTreeMap<String, Vec<String>>,
 }

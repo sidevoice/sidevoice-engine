@@ -41,8 +41,7 @@ use whisper_rs::{
 
 use crate::backend::loaded_model::SttModel;
 use crate::backend::registry::BackendFactory;
-use crate::backend::{Backend, BackendModel, BackendSpec, Library};
-use crate::catalog::BuildEntry;
+use crate::backend::{Backend, BackendModel, BackendSpec, Library, Load};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::{Error, Result};
@@ -66,6 +65,7 @@ const SPEC: BackendSpec = BackendSpec {
     upstream: "https://github.com/ggml-org/whisper.cpp",
     accelerators: ACCELERATORS,
     requirements: &[],
+    provider: None,
 };
 
 inventory::submit! { BackendFactory(|| Box::new(WhisperCpp)) }
@@ -89,13 +89,8 @@ struct Linked;
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 impl Library for Linked {
-    async fn load(
-        &self,
-        _build: &BuildEntry,
-        accelerator: Accelerator,
-        files: &Installed,
-    ) -> Result<Box<dyn BackendModel>> {
-        Ok(Box::new(Whisper::load(files, accelerator)?))
+    async fn load(&self, load: Load<'_>) -> Result<Box<dyn BackendModel>> {
+        Ok(Box::new(Whisper::load(load.files, load.accelerator)?))
     }
 }
 

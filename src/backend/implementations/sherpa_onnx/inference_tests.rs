@@ -28,7 +28,7 @@ use crate::backend::{Backend, BackendModel};
 use crate::catalog::Voice;
 use crate::host::Accelerator;
 use crate::install::Installed;
-use crate::test_support::{build, ready, sha256 as sha256_of};
+use crate::test_support::{build, ready, sha256 as sha256_of, Loading};
 
 /// What these tests download besides the library: `inference_tests.json`.
 #[derive(Deserialize)]
@@ -246,7 +246,8 @@ fn load(files: &Installed) -> Box<dyn BackendModel> {
     };
     eprintln!("loading {model} on {:?}", accelerator(files));
     let library = ready(SherpaOnnx.open(files)).expect("the linked library");
-    let loaded = ready(library.load(&build("test", "sherpa-onnx", 0), accelerator(files), files))
+    let (loading, build) = (Loading::new(), build("test", "sherpa-onnx", 0));
+    let loaded = ready(library.load(loading.of(&build, accelerator(files), files)))
         .expect("the model loads");
     eprintln!("loaded {model}");
     loaded

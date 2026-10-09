@@ -1,0 +1,136 @@
+{
+  "id": "openai",
+  "architecture": "openai-audio",
+  "source": "https://platform.openai.com/docs/guides/audio",
+  "models": [
+    {
+      "id": "gpt-4o-transcribe",
+      "capabilities": [
+        "stt"
+      ],
+      "parameters_m": 0,
+      "languages": [],
+      "license": "LicenseRef-proprietary",
+      "builds": [
+        {
+          "id": "gpt-4o-transcribe/openai",
+          "backend": "openai",
+          "precision": "remote",
+          "api_model": "gpt-4o-transcribe",
+          "files": [],
+          "call_params": {
+            "language": "language"
+          },
+          "memory": {
+            "mb": 0,
+            "source": "estimated",
+            "basis": "a remote build: it runs on its provider's servers"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gpt-4o-mini-transcribe",
+      "capabilities": [
+        "stt"
+      ],
+      "parameters_m": 0,
+      "languages": [],
+      "license": "LicenseRef-proprietary",
+      "builds": [
+        {
+          "id": "gpt-4o-mini-transcribe/openai",
+          "backend": "openai",
+          "precision": "remote",
+          "api_model": "gpt-4o-mini-transcribe",
+          "files": [],
+          "call_params": {
+            "language": "language"
+          },
+          "memory": {
+            "mb": 0,
+            "source": "estimated",
+            "basis": "a remote build: it runs on its provider's servers"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gpt-4o-mini-tts",
+      "capabilities": [
+        "tts"
+      ],
+      "parameters_m": 0,
+      "languages": [],
+      "license": "LicenseRef-proprietary",
+      "builds": [
+        {
+          "id": "gpt-4o-mini-tts/openai",
+          "backend": "openai",
+          "precision": "remote",
+          "api_model": "gpt-4o-mini-tts",
+          "files": [],
+          "memory": {
+            "mb": 0,
+            "source": "estimated",
+            "basis": "a remote build: it runs on its provider's servers"
+          }
+        }
+      ],
+      "voices": [
+        {
+          "id": "alloy",
+          "languages": []
+        },
+        {
+          "id": "ash",
+          "languages": []
+        },
+        {
+          "id": "ballad",
+          "languages": []
+        },
+        {
+          "id": "coral",
+          "languages": []
+        },
+        {
+          "id": "echo",
+          "languages": []
+        },
+        {
+          "id": "sage",
+          "languages": []
+        },
+        {
+          "id": "shimmer",
+          "languages": []
+        },
+        {
+          "id": "verse",
+          "languages": []
+        },
+        {
+          "id": "marin",
+          "languages": []
+        },
+        {
+          "id": "cedar",
+          "languages": []
+        },
+        {
+          "id": "fable",
+          "languages": []
+        },
+        {
+          "id": "onyx",
+          "languages": []
+        },
+        {
+          "id": "nova",
+          "languages": []
+        }
+      ]
+    }
+  ]
+}

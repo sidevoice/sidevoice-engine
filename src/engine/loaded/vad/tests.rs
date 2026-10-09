@@ -7,12 +7,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use super::{VadEvent, VadFrame, VadOptions};
-use crate::backend::{BackendModel, Library, VadModel, VadStreamModel, Window};
-use crate::catalog::BuildEntry;
+use crate::backend::{BackendModel, Library, Load, VadModel, VadStreamModel, Window};
 use crate::engine::loaded::Resident;
-use crate::install::Installed;
 use crate::test_support::block_on;
-use crate::{async_trait, Accelerator, Capability, Error, LoadedModel, Result};
+use crate::{async_trait, Capability, Error, LoadedModel, Result};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -107,12 +105,7 @@ struct NoLibrary;
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 impl Library for NoLibrary {
-    async fn load(
-        &self,
-        _build: &BuildEntry,
-        _accelerator: Accelerator,
-        _files: &Installed,
-    ) -> Result<Box<dyn BackendModel>> {
+    async fn load(&self, _load: Load<'_>) -> Result<Box<dyn BackendModel>> {
         Err(Error::new("not-implemented"))
     }
 }

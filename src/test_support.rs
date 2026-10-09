@@ -1,7 +1,8 @@
 //! Test doubles shared by the tests of every module: a host (CPU and Wasm everywhere, Metal on Apple silicon, 8 GB,
 //! 8 cores) with nothing stored and no network, the same host with files in memory and a few to download, a small
 //! catalogue with a build for each backend, one that needs too much memory and one for a backend no build has, the
-//! builders it is made with, and a way to run a future to its end.
+//! builders it is made with, a provider's side of remote calls (keys, scripted answers, the requests made), and a way
+//! to run a future to its end.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -14,8 +15,9 @@ use sha2::Digest;
 use crate::TreeWriter;
 use crate::{
     async_trait, Accelerator, Artifact, BuildEntry, Capabilities, Capability, CatalogFragment,
-    CatalogSource, Download, Error, Family, Fetcher, FolderWriter, Host, Memory, MemorySource,
-    ModelEntry, ModelFile, Requires, Result, Runs, Storage, StorageWriter,
+    CatalogSource, Credentials, Download, Error, Family, Fetcher, FolderWriter, Host, HttpClient,
+    HttpRequest, HttpResponse, Memory, MemorySource, ModelEntry, ModelFile, NoCredentials,
+    Requires, Result, Runs, Storage, StorageWriter,
 };
 
 pub(crate) struct FakeHost;
@@ -42,6 +44,14 @@ impl Host for FakeHost {
 
     fn fetcher(&self) -> &dyn Fetcher {
         self
+    }
+
+    fn http(&self) -> &dyn HttpClient {
+        self
+    }
+
+    fn credentials(&self) -> &dyn Credentials {
+        &NoCredentials
     }
 }
 
@@ -107,6 +117,14 @@ impl Fetcher for FakeHost {
     }
 }
 
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl HttpClient for FakeHost {
+    async fn send(&self, _request: HttpRequest) -> Result<HttpResponse> {
+        Err(Error::new("request-failed"))
+    }
+}
+
 /// [`FakeHost`]'s capabilities, a storage in memory (files, trees, and build folders of links), and a fetcher that
 /// serves some URLs, a few bytes at a time.
 #[derive(Default)]
@@ -116,6 +134,7 @@ pub(crate) struct MemoryHost {
     trees: Arc<Mutex<BTreeMap<String, MemoryTree>>>,
     folders: Arc<Mutex<BTreeMap<String, MemoryFolder>>>,
     fetches: AtomicUsize,
+    remote: Arc<FakeProvider>,
 }
 
 /// A build folder's links: each path, and the blob (and member of it) it links.
@@ -161,6 +180,11 @@ impl MemoryHost {
     pub(crate) fn fetches(&self) -> usize {
         self.fetches.load(Ordering::Relaxed)
     }
+
+    /// The providers' side of its API calls, and its keys: shared, so a test keeps it once the host is moved.
+    pub(crate) fn remote(&self) -> Arc<FakeProvider> {
+        Arc::clone(&self.remote)
+    }
 }
 
 impl Host for MemoryHost {
@@ -174,6 +198,14 @@ impl Host for MemoryHost {
 
     fn fetcher(&self) -> &dyn Fetcher {
         self
+    }
+
+    fn http(&self) -> &dyn HttpClient {
+        self.remote.as_ref()
+    }
+
+    fn credentials(&self) -> &dyn Credentials {
+        self.remote.as_ref()
     }
 }
 
@@ -569,6 +601,7 @@ pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> BuildEntry {
             mutable: false,
         }],
         call_params: Default::default(),
+        api_model: None,
     }
 }
 
@@ -658,4 +691,89 @@ pub(crate) async fn pause(ms: i32) {
     wasm_bindgen_futures::JsFuture::from(promise)
         .await
         .expect("resolved");
+}
+
+/// What remote calls meet in tests: the keys the host has, an answer for each URL prefix, and every request made.
+#[derive(Default)]
+pub(crate) struct FakeProvider {
+    keys: Mutex<BTreeMap<String, String>>,
+    answers: Mutex<Vec<(String, HttpResponse)>>,
+    requests: Mutex<Vec<HttpRequest>>,
+}
+
+impl FakeProvider {
+    /// The host has `key` for `provider`.
+    pub(crate) fn key(&self, provider: &str, key: &str) {
+        lock(&self.keys).insert(provider.to_owned(), key.to_owned());
+    }
+
+    /// A request whose URL starts with `prefix` is answered with `status` and `body` (the first such answer given).
+    pub(crate) fn answer(&self, prefix: &str, status: u16, body: &[u8]) {
+        let response = HttpResponse {
+            status,
+            body: body.to_vec(),
+        };
+        lock(&self.answers).push((prefix.to_owned(), response));
+    }
+
+    /// Every request made, in order.
+    pub(crate) fn requests(&self) -> Vec<HttpRequest> {
+        lock(&self.requests).clone()
+    }
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl HttpClient for FakeProvider {
+    /// `request-failed` for a URL nothing answers.
+    async fn send(&self, request: HttpRequest) -> Result<HttpResponse> {
+        let answer = lock(&self.answers)
+            .iter()
+            .find(|(prefix, _)| request.url.starts_with(prefix.as_str()))
+            .map(|(_, response)| response.clone());
+        lock(&self.requests).push(request);
+        answer.ok_or(Error::new("request-failed"))
+    }
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl Credentials for FakeProvider {
+    async fn credential(&self, provider: &str) -> Result<Option<String>> {
+        Ok(lock(&self.keys).get(provider).cloned())
+    }
+}
+
+/// What a library's `load` takes in a test, past the build and its files: a model of no capability in particular, and
+/// a host with no keys and no network.
+#[cfg(native)]
+pub(crate) struct Loading {
+    model: ModelEntry,
+    host: Arc<dyn Host>,
+}
+
+#[cfg(native)]
+impl Loading {
+    pub(crate) fn new() -> Self {
+        Self {
+            model: model("test", Capability::Stt, Vec::new()),
+            host: Arc::new(FakeHost),
+        }
+    }
+
+    /// `build`, with `files`, on `accelerator`.
+    pub(crate) fn of<'a>(
+        &'a self,
+        build: &'a BuildEntry,
+        accelerator: Accelerator,
+        files: &'a crate::install::Installed,
+    ) -> crate::backend::Load<'a> {
+        crate::backend::Load {
+            model: &self.model,
+            build,
+            accelerator,
+            files,
+            host: &self.host,
+        }
+    }
 }

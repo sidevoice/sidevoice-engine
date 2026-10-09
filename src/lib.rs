@@ -1,12 +1,12 @@
-//! The brain of local models: which models exist, which build of each runs on this device, which are installed, and
-//! the models an app loads to transcribe, to speak and to detect speech.
+//! The brain of voice models, local and remote: which models exist, which build of each runs on this device, which are
+//! installed, and the models an app loads to transcribe, to speak and to detect speech.
 //!
-//! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads) and
-//! the [`CatalogSource`]s to merge, usually the [`BundledCatalog`] and any others. A native build ships one host,
-//! [`NativeHost`], which keeps its files in a directory the app chooses; any other host can stand in for it. Backends
-//! are not passed in: they belong to the engine, and which ones a build contains is decided when it is compiled
-//! ([`Engine::backends`] names them). Nothing is downloaded or loaded until [`Engine::install`] or [`Engine::load`],
-//! and a [`LoadedModel`] is unloaded when the last one of its build is dropped.
+//! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads, API
+//! calls, keys) and the [`CatalogSource`]s to merge, usually the [`BundledCatalog`] and any others. A native build
+//! ships one host, [`NativeHost`], which keeps its files in a directory the app chooses; any other host can stand in
+//! for it. Backends are not passed in: they belong to the engine, and which ones a build contains is decided when it
+//! is compiled ([`Engine::backends`] names them). Nothing is downloaded or loaded until [`Engine::install`] or
+//! [`Engine::load`], and a [`LoadedModel`] is unloaded when the last one of its build is dropped.
 //!
 //! Compiled to wasm32, the crate is also the npm package `@sidevoice/engine`: `web` is its bridge to JavaScript, and
 //! exists in no other build.
@@ -38,7 +38,8 @@ pub use engine::{
     VadOptions, VadOutput, VadStream,
 };
 pub use host::{
-    Accelerator, Capabilities, Download, Fetcher, FolderWriter, Host, Runs, Storage, StorageWriter,
+    Accelerator, Capabilities, Credentials, Download, Fetcher, FolderWriter, Host, HttpClient,
+    HttpRequest, HttpResponse, NoCredentials, Runs, Storage, StorageWriter,
 };
 #[cfg(native)]
 pub use host::{NativeHost, TreeWriter};

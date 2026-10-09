@@ -1,6 +1,6 @@
-//! The catalogue of local models: the merge of every source's fragment. Three levels: a family (one loader: whisper,
-//! kokoro, ...), its models, and each model's builds, one per way to run it (whisper-small: ONNX for sherpa-onnx and
-//! transformers.js, GGML for whisper.cpp, MLX for Apple).
+//! The catalogue of models, local and remote: the merge of every source's fragment. Three levels: a family (one
+//! loader: whisper, kokoro, ...), its models, and each model's builds, one per way to run it (whisper-small: ONNX for
+//! sherpa-onnx and transformers.js, GGML for whisper.cpp, MLX for Apple; gpt-4o-transcribe: OpenAI's API).
 //!
 //! Inside: `family` and `model` (the shape, read strictly: an unknown or a missing key is an error) and `bundled`
 //! (the families this repository ships, `catalog/families/<family>.json`, compiled in).
@@ -93,6 +93,12 @@ pub enum Problem {
         /// Its id.
         build: String,
     },
+    /// A build of a remote backend with files or without the provider's id of its model (`api_model`), or a build of a
+    /// backend that runs models here with an `api_model`.
+    RemoteBuildMismatch {
+        /// Its id.
+        build: String,
+    },
     /// Two files of one build with this key.
     DuplicateFile {
         /// The build.
@@ -166,9 +172,14 @@ impl Catalog {
             .filter(move |model| model.capabilities.contains(&capability))
     }
 
-    /// What is wrong with the merged catalogue, given which backend ids are `known`; empty if nothing is.
+    /// What is wrong with the merged catalogue, given which backend ids are `known` and which of those are `remote`;
+    /// empty if nothing is.
     #[must_use]
-    pub(crate) fn check(&self, known: &dyn Fn(&str) -> bool) -> Vec<Problem> {
+    pub(crate) fn check(
+        &self,
+        known: &dyn Fn(&str) -> bool,
+        remote: &dyn Fn(&str) -> bool,
+    ) -> Vec<Problem> {
         let mut problems = Vec::new();
         let (mut families, mut models, mut builds) =
             (HashSet::new(), HashSet::new(), HashSet::new());
@@ -206,7 +217,7 @@ impl Catalog {
                             build: build.id.clone(),
                         });
                     }
-                    check_build(build, known, &mut problems);
+                    check_build(build, known, remote, &mut problems);
                 }
             }
         }
@@ -214,18 +225,36 @@ impl Catalog {
     }
 }
 
-/// A build's own problems: its backend and its files.
-fn check_build(build: &BuildEntry, known: &dyn Fn(&str) -> bool, problems: &mut Vec<Problem>) {
+/// A build's own problems: its backend, and its files or its remote model.
+fn check_build(
+    build: &BuildEntry,
+    known: &dyn Fn(&str) -> bool,
+    remote: &dyn Fn(&str) -> bool,
+    problems: &mut Vec<Problem>,
+) {
     if !known(&build.backend) {
         problems.push(Problem::UnknownBackend {
             build: build.id.clone(),
             backend: build.backend.clone(),
         });
     }
-    if build.files.is_empty() {
-        problems.push(Problem::BuildWithoutFiles {
-            build: build.id.clone(),
-        });
+    if remote(&build.backend) {
+        if !build.files.is_empty() || build.api_model.is_none() {
+            problems.push(Problem::RemoteBuildMismatch {
+                build: build.id.clone(),
+            });
+        }
+    } else {
+        if build.files.is_empty() {
+            problems.push(Problem::BuildWithoutFiles {
+                build: build.id.clone(),
+            });
+        }
+        if build.api_model.is_some() {
+            problems.push(Problem::RemoteBuildMismatch {
+                build: build.id.clone(),
+            });
+        }
     }
     for (argument, paths) in &build.call_params {
         if !CALL_ARGUMENTS.contains(&argument.as_str()) || paths.is_empty() {

@@ -3,11 +3,8 @@
 use std::sync::Arc;
 
 use super::Memory;
-use crate::backend::{BackendModel, Library};
-use crate::catalog::BuildEntry;
+use crate::backend::{BackendModel, Library, Load};
 use crate::engine::loaded::Resident;
-use crate::host::Accelerator;
-use crate::install::Installed;
 use crate::{async_trait, Error, Result};
 
 #[cfg(web)]
@@ -18,12 +15,7 @@ struct NoLibrary;
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 impl Library for NoLibrary {
-    async fn load(
-        &self,
-        _build: &BuildEntry,
-        _accelerator: Accelerator,
-        _files: &Installed,
-    ) -> Result<Box<dyn BackendModel>> {
+    async fn load(&self, _load: Load<'_>) -> Result<Box<dyn BackendModel>> {
         Err(Error::new("not-implemented"))
     }
 }

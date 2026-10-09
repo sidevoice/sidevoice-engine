@@ -2,7 +2,7 @@
 
 use super::{Catalog, CatalogFragment, CatalogSource, Problem};
 use crate::test_support::{build, family, model, FakeCatalog};
-use crate::{Capability, Family, Result};
+use crate::{BuildEntry, Capability, Family, Result};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -21,14 +21,16 @@ impl CatalogSource for Families {
 fn problems(families: Vec<Family>) -> Vec<Problem> {
     Catalog::merge(&[Box::new(Families(families)) as Box<dyn CatalogSource>])
         .expect("catalogue")
-        .check(&crate::backend::is_known)
+        .check(&crate::backend::is_known, &crate::backend::is_remote)
 }
 
 #[test]
 fn a_consistent_catalogue_has_no_problems() {
     let catalog = Catalog::merge(&[Box::new(FakeCatalog) as Box<dyn CatalogSource>]);
     assert_eq!(
-        catalog.expect("catalogue").check(&crate::backend::is_known),
+        catalog
+            .expect("catalogue")
+            .check(&crate::backend::is_known, &crate::backend::is_remote),
         []
     );
 }
@@ -40,7 +42,7 @@ fn sources_merge_in_order_and_a_family_twice_is_a_problem() {
         Box::new(FakeCatalog),
     ])
     .expect("catalogue");
-    let problems = catalog.check(&crate::backend::is_known);
+    let problems = catalog.check(&crate::backend::is_known, &crate::backend::is_remote);
     assert!(problems.contains(&Problem::DuplicateFamily {
         family: "whisper".to_owned()
     }));
@@ -234,4 +236,41 @@ fn call_params_take_one_path_or_a_list() {
         ["canary.src_lang", "canary.tgt_lang"]
     );
     assert_eq!(build.call_params["other"], ["x.y"]);
+}
+
+#[test]
+fn a_remote_build_names_its_model_and_has_no_files_and_a_local_one_the_other_way_round() {
+    let mut remote = build("r/ok", "openai", 0);
+    remote.files.clear();
+    remote.api_model = Some("gpt-4o-transcribe".to_owned());
+    let with_files = BuildEntry {
+        id: "r/files".to_owned(),
+        api_model: remote.api_model.clone(),
+        ..build("r/files", "openai", 0)
+    };
+    let no_model = BuildEntry {
+        id: "r/no-model".to_owned(),
+        api_model: None,
+        ..remote.clone()
+    };
+    let local = BuildEntry {
+        api_model: Some("whisper-1".to_owned()),
+        ..build("l/api", "sherpa-onnx", 1)
+    };
+    let models = vec![model(
+        "m",
+        Capability::Stt,
+        vec![remote, with_files, no_model, local],
+    )];
+    let mismatch = |build: &str| Problem::RemoteBuildMismatch {
+        build: build.to_owned(),
+    };
+    assert_eq!(
+        problems(vec![family("f", models)]),
+        [
+            mismatch("r/files"),
+            mismatch("r/no-model"),
+            mismatch("l/api")
+        ]
+    );
 }

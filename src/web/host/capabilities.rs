@@ -44,6 +44,7 @@ fn accelerator(id: &str) -> Option<Accelerator> {
         "metal" => Accelerator::Metal,
         "webgpu" => Accelerator::WebGpu,
         "wasm" => Accelerator::Wasm,
+        "remote" => Accelerator::Remote,
         _ => return None,
     })
 }
