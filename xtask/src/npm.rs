@@ -17,8 +17,9 @@ const PACKAGE: &str = "@sidevoice/engine";
 const STEM: &str = "sidevoice_engine";
 /// The backends the web build registers: what `npm-smoke` must find in the packaged build.
 const WEB_BACKENDS: &[&str] = &["transformers-js"];
-/// The remote providers every build registers, by id: what `npm-smoke` must find in the packaged build too.
-const PROVIDERS: &[&str] = &["elevenlabs", "openai"];
+/// The catalogues every build has: the local one, then each remote provider by id; what `npm-smoke` must find in the
+/// packaged build too.
+const CATALOGS: &[&str] = &["local", "elevenlabs", "openai"];
 const SMOKE_JS: &str = include_str!("../npm/smoke.mjs");
 
 fn parse(bytes: &[u8], what: &str) -> Result<Value> {
@@ -95,10 +96,10 @@ pub(crate) fn smoke() -> Result<()> {
             "the packaged engine has the backends {found}, not {want}"
         ));
     }
-    let (found, want) = (&report["providers"], json!(PROVIDERS));
+    let (found, want) = (&report["catalogs"], json!(CATALOGS));
     if *found != want {
         return Err(format!(
-            "the packaged engine has the providers {found}, not {want}"
+            "the packaged engine has the catalogues {found}, not {want}"
         ));
     }
     println!("{PACKAGE}@{version} installs and runs: {report}");

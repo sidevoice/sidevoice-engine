@@ -1,4 +1,4 @@
-//! The engine over fake hosts, catalogues and a fake backend. What [`Engine::models`] says: builds ranked, those that
+//! The engine over fake hosts, catalogues and a fake backend. What the local catalogue's models say: builds ranked, those that
 //! run here first, the rest with why not, and what is installed. Then the interface: install, load (installing first,
 //! one model in memory per build, one library per backend, closed with its last model), the build `load` chooses,
 //! what fails and why, uninstalling, and a loaded model's calls: resampled audio, voices described by the catalogue,

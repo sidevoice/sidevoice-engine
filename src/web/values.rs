@@ -5,8 +5,8 @@ use js_sys::{Array, Float32Array, Object};
 use wasm_bindgen::JsValue;
 
 use crate::{
-    Accelerator, Audio, Capability, Error, Gender, Model, ModelBuild, Progress, Provider,
-    ProviderModel, Reason, VadEvent, VadOptions, VadOutput, Voice,
+    Accelerator, Audio, Capability, CatalogModel, CatalogStatus, Error, Gender, Model, ModelBuild,
+    Progress, ProviderModel, Reason, VadEvent, VadOptions, VadOutput, Voice,
 };
 
 #[cfg(test)]
@@ -65,26 +65,23 @@ fn build(build: &ModelBuild) -> JsValue {
 }
 
 /// `{ code, params: { needs?, has? } }`.
-/// `{ id, name, description, status?, stale, models }`.
-pub(super) fn provider(provider: &Provider) -> JsValue {
+/// `{ reason?, stale, detail? }`.
+pub(super) fn catalog_status(status: &CatalogStatus) -> JsValue {
     object(&[
-        ("id", Some(provider.id.into())),
-        ("name", Some(provider.name.into())),
-        ("description", Some(provider.description.into())),
-        ("status", provider.status.as_ref().map(reason)),
-        ("stale", Some(provider.stale.into())),
-        (
-            "models",
-            Some(
-                provider
-                    .models
-                    .iter()
-                    .map(provider_model)
-                    .collect::<Array>()
-                    .into(),
-            ),
-        ),
+        ("reason", status.reason.as_ref().map(reason)),
+        ("stale", Some(status.stale.into())),
+        ("detail", status.detail.as_deref().map(JsValue::from)),
     ])
+}
+
+/// A local model (`model`) or a remote one (`provider_model`), with its `kind`, `"local"` or `"remote"`.
+pub(super) fn catalog_model(model: &CatalogModel) -> JsValue {
+    let (value, kind) = match model {
+        CatalogModel::Local(local) => (self::model(local), "local"),
+        CatalogModel::Remote(remote) => (provider_model(remote), "remote"),
+    };
+    let _ = js_sys::Reflect::set(&value, &"kind".into(), &kind.into());
+    value
 }
 
 /// `{ id, capabilities, languages, voices, speed? }`.
@@ -160,6 +157,19 @@ pub(super) fn capability(capability: Capability) -> &'static str {
         Capability::Vad => "vad",
         Capability::EndOfTurn => "end-of-turn",
     }
+}
+
+/// The capability JavaScript names `name` (as [`capability`] names it): `invalid-capability` for any other.
+pub(super) fn capability_named(name: &str) -> Result<Capability, Error> {
+    [
+        Capability::Stt,
+        Capability::Tts,
+        Capability::Vad,
+        Capability::EndOfTurn,
+    ]
+    .into_iter()
+    .find(|known| capability(*known) == name)
+    .ok_or(Error::new("invalid-capability"))
 }
 
 /// An accelerator's stable id, as a JavaScript host and the catalogue name it.

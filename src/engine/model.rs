@@ -1,5 +1,6 @@
-//! A model as this engine sees it, what [`Engine::models`](crate::Engine::models) lists: its catalogue data, whether it
-//! is installed, every build of it ranked with whether it runs here and why not, and the build the engine recommends.
+//! A local model as this engine sees it, what the local catalogue lists ([`Catalog::models`](crate::Catalog::models)):
+//! its catalogue data, whether it is installed, every build of it ranked with whether it runs here and why not, and
+//! the build the engine recommends.
 
 use crate::catalog::{Capability, Voice};
 use crate::host::Accelerator;

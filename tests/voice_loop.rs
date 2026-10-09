@@ -1,6 +1,6 @@
 //! The voice loop for real, through the engine's public API only, as an app runs it: `NativeHost`, the bundled
-//! catalogue, `Engine::models` (the build the plan names, which must run here), `Engine::load`, then the loaded model's `as_tts`
-//! (`voices`, `speak`) and `as_stt` (`transcribe`).
+//! catalogue, the local catalogue's models (the build the plan names, which must run here), `Engine::load`, then the
+//! loaded model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`).
 //!
 //! What it runs is data, `tests/voice_loop.json`, which names catalogue builds, so one model can be heard on several
 //! backends (Whisper on sherpa-onnx and on whisper.cpp): each text-to-speech build says its language's sentence with the voice
@@ -37,8 +37,8 @@ use std::{env, fs};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
-    Accelerator, BundledCatalog, Cancel, Engine, Host, LocalModel, NativeHost, Progress, Vad,
-    VadEvent, VadOptions,
+    Accelerator, BundledCatalog, Cancel, CatalogModel, Engine, Host, LocalModel, NativeHost,
+    Progress, Vad, VadEvent, VadOptions, LOCAL_CATALOG,
 };
 
 #[path = "voice_loop/audio.rs"]
@@ -365,9 +365,16 @@ fn load(
     build: &str,
     loaded_on: &mut BTreeMap<String, Option<Accelerator>>,
 ) -> Result<LocalModel> {
-    let models = block_on(engine.models()).map_err(|e| format!("the models: {e}"))?;
+    let local = engine
+        .catalog(LOCAL_CATALOG)
+        .map_err(|e| format!("the local catalogue: {e}"))?;
+    let models = block_on(local.models(None)).map_err(|e| format!("the models: {e}"))?;
     let (model, entry) = models
         .iter()
+        .filter_map(|model| match model {
+            CatalogModel::Local(model) => Some(model),
+            _ => None,
+        })
         .find_map(|model| {
             let entry = model.builds.iter().find(|entry| entry.id == build)?;
             Some((model, entry))

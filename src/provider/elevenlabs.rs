@@ -2,10 +2,16 @@
 //! a model is the provider's, called through the host's HTTP with the key the host hands over for each call (the
 //! `xi-api-key` header).
 //!
-//! - Its models: `GET /v1/models` lists the key's models, which text-to-speech ones it has (`can_do_text_to_speech`)
-//!   and their languages; the models offered are those its spec describes (`elevenlabs/facts.json`, which
-//!   `cargo xtask pin-providers` derives from ElevenLabs' OpenAPI spec). The listing has no speech-to-text flag: the
-//!   Scribe models are the spec's, offered once the key lists, with the languages the listing gives them, if any.
+//! - Its models: what `GET /v1/models` lists decides. Every model it says speaks (`can_do_text_to_speech`) is offered
+//!   as text to speech, and every one it lists that the spec names as speech to text (the listing has no flag for it)
+//!   as speech to text; each with the languages the listing gives it.
+//! - Its facts, from ElevenLabs' OpenAPI spec (`api.elevenlabs.io/openapi.json`), read at run time, only enrich them. A
+//!   text-to-speech model with a generation request of its own in the spec (a schema with `text`, `voice` and a `const`
+//!   `model_id`: `ElevenFlashV2_5Request`, ...) takes the `language_code` field if that request has one, and the speed
+//!   range of its `voice_settings`; any other follows the general request of `/v1/text-to-speech/{voice}`, which takes
+//!   `language_code`, and a speed only where its `voice_settings` give a range. The speech-to-text models are the ids
+//!   the speech-to-text request gives as examples (the spec enumerates none), with its `language_code` field. And the
+//!   speech path must still offer `pcm_24000`.
 //! - Its voices: the account's alone (`GET /v1/voices`: the defaults, and those cloned, designed or added), never the
 //!   shared library. A voice's languages are its own `labels.language` first, then each of its verified languages
 //!   (`verified_languages`: the locale where it states one), each once; its gender is its `labels.gender` where that
@@ -15,18 +21,16 @@
 //!   the spec gives the request (`language_code`), as its primary subtag. The transcript is the answer's `text`.
 //! - Text to speech: `POST /v1/text-to-speech/{voice}?output_format=pcm_24000`, JSON with the text and the model, and
 //!   the speed in `voice_settings` (within the model's range) when it is not 1 and the model takes one; the language
-//!   goes in `language_code` for a model whose request the spec gives one (Flash v2.5 and v3 do, Multilingual v2 does
-//!   not). It answers 16-bit mono samples at 24 kHz.
+//!   goes in `language_code` where the model's request takes it (Flash v2.5 and v3 do, Multilingual v2 does not). It
+//!   answers 16-bit mono samples at 24 kHz.
 //!
 //! Streaming is not used (sidevoice-engine#35).
-
-use std::sync::LazyLock;
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::api::{self, Form};
-use super::facts::{Facts, ModelFacts};
+use super::facts::{self, Facts, ModelFacts};
 use super::registry::ProviderFactory;
 use super::{Adapter, Api, ProviderModel, ProviderSpec};
 use crate::backend::{BackendModel, SttModel, TtsModel};
@@ -45,17 +49,12 @@ const API: &str = "https://api.elevenlabs.io/v1";
 const SPEECH_FORMAT: &str = "pcm_24000";
 const SPEECH_RATE: u32 = 24_000;
 
-/// What ElevenLabs' spec says that its API does not.
-static FACTS: LazyLock<Facts> =
-    LazyLock::new(|| Facts::parse(include_str!("elevenlabs/facts.json")));
-
 struct ElevenLabs;
 
 const SPEC: ProviderSpec = ProviderSpec {
     id: "elevenlabs",
     name: "ElevenLabs",
-    description:
-        "Speech to text with Scribe and text to speech on ElevenLabs' API, with the app's key.",
+    spec: "https://api.elevenlabs.io/openapi.json",
 };
 
 inventory::submit! { ProviderFactory(|| Box::new(ElevenLabs)) }
@@ -93,38 +92,108 @@ impl Adapter for ElevenLabs {
         &SPEC
     }
 
-    /// `GET /v1/models`, kept to what the spec describes, in the spec's order.
-    async fn models(&self, api: &Api) -> Result<Vec<ProviderModel>> {
+    fn facts(&self, spec: &Value) -> Result<Facts> {
+        let path = &spec["paths"]["/v1/text-to-speech/{voice_id}"]["post"];
+        let format = path["parameters"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|parameter| parameter["name"] == "output_format")
+            .map(|parameter| facts::strings(spec, &parameter["schema"]))
+            .unwrap_or_default();
+        if !format.iter().any(|format| format == SPEECH_FORMAT) {
+            return Err(facts::unreadable());
+        }
+        let schemas = spec["components"]["schemas"]
+            .as_object()
+            .ok_or_else(facts::unreadable)?;
+        let mut speakers = Vec::new();
+        for request in schemas.values() {
+            let properties = &request["properties"];
+            let (Some(id), true, true) = (
+                properties["model_id"]["const"].as_str(),
+                properties.get("text").is_some(),
+                properties.get("voice").is_some(),
+            ) else {
+                continue;
+            };
+            let language = properties.get("language_code").map(|_| "language_code");
+            let settings = facts::object(spec, &properties["voice_settings"]);
+            let speed = facts::range(spec, &settings["properties"]["speed"]);
+            speakers.push(ModelFacts::new(id, language, speed));
+        }
+        speakers.sort_by(|a, b| a.model.cmp(&b.model));
+        // The general request, for a model the spec has no request of its own for.
+        let general = path["requestBody"]["content"]
+            .as_object()
+            .and_then(|content| content.values().next())
+            .map(|content| facts::object(spec, &content["schema"]))
+            .ok_or_else(facts::unreadable)?;
+        let general_language = general["properties"]
+            .get("language_code")
+            .map(|_| "language_code");
+        let general_settings = facts::object(spec, &general["properties"]["voice_settings"]);
+        let general_speed = facts::range(spec, &general_settings["properties"]["speed"]);
+        let body = &spec["paths"]["/v1/speech-to-text"]["post"]["requestBody"]["content"];
+        let body = body
+            .as_object()
+            .and_then(|content| content.values().next())
+            .map(|content| facts::resolve(spec, &content["schema"]))
+            .ok_or_else(facts::unreadable)?;
+        let language = body["properties"]
+            .get("language_code")
+            .map(|_| "language_code");
+        let scribes: Vec<_> = facts::strings(spec, &body["properties"]["model_id"]["examples"])
+            .iter()
+            .map(|id| ModelFacts::new(id, language, None))
+            .collect();
+        if scribes.is_empty() {
+            return Err(facts::unreadable());
+        }
+        Ok(Facts {
+            speech_to_text: scribes,
+            text_to_speech: speakers,
+            transcription: ModelFacts::new("", language, None),
+            speech: ModelFacts::new("", general_language, general_speed),
+            voices: Vec::new(),
+        })
+    }
+
+    /// `GET /v1/models`, in its order: every model it says speaks (`can_do_text_to_speech`), and every one it lists
+    /// that the spec names as speech to text (the listing has no flag for it); each with the languages it lists, and
+    /// the speed range its facts, or the general request's, give.
+    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<ProviderModel>> {
         let key = api.key().await?;
         let answer = api
             .list(request("GET", format!("{API}/models"), key))
             .await?;
         let listed = api::listed(&answer)?;
         let listed = array(&listed, None)?;
-        let find = |id: &str| listed.iter().find(|model| model["model_id"] == id);
-        Ok(FACTS
-            .models()
-            .filter_map(|(capability, facts)| {
-                let found = find(&facts.model);
-                let speaks = found.is_some_and(|model| model["can_do_text_to_speech"] == true);
-                if capability == Capability::Tts && !speaks {
+        let transcribes = |id: &str| facts.speech_to_text.iter().any(|facts| facts.model == id);
+        Ok(listed
+            .iter()
+            .filter_map(|model| {
+                let id = model["model_id"].as_str()?;
+                let capability = if model["can_do_text_to_speech"] == true {
+                    Capability::Tts
+                } else if transcribes(id) {
+                    Capability::Stt
+                } else {
                     return None;
-                }
+                };
                 Some(ProviderModel {
-                    id: facts.model.clone(),
+                    id: id.to_owned(),
                     capabilities: vec![capability],
-                    languages: found
-                        .map(|model| strings(&model["languages"], "language_id"))
-                        .unwrap_or_default(),
+                    languages: strings(&model["languages"], "language_id"),
                     voices: Vec::new(),
-                    speed: facts.speed,
+                    speed: facts.of(capability, id).speed,
                 })
             })
             .collect())
     }
 
     /// `GET /v1/voices`: the account's voices.
-    async fn voices(&self, api: &Api) -> Result<Vec<Voice>> {
+    async fn voices(&self, api: &Api, _facts: &Facts) -> Result<Vec<Voice>> {
         let key = api.key().await?;
         let answer = api
             .list(request("GET", format!("{API}/voices"), key))
@@ -136,11 +205,17 @@ impl Adapter for ElevenLabs {
             .collect())
     }
 
-    fn open(&self, api: Api, model: &ProviderModel) -> Result<Box<dyn BackendModel>> {
-        let (capability, facts) = FACTS
-            .model(&model.id)
+    fn open(
+        &self,
+        api: Api,
+        model: &ProviderModel,
+        facts: &Facts,
+    ) -> Result<Box<dyn BackendModel>> {
+        let capability = *model
+            .capabilities
+            .first()
             .ok_or(Error::new("unsupported-model"))?;
-        let facts = facts.clone();
+        let facts = facts.of(capability, &model.id);
         Ok(match capability {
             Capability::Stt => Box::new(Scribe { api, facts }),
             _ => Box::new(Speaker {

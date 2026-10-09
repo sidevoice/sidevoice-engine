@@ -1,6 +1,6 @@
 //! What `Catalog::check` finds in a merged catalogue, and how sources merge.
 
-use super::{Catalog, CatalogFragment, CatalogSource, Problem};
+use super::{CatalogFragment, CatalogSource, MergedCatalog, Problem};
 use crate::test_support::{build, family, model, FakeCatalog};
 use crate::{Capability, Family, Result};
 
@@ -19,14 +19,14 @@ impl CatalogSource for Families {
 }
 
 fn problems(families: Vec<Family>) -> Vec<Problem> {
-    Catalog::merge(&[Box::new(Families(families)) as Box<dyn CatalogSource>])
+    MergedCatalog::merge(&[Box::new(Families(families)) as Box<dyn CatalogSource>])
         .expect("catalogue")
         .check(&crate::backend::is_known)
 }
 
 #[test]
 fn a_consistent_catalogue_has_no_problems() {
-    let catalog = Catalog::merge(&[Box::new(FakeCatalog) as Box<dyn CatalogSource>]);
+    let catalog = MergedCatalog::merge(&[Box::new(FakeCatalog) as Box<dyn CatalogSource>]);
     assert_eq!(
         catalog.expect("catalogue").check(&crate::backend::is_known),
         []
@@ -35,7 +35,7 @@ fn a_consistent_catalogue_has_no_problems() {
 
 #[test]
 fn sources_merge_in_order_and_a_family_twice_is_a_problem() {
-    let catalog = Catalog::merge(&[
+    let catalog = MergedCatalog::merge(&[
         Box::new(FakeCatalog) as Box<dyn CatalogSource>,
         Box::new(FakeCatalog),
     ])
@@ -141,7 +141,7 @@ fn models_are_found_by_any_of_their_capabilities() {
         vec![build("both/b", "sherpa-onnx", 1)],
     );
     both.capabilities.push(Capability::Tts);
-    let catalog = Catalog::merge(&[
+    let catalog = MergedCatalog::merge(&[
         Box::new(Families(vec![family("f", vec![both])])) as Box<dyn CatalogSource>
     ])
     .expect("catalogue");

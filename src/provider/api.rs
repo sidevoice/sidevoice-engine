@@ -1,8 +1,8 @@
 //! A provider's API as its adapter calls it: through the host's HTTP, with the key the host hands over for each call
 //! ([`Api`]); the statuses every provider answers alike; and the request and answer bodies they share (multipart forms,
-//! JSON, a WAV file of a turn, 16-bit PCM back).
+//! JSON, a WAV file of a turn, 16-bit PCM back); and the provider's OpenAPI spec, read as any page is.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::host::{Host, HttpRequest};
 use crate::{Error, Result};
@@ -12,11 +12,12 @@ use Kind::{Call, Listing};
 #[cfg(test)]
 mod tests;
 
-/// One provider's API, through the host: its HTTP and its key.
+/// One provider's API, through the host: its HTTP and its key; and what the provider said when it last refused.
 #[derive(Clone)]
 pub(crate) struct Api {
     host: Arc<dyn Host>,
     id: &'static str,
+    detail: Arc<Mutex<Option<String>>>,
 }
 
 impl Api {
@@ -25,7 +26,39 @@ impl Api {
         Self {
             host: Arc::clone(host),
             id,
+            detail: Arc::default(),
         }
+    }
+
+    /// What the provider said when it last refused a request (its own status or code, and its message), for a
+    /// developer to read: never UI, never parsed further.
+    pub(crate) fn detail(&self) -> Option<String> {
+        self.detail
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The provider's OpenAPI spec at `url`, read without the key: `provider-spec-unreadable` when it cannot be
+    /// fetched or is not JSON.
+    pub(crate) async fn spec(&self, url: &str) -> Result<serde_json::Value> {
+        let request = HttpRequest {
+            method: "GET",
+            url: url.to_owned(),
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        let unreadable = || Error::new("provider-spec-unreadable");
+        let response = self
+            .host
+            .http()
+            .send(request)
+            .await
+            .map_err(|_| unreadable())?;
+        if !(200..=299).contains(&response.status) {
+            return Err(unreadable());
+        }
+        serde_json::from_slice(&response.body).map_err(|_| unreadable())
     }
 
     /// The provider's key, asked of the host for this call alone: `credential-missing` when it has none.
@@ -49,7 +82,8 @@ impl Api {
     }
 
     /// Sends `request`, a listing, and returns the body of a success: as [`Api::call`], but a key the provider
-    /// knows and does not let list (403) is `listing-not-permitted`, an account out of credit or asking to slow down
+    /// knows and does not let list (403, or a 401 that says a permission is missing: ElevenLabs answers a scoped key
+    /// that lacks one so) is `listing-not-permitted`, an account out of credit or asking to slow down
     /// (402, 429) `provider-quota`, a server failing (5xx) or no answer at all `provider-unreachable`, and any other
     /// failure `listing-failed`.
     pub(crate) async fn list(&self, request: HttpRequest) -> Result<Vec<u8>> {
@@ -63,7 +97,13 @@ impl Api {
         let response = self.host.http().send(request).await?;
         match response.status {
             200..=299 => Ok(response.body),
-            status => Err(failed(self.id, status, &response.body, kind)),
+            status => {
+                let said = said(&response.body);
+                let error = failed(self.id, status, &response.body, said.as_ref(), kind);
+                *self.detail.lock().unwrap_or_else(PoisonError::into_inner) =
+                    said.map(|said| said.text());
+                Err(error)
+            }
         }
     }
 }
@@ -75,8 +115,48 @@ enum Kind {
     Listing,
 }
 
+/// What a provider says when it refuses: its own status or code, and its message. ElevenLabs answers
+/// `{"detail": {"status" or "code", "message"}}`, OpenAI `{"error": {"code" or "type", "message"}}`.
+struct Said {
+    status: Option<String>,
+    message: Option<String>,
+}
+
+impl Said {
+    fn text(&self) -> String {
+        match (&self.status, &self.message) {
+            (Some(status), Some(message)) => format!("{status}: {message}"),
+            (Some(said), None) | (None, Some(said)) => said.clone(),
+            (None, None) => String::new(),
+        }
+    }
+
+    /// Whether it says the key lacks a permission.
+    fn lacks_permission(&self) -> bool {
+        matches!(
+            self.status.as_deref(),
+            Some("missing_permissions" | "insufficient_permissions")
+        )
+    }
+}
+
+fn said(body: &[u8]) -> Option<Said> {
+    let body: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let detail = [&body["detail"], &body["error"]]
+        .into_iter()
+        .find(|detail| detail.is_object())?;
+    let text = |field: &str| detail[field].as_str().map(str::to_owned);
+    let said = Said {
+        status: text("status")
+            .or_else(|| text("code"))
+            .or_else(|| text("type")),
+        message: text("message"),
+    };
+    (said.status.is_some() || said.message.is_some()).then_some(said)
+}
+
 /// The code for an answer of `status` to a request of `kind`, with what the provider said in the console on the web.
-fn failed(provider: &str, status: u16, body: &[u8], kind: Kind) -> Error {
+fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: Kind) -> Error {
     #[cfg(web)]
     web_sys::console::warn_4(
         &"sidevoice-engine: the provider answered".into(),
@@ -88,7 +168,9 @@ fn failed(provider: &str, status: u16, body: &[u8], kind: Kind) -> Error {
     );
     #[cfg(not(web))]
     let _ = (provider, body);
+    let lacks_permission = said.is_some_and(Said::lacks_permission);
     Error::new(match (status, kind) {
+        (401 | 403, Listing) if lacks_permission => "listing-not-permitted",
         (401, _) => "credential-rejected",
         (402, _) | (429, Listing) => "provider-quota",
         (403, Call(_)) => "credential-rejected",

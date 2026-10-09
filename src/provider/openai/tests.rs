@@ -1,10 +1,12 @@
-//! OpenAI's adapter against a fake provider: what its listing keeps, what each call sends (URL, key, form or JSON),
-//! what each answer becomes, and how refusals read; no key, no network.
+//! OpenAI's adapter against a fake provider: what it reads from its spec, what its listing keeps, what each call sends
+//! (URL, key, form or JSON), what each answer becomes, and how refusals read; no key, no network.
 
-use super::{OpenAi, FACTS};
+use serde_json::json;
+
+use super::OpenAi;
 use crate::backend::BackendModel;
-use crate::provider::{Adapter, ProviderModel};
-use crate::test_support::{block_on, contains, header, remote_api};
+use crate::provider::{Adapter, Facts, ProviderModel};
+use crate::test_support::{block_on, contains, header, openai_spec, remote_api};
 use crate::{Capability, Voice};
 
 #[cfg(web)]
@@ -39,25 +41,60 @@ fn speaker() -> ProviderModel {
     }
 }
 
+fn facts() -> Facts {
+    OpenAi.facts(&openai_spec()).expect("facts")
+}
+
 #[test]
-fn its_facts_say_which_models_transcribe_and_which_speak() {
-    let (capability, facts) = FACTS.model("gpt-4o-transcribe").expect("described");
-    assert_eq!(capability, Capability::Stt);
-    assert_eq!(facts.language.as_deref(), Some("language"));
-    let (capability, facts) = FACTS.model("gpt-4o-mini-tts").expect("described");
-    assert_eq!(capability, Capability::Tts);
+fn its_facts_come_from_its_requests_and_a_spec_without_them_is_unreadable() {
+    let facts = facts();
+    let ids = |models: &[crate::provider::facts::ModelFacts]| -> Vec<String> {
+        models.iter().map(|model| model.model.clone()).collect()
+    };
     assert_eq!(
-        (facts.language.as_deref(), facts.speed),
+        ids(&facts.speech_to_text),
+        ["whisper-1", "gpt-4o-transcribe"]
+    );
+    assert_eq!(ids(&facts.text_to_speech), ["tts-1", "gpt-4o-mini-tts"]);
+    assert_eq!(facts.voices, ["alloy", "ash", "fable", "nova"]);
+    let mut no_pcm = openai_spec();
+    no_pcm["components"]["schemas"]["CreateSpeechRequest"]["properties"]["response_format"]
+        ["enum"] = json!(["mp3"]);
+    let unreadable = OpenAi.facts(&no_pcm).map_err(|e| e.code);
+    assert_eq!(unreadable, Err("provider-spec-unreadable"));
+    assert_eq!(
+        OpenAi.facts(&json!({})).map_err(|e| e.code),
+        Err("provider-spec-unreadable")
+    );
+}
+
+#[test]
+fn what_each_kind_of_model_takes_comes_from_its_request() {
+    let facts = facts();
+    let stt = facts.of(Capability::Stt, "gpt-4o-transcribe");
+    assert_eq!(
+        (stt.language.as_deref(), stt.speed),
+        (Some("language"), None)
+    );
+    let tts = facts.of(Capability::Tts, "gpt-4o-mini-tts");
+    assert_eq!(
+        (tts.language.as_deref(), tts.speed),
         (None, Some([0.25, 4.0]))
     );
-    assert!(FACTS.voices.iter().any(|voice| voice == "alloy"));
+    let newer = facts.of(Capability::Tts, "gpt-5-tts");
+    assert_eq!(
+        (newer.model.as_str(), newer.speed),
+        ("gpt-5-tts", Some([0.25, 4.0])),
+        "a model the spec does not name follows the general speech request"
+    );
+    assert!(facts.voices.iter().any(|voice| voice == "alloy"));
 }
 
 #[test]
 fn the_listing_keeps_the_audio_models_the_spec_describes() {
     let (api, provider) = remote_api("openai");
     assert_eq!(
-        block_on(OpenAi.models(&api)).map_err(|e| e.code),
+        block_on(OpenAi.models(&api, &facts())).map_err(|e| e.code),
         Err("credential-missing")
     );
     assert!(provider.requests().is_empty(), "no key, no call");
@@ -68,7 +105,7 @@ fn the_listing_keeps_the_audio_models_the_spec_describes() {
         200,
         br#"{"object": "list", "data": [{"id": "gpt-4o-mini-tts"}, {"id": "gpt-4o"}, {"id": "gpt-4o-transcribe"}]}"#,
     );
-    let models = block_on(OpenAi.models(&api)).expect("listed");
+    let models = block_on(OpenAi.models(&api, &facts())).expect("listed");
     let listed: Vec<_> = models
         .iter()
         .map(|model| (model.id.as_str(), model.capabilities.clone(), model.speed))
@@ -87,8 +124,8 @@ fn the_listing_keeps_the_audio_models_the_spec_describes() {
         ("GET", Some("Bearer sk-test"))
     );
 
-    let voices = block_on(OpenAi.voices(&api)).expect("the spec's");
-    assert_eq!(voices.len(), FACTS.voices.len());
+    let voices = block_on(OpenAi.voices(&api, &facts())).expect("the spec's");
+    assert_eq!(voices.len(), facts().voices.len());
     assert_eq!(provider.requests().len(), 1, "voices make no call");
 }
 
@@ -104,12 +141,12 @@ fn a_listing_refused_reads_as_the_providers_status() {
         let (api, provider) = remote_api("openai");
         provider.key("openai", "sk-test");
         provider.answer("https://api.openai.com/", status, b"{}");
-        let listed = block_on(OpenAi.models(&api)).map_err(|e| e.code);
+        let listed = block_on(OpenAi.models(&api, &facts())).map_err(|e| e.code);
         assert_eq!(listed, Err(expected), "{status}");
     }
     let (api, provider) = remote_api("openai");
     provider.key("openai", "sk-test");
-    let listed = block_on(OpenAi.models(&api)).map_err(|e| e.code);
+    let listed = block_on(OpenAi.models(&api, &facts())).map_err(|e| e.code);
     assert_eq!(listed, Err("provider-unreachable"), "no answer");
 }
 
@@ -120,7 +157,7 @@ fn open(
     std::sync::Arc<crate::test_support::FakeProvider>,
 ) {
     let (api, provider) = remote_api("openai");
-    (OpenAi.open(api, model).expect("opened"), provider)
+    (OpenAi.open(api, model, &facts()).expect("opened"), provider)
 }
 
 #[test]
@@ -219,14 +256,19 @@ fn speech_is_asked_as_pcm_at_24_khz_with_a_listed_voice_and_a_speed_in_range() {
 }
 
 #[test]
-fn a_model_the_spec_does_not_describe_is_unsupported() {
+fn a_model_of_no_kind_is_unsupported() {
     let (api, _) = remote_api("openai");
     let unknown = ProviderModel {
         id: "gpt-4o".into(),
+        capabilities: Vec::new(),
         ..transcriber()
     };
     assert_eq!(
-        OpenAi.open(api, &unknown).map(drop).unwrap_err().code,
+        OpenAi
+            .open(api, &unknown, &facts())
+            .map(drop)
+            .unwrap_err()
+            .code,
         "unsupported-model"
     );
 }

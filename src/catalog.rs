@@ -43,7 +43,7 @@ pub struct CatalogFragment {
 
 /// The merged catalogue.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Catalog {
+pub(crate) struct MergedCatalog {
     families: Vec<Family>,
 }
 
@@ -138,7 +138,7 @@ pub enum Problem {
     },
 }
 
-impl Catalog {
+impl MergedCatalog {
     /// Every source's families, in the order of `sources`.
     pub(crate) fn merge(sources: &[Box<dyn CatalogSource>]) -> Result<Self> {
         let mut families = Vec::new();

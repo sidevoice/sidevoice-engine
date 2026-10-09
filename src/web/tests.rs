@@ -31,15 +31,21 @@ async fn rejection(promise: Promise) -> String {
 }
 
 #[wasm_bindgen_test]
-async fn a_web_engine_lists_every_model_with_its_web_builds_first() {
+async fn the_local_catalogue_lists_every_model_with_its_web_builds_first() {
     let engine = engine().await;
     assert_eq!(engine.backends(), ["transformers-js"]);
     // Whether a model is installed is asked of storage: without OPFS (Node), there is no answer.
     if crate::web::opfs::root().await.is_err() {
-        assert_eq!(rejection(engine.models()).await, "storage-failed");
+        assert_eq!(
+            rejection(engine.catalog("local".into()).expect("local").models(None)).await,
+            "storage-failed"
+        );
         return;
     }
-    let models: Array = JsFuture::from(engine.models()).await.unwrap().into();
+    let models: Array = JsFuture::from(engine.catalog("local".into()).expect("local").models(None))
+        .await
+        .unwrap()
+        .into();
     let whisper = models
         .iter()
         .find(|model| get(model, "id").as_string().as_deref() == Some("whisper-tiny"))

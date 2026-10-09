@@ -1,19 +1,19 @@
 //! The engine of one place: its host, its catalogue and the backends compiled into it, the remote providers compiled
-//! into it, and what an app does with a model. A local model: list them ([`Engine::models`]), install and uninstall
-//! one, and load one ([`Engine::load`]), which returns a [`LocalModel`], unloaded when dropped. A remote model: list
-//! the providers and their models ([`Engine::providers`], [`Engine::refresh`]) and make one ([`Engine::remote`]), a
-//! [`RemoteModel`](crate::RemoteModel). Either hands out the capability interfaces ([`Stt`](crate::Stt), ...).
+//! into it, and what an app does with a model. Every place models come from is one of its catalogues
+//! ([`Engine::catalogs`], [`Catalog`]: status, models, `refresh`, `load`), whose loaded models hand out the capability
+//! interfaces ([`Stt`](crate::Stt), ...). The local catalogue's builds are its own: install and uninstall one, and load
+//! one by name ([`Engine::load`]), a [`LocalModel`], unloaded when dropped.
 //!
-//! Inside: `model` (a model as [`Engine::models`] lists it), `local` ([`LocalModel`]), `providers` (the remote side),
-//! `memory` (weak references: one library per backend, one model per build) and `error` (why an engine cannot be
-//! built).
+//! Inside: `catalogs` (the catalogue interface), `model` (a local model as its catalogue lists it), `local`
+//! ([`LocalModel`]), `providers` (the remote side), `memory` (weak references: one library per backend, one model per
+//! build) and `error` (why an engine cannot be built).
 
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::backend::{self, Backend, BackendInfo};
 use crate::capability::Resident;
-use crate::catalog::{BuildEntry, Catalog, CatalogSource, ModelEntry, ModelFile};
+use crate::catalog::{BuildEntry, CatalogSource, MergedCatalog, ModelEntry, ModelFile};
 use crate::host::{Accelerator, Host};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
 use crate::provider::listing::Listings;
@@ -21,6 +21,7 @@ use crate::provider::{self, Adapter};
 use crate::resolver::{Reason, Rejection, Resolver};
 use crate::{Error, Result};
 
+mod catalogs;
 mod error;
 mod local;
 mod memory;
@@ -29,6 +30,7 @@ mod providers;
 #[cfg(test)]
 mod tests;
 
+pub use catalogs::{Catalog, CatalogModel, CatalogStatus, LoadedModel, LOCAL_CATALOG};
 pub use error::ConfigError;
 pub use local::LocalModel;
 pub use model::{Model, ModelBuild};
@@ -42,7 +44,7 @@ use memory::Memory;
 pub struct Engine {
     /// Shared with the remote models it makes, which make their calls through it.
     host: Arc<dyn Host>,
-    catalog: Catalog,
+    catalog: MergedCatalog,
     backends: Vec<Box<dyn Backend>>,
     providers: Vec<Box<dyn Adapter>>,
     /// The providers' listings, in memory only.
@@ -85,7 +87,7 @@ impl Engine {
         sources: Vec<Box<dyn CatalogSource>>,
         backends: Vec<Box<dyn Backend>>,
     ) -> Result<Self, ConfigError> {
-        let catalog = Catalog::merge(&sources).map_err(ConfigError::Source)?;
+        let catalog = MergedCatalog::merge(&sources).map_err(ConfigError::Source)?;
         let compiled: Vec<_> = backends.iter().map(|backend| backend.spec().id).collect();
         let problems = catalog.check(&|id| backend::is_known(id) || compiled.contains(&id));
         if !problems.is_empty() {
@@ -113,14 +115,14 @@ impl Engine {
             .collect()
     }
 
-    /// Every model of the catalogue, in catalogue order, each with its builds ranked (those that run here first, with
-    /// the accelerator each would use; the rest with why not), whether it is installed, and the build the engine
+    /// Every model of the local catalogue, in catalogue order, each with its builds ranked (those that run here first,
+    /// with the accelerator each would use; the rest with why not), whether it is installed, and the build the engine
     /// recommends: the first that runs here.
     ///
     /// # Errors
     ///
     /// What the host's storage fails with, asked what is installed.
-    pub async fn models(&self) -> Result<Vec<Model>> {
+    pub(crate) async fn models(&self) -> Result<Vec<Model>> {
         let caps = self.host.capabilities();
         let mut models = Vec::new();
         let mut entries = Vec::new();

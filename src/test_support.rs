@@ -712,13 +712,13 @@ impl FakeProvider {
         lock(&self.keys).remove(provider);
     }
 
-    /// A request whose URL starts with `prefix` is answered with `status` and `body` (the first such answer given).
+    /// A request whose URL starts with `prefix` is answered with `status` and `body` (the last such answer given: a later one replaces it).
     pub(crate) fn answer(&self, prefix: &str, status: u16, body: &[u8]) {
         let response = HttpResponse {
             status,
             body: body.to_vec(),
         };
-        lock(&self.answers).push((prefix.to_owned(), response));
+        lock(&self.answers).insert(0, (prefix.to_owned(), response));
     }
 
     /// Every request made, in order.
@@ -770,4 +770,26 @@ pub(crate) fn header<'a>(request: &'a HttpRequest, name: &str) -> Option<&'a str
 pub(crate) fn contains(body: &[u8], part: &str) -> bool {
     body.windows(part.len())
         .any(|window| window == part.as_bytes())
+}
+
+/// The parts of OpenAI's spec its facts come from, shaped as the spec shapes them: what the provider's tests read,
+/// and what a fake provider serves at its URL.
+pub(crate) fn openai_spec() -> serde_json::Value {
+    use serde_json::json;
+    json!({ "components": { "schemas": {
+        "CreateTranscriptionRequest": { "properties": {
+            "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["whisper-1", "gpt-4o-transcribe"] }] },
+            "language": { "type": "string" },
+        }},
+        "CreateSpeechRequest": { "properties": {
+            "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["tts-1", "gpt-4o-mini-tts"] }] },
+            "voice": { "anyOf": [
+                { "anyOf": [{ "$ref": "#/components/schemas/VoiceIdsShared" }, { "type": "string", "enum": ["fable", "nova"] }] },
+                { "type": "object", "properties": { "id": { "type": "string" } } },
+            ]},
+            "speed": { "type": "number", "minimum": 0.25, "maximum": 4 },
+            "response_format": { "type": "string", "enum": ["mp3", "pcm"] },
+        }},
+        "VoiceIdsShared": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["alloy", "ash"] }] },
+    }}})
 }

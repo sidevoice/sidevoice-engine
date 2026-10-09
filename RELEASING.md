@@ -33,7 +33,7 @@ manifest | publish | npm-publish`, each described at the top of `xtask/src/main.
 - `cargo xtask npm-smoke` installs that tarball into a scratch project (`target/npm smoke/`) with `npm install`,
   as a consumer does, and in Node imports `@sidevoice/engine`, loads its wasm from `node_modules` and creates a
   `WebEngine` on a plain-object host: it must have exactly the web build's backends (`transformers-js`) and the
-  remote providers (`elevenlabs`, `openai`), which proves the packaged build kept what it registers.
+  catalogues (`local`, `elevenlabs`, `openai`), which proves the packaged build kept what it registers.
 
 The wasm32 tests and `cargo xtask npm` need the wasm-bindgen CLI (`wasm-bindgen`, `wasm-bindgen-test-runner`) on the
 `PATH`, at the version of the `wasm-bindgen` crate in `Cargo.lock`. In CI, `.github/actions/setup` installs it with

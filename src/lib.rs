@@ -1,14 +1,14 @@
-//! The brain of voice models, local and remote. Two siblings produce models: the catalogue, of local models (which
-//! exist, which build of each runs on this device, which are installed: [`Engine::models`], [`Engine::load`], a
-//! [`LocalModel`]), and the remote providers (which models the app's key may use, listed live:
-//! [`Engine::providers`], [`Engine::remote`], a [`RemoteModel`]). Both hand out the same capability interfaces,
-//! [`Stt`], [`Tts`], [`Vad`] and [`EndOfTurn`]: transcribing with Whisper or with OpenAI is the same call.
+//! The brain of voice models, local and remote. Models come from catalogues, one interface ([`Catalog`], listed by
+//! [`Engine::catalogs`]): the local catalogue (which models exist, which build of each runs on this device, which are
+//! installed) and one per remote provider (which models the app's key may use, listed live). Each has a status, its
+//! models, `refresh` and `load`, and every model loaded hands out the same capability interfaces, [`Stt`], [`Tts`],
+//! [`Vad`] and [`EndOfTurn`]: transcribing with Whisper or with OpenAI is the same call.
 //!
 //! The platform is injected and mandatory: [`Engine::new`] takes a [`Host`] (capabilities, storage, downloads, API
 //! calls, keys) and the [`CatalogSource`]s to merge, usually the [`BundledCatalog`] and any others. A native build
 //! ships one host, [`NativeHost`], which keeps its files in a directory the app chooses; any other host can stand in
 //! for it. Backends and providers are not passed in: they belong to the engine, and which ones a build contains is
-//! decided when it is compiled ([`Engine::backends`], [`Engine::providers`]). Nothing is downloaded or loaded until
+//! decided when it is compiled ([`Engine::backends`], [`Engine::catalogs`]). Nothing is downloaded or loaded until
 //! [`Engine::install`] or [`Engine::load`], and a [`LocalModel`] is unloaded when the last one of its build is dropped.
 //!
 //! Compiled to wasm32, the crate is also the npm package `@sidevoice/engine`: `web` is its bridge to JavaScript, and
@@ -41,7 +41,10 @@ pub use catalog::{
     BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Gender, Memory,
     MemorySource, ModelEntry, ModelFile, Problem, Requires, Voice,
 };
-pub use engine::{ConfigError, Engine, LocalModel, Model, ModelBuild};
+pub use engine::{
+    Catalog, CatalogModel, CatalogStatus, ConfigError, Engine, LoadedModel, LocalModel, Model,
+    ModelBuild, LOCAL_CATALOG,
+};
 pub use host::{
     Accelerator, Capabilities, Credentials, Download, Fetcher, FolderWriter, Host, HttpClient,
     HttpRequest, HttpResponse, NoCredentials, Runs, Storage, StorageWriter,
@@ -50,7 +53,7 @@ pub use host::{
 pub use host::{NativeHost, TreeWriter};
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
-pub use provider::{Provider, ProviderModel, RemoteModel};
+pub use provider::{ProviderModel, RemoteModel};
 pub use resolver::Reason;
 
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it.
