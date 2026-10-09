@@ -42,7 +42,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::backend::{Backend, BackendFactory, BackendModel, BackendSpec, Library};
+use crate::backend::registry::BackendFactory;
+use crate::backend::{Backend, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
 use crate::host::Accelerator;
 use crate::install::Installed;

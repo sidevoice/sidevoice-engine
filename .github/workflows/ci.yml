@@ -5,9 +5,9 @@ name: ci
 # and installed as a consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing: what passes here is what merging
 # publishes (release.yml). Which backends a build contains is checked here, per target (src/backend/tests.rs, and in the
 # packaged build by npm-smoke); whether they work on a given machine is each backend's probe(). Models run for real
-# on every native target through the sherpa-onnx backend (test-inference), linked from the libraries `cargo xtask
-# sherpa-libs` fetched and checked (.github/actions/setup), which `sherpa-libs --linked` proves. What linking it costs
-# is link-size.yml's.
+# on every native target through the sherpa-onnx backend (test-inference; whisper.cpp runs them in the e2e workflow),
+# linked from the libraries `cargo xtask sherpa-libs` fetched and checked (.github/actions/setup), which `sherpa-libs
+# --linked` proves. What linking each backend's engine costs is link-size.yml's.
 on:
   # Into any branch, so a pull request stacked on another is checked before its base merges.
   pull_request:
@@ -33,8 +33,6 @@ jobs:
       - run: cargo fmt --check
       - run: cargo fmt --manifest-path xtask/Cargo.toml --check
       - run: cargo clippy --locked --all-targets -- -D warnings
-      # Without the default `sherpa-onnx` feature: the backend, and the static libraries it links, left out.
-      - run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - run: cargo clippy --locked --all-targets --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
 

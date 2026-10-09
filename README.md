@@ -46,8 +46,8 @@ with the engine's own storage (OPFS, the browser's private file system) and down
 platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
-now, the sherpa-onnx backend is the exception: native builds link it statically, through the official crate, behind
-the default `sherpa-onnx` feature (sidevoice-engine#33 is loading it on demand again).
+now, two backends are the exception: native builds link sherpa-onnx statically, through the official crate, and
+whisper.cpp, through `whisper-rs` (sidevoice-engine#33 is loading them on demand).
 
 ## What a host must report
 
@@ -146,11 +146,15 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
 
 ## Status
 
-The catalogue, the installer, the lifecycle and the native host work, and so does the first real backend:
-sherpa-onnx, natively (speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and
-Supertonic), linked through the official crate; and transformers.js, in the browser (speech to text with Whisper;
-text to speech with Kokoro, Spanish included, through eSpeak NG, and Supertonic 2), with the page's host storing
-files in OPFS and downloading them with `fetch`. MLX is a stub.
+The catalogue, the installer, the lifecycle and the native host work, and so do three real backends:
+
+| Backend | Runs | On | Linked through |
+|---|---|---|---|
+| `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2 | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
+
+In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub.
 
 ## Layout
 
@@ -188,11 +192,21 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 ## Build and test
 
 You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C compiler for the native build (rustls'
-crypto, `ring`). A native build links sherpa-onnx statically, and its prebuilt static libraries need the C++ standard
-library the platform's C++ toolchain provides (libstdc++ on Linux). `--no-default-features` leaves the backend out.
+crypto, `ring`). A native build links two backends' engines statically; there is no build without them.
 
-Where those libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build script
-would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in
+- **whisper.cpp** is compiled, with ggml, from the sources `whisper-rs-sys` bundles, so the build needs CMake, a C++
+  compiler and libclang (for `bindgen`, which writes the bindings). whisper.cpp tunes ggml for the building machine's
+  CPU unless `GGML_NATIVE=OFF` is set in the build's environment, which an app that ships its binary to other machines
+  should set.
+- **sherpa-onnx** comes as prebuilt static libraries, which need the C++ standard library the platform's C++ toolchain
+  provides (libstdc++ on Linux). On Linux x86_64 they use libstdc++'s old string ABI, so whisper.cpp must be compiled
+  with it too, or the two copies of `std::regex`'s internals the linker merges disagree and ONNX Runtime aborts
+  (`free(): invalid pointer`): this repository's `.cargo/config.toml` sets
+  `CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"`, and an app that links both backends there needs
+  the same in its own.
+
+Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
+script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in
 `xtask/sherpa-onnx-libs.json`, unpacks its `lib/` into `~/.cache/sidevoice-engine/sherpa-onnx/` (or the directory
 given) and prints that directory; `SHERPA_ONNX_LIB_DIR` makes the build link it and download nothing. CI does exactly
 this (`.github/actions/setup`), so the build cache never holds the libraries. Without `SHERPA_ONNX_LIB_DIR`, the build
@@ -226,14 +240,15 @@ cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 ```
 
 The whole voice loop is an integration test, `tests/voice_loop.rs`, and uses only the public API, as an app does:
-`NativeHost`, the bundled catalogue, `Engine::models` (each model's sherpa-onnx build), `Engine::load`, then the loaded
-model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-speech model of the plan
-(`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text model of that language
-transcribes it, real recorded clips are transcribed too, and every transcript must stay within the plan's one word
-error rate, a loose 50%: the loop checks that the circuit works and catches a wrong configuration, it does not
-measure quality. It downloads about 1.5 GB the first time (kept by digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless
-asked for; the `e2e` workflow runs it on Linux x86_64 and arm64 and on macOS arm64 through `cargo xtask e2e`, which
-puts its table in the job's summary:
+`NativeHost`, the bundled catalogue, `Engine::models` (the builds the plan names), `Engine::load`, then the loaded
+model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-speech build of the plan
+(`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text build of that language
+transcribes it (Whisper base on sherpa-onnx and on whisper.cpp among them), real recorded clips are transcribed too,
+and every transcript must stay within the plan's one word error rate, a loose 50%: the loop checks that the circuit
+works and catches a wrong configuration, it does not measure quality. It downloads about 1.5 GB the first time (kept by
+digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless asked for; the `e2e` workflow runs it on Linux x86_64 and
+arm64 and on macOS arm64 through `cargo xtask e2e`, which puts its table, and the accelerator each build was loaded
+on, in the job's summary:
 
 ```sh
 cargo test --locked --test voice_loop -- --ignored --nocapture
@@ -303,38 +318,40 @@ A backend is a record, an optional `probe` and an `open` whose library loads mod
 every backend alike. The contract, with what each part must and must not do, is the documentation of
 `src/backend.rs`. Which models it runs, and what they download, is the catalogue's to say (each build names its
 backend). Backends are crate-private: nothing here touches the public API, except that `Engine::backends` lists the
-new one. As an example, whisper.cpp:
+new one. As an example, a Vosk backend (whisper.cpp's, `whisper_cpp.rs`, is a real one to compare with; it is linked
+for now, see sidevoice-engine#33):
 
-1. **Its file**, `src/backend/implementations/whisper_cpp.rs`. If its code cannot compile everywhere, the file
+1. **Its file**, `src/backend/implementations/vosk.rs`. If its code cannot compile everywhere, the file
    starts with one `#![cfg(<alias>)]` from `build.rs` (`web`, `native`, `apple_silicon`), with a comment saying why,
-   and does not exist elsewhere. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
+   and does not exist elsewhere. If it links a library, that dependency goes under the same platform in `Cargo.toml`:
+   the two must agree, or the file does not compile. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
 
    ```rust
-   // whisper.cpp is a native library: there is no web build of it.
+   // Vosk's library is native here: its web build would be another backend.
    #![cfg(native)]
    ```
 
-2. **Its `mod` line** in `src/backend/implementations.rs`: `mod whisper_cpp;`. Nothing else lists backends.
+2. **Its `mod` line** in `src/backend/implementations.rs`: `mod vosk;`. Nothing else lists backends.
 
 3. **Its record**, a `const` `BackendSpec`, and its registration. The `id` is what catalogue builds call it, never
-   changes, and is in `KNOWN` (`src/backend.rs`), where an id goes as soon as the catalogue names it, code or not
-   (whisper.cpp's is there already). Its `name`, `description` (one sentence, in English: not UI) and `upstream` say
+   changes, and is in `KNOWN` (`src/backend.rs`), where an id goes as soon as the catalogue names it, code or not.
+   Its `name`, `description` (one sentence, in English: not UI) and `upstream` say
    what it is. Accelerators go best first; requirements hold for any model (a build's memory is the catalogue's).
    The engine ships `MinMemoryMb` and `MinCores`; a check of its own is a `Requirement` next to its file.
 
    ```rust
-   struct WhisperCpp;
+   struct Vosk;
 
    const SPEC: BackendSpec = BackendSpec {
-       id: "whisper-cpp",
-       name: "whisper.cpp",
-       description: "Whisper in C/C++ on ggml.",
-       upstream: "https://github.com/ggml-org/whisper.cpp",
-       accelerators: &[Accelerator::Cuda, Accelerator::Metal, Accelerator::Cpu],
+       id: "vosk",
+       name: "Vosk",
+       description: "Kaldi speech recognition, offline.",
+       upstream: "https://github.com/alphacep/vosk-api",
+       accelerators: &[Accelerator::Cuda, Accelerator::Cpu],
        requirements: &[],
    };
 
-   inventory::submit! { BackendFactory(|| Box::new(WhisperCpp)) }
+   inventory::submit! { BackendFactory(|| Box::new(Vosk)) }
    ```
 
 4. **Its `probe`, only if needed.** The host reports what is present; the default keeps the declared accelerators
@@ -356,7 +373,7 @@ new one. As an example, whisper.cpp:
    ```rust
    #[cfg_attr(native, async_trait)]
    #[cfg_attr(web, async_trait(?Send))]
-   impl Backend for WhisperCpp {
+   impl Backend for Vosk {
        fn spec(&self) -> &BackendSpec {
            &SPEC
        }
@@ -368,7 +385,7 @@ new one. As an example, whisper.cpp:
 
    #[cfg_attr(native, async_trait)]
    #[cfg_attr(web, async_trait(?Send))]
-   impl Library for WhisperCppLibrary {
+   impl Library for VoskLibrary {
        async fn load(
            &self,
            build: &BuildEntry,

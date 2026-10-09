@@ -6,32 +6,32 @@
   },
   "tts": [
     {
-      "model": "kokoro-82m-v0.19",
+      "build": "kokoro-82m-v0.19/sherpa-onnx-int8",
       "voices": {
         "en-US": "af_bella"
       }
     },
     {
-      "model": "kokoro-82m-v1.0",
+      "build": "kokoro-82m-v1.0/sherpa-onnx-int8",
       "voices": {
         "en-US": "af_bella",
         "es": "ef_dora"
       }
     },
     {
-      "model": "piper-en_US-ljspeech-medium",
+      "build": "piper-en_US-ljspeech-medium/sherpa-onnx-int8",
       "voices": {
         "en-US": null
       }
     },
     {
-      "model": "piper-es_ES-carlfm-x_low",
+      "build": "piper-es_ES-carlfm-x_low/sherpa-onnx-int8",
       "voices": {
         "es-ES": null
       }
     },
     {
-      "model": "supertonic-3",
+      "build": "supertonic-3/sherpa-onnx-int8",
       "voices": {
         "en": null,
         "es": null
@@ -40,13 +40,15 @@
   ],
   "stt": {
     "en": [
-      "whisper-base",
-      "parakeet-tdt-0.6b-v3"
+      "whisper-base/sherpa-onnx-int8",
+      "whisper-base/whisper-cpp-q5_1",
+      "parakeet-tdt-0.6b-v3/sherpa-onnx-int8"
     ],
     "es": [
-      "whisper-base",
-      "fastconformer-es-large",
-      "parakeet-tdt-0.6b-v3"
+      "whisper-base/sherpa-onnx-int8",
+      "whisper-base/whisper-cpp-q5_1",
+      "fastconformer-es-large/sherpa-onnx-int8",
+      "parakeet-tdt-0.6b-v3/sherpa-onnx-int8"
     ]
   },
   "clips": [

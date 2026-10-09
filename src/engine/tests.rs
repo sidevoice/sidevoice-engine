@@ -53,8 +53,12 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .iter()
         .find(|b| b.id == "whisper-small-gguf")
         .expect("gguf");
-    assert!(!gguf.available && gguf.accelerator.is_none());
-    assert_eq!(gguf.reasons, [Reason::new("backend-not-in-this-build")]);
+    if cfg!(not(target_arch = "wasm32")) {
+        assert!(gguf.available && gguf.accelerator.is_some());
+    } else {
+        assert!(!gguf.available && gguf.accelerator.is_none());
+        assert_eq!(gguf.reasons, [Reason::new("backend-not-in-this-build")]);
+    }
     let available: Vec<_> = small.builds.iter().map(|build| build.available).collect();
     assert!(
         available.windows(2).all(|pair| pair[0] >= pair[1]),
@@ -125,9 +129,9 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     let backends: &[&str] = if cfg!(target_arch = "wasm32") {
         &["transformers-js"]
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        &["mlx", "sherpa-onnx"]
+        &["mlx", "sherpa-onnx", "whisper-cpp"]
     } else {
-        &["sherpa-onnx"]
+        &["sherpa-onnx", "whisper-cpp"]
     };
 
     let stt = offered(Capability::Stt);

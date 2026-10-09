@@ -2,12 +2,12 @@ name: e2e
 
 # The voice loop for real, on each native platform: the engine's ignored integration test tests/voice_loop.rs, which
 # uses only the public API (plan in tests/voice_loop.json), run by `cargo xtask e2e`: text spoken by every
-# text-to-speech model and transcribed by the speech-to-text models of its language, and real recorded clips
-# transcribed, in English and Spanish, each transcript held to a word error rate.
-# The table goes to the job's summary, and what each model said is kept as an artifact. In a headless Chrome too: the
-# web loop (`cargo xtask web-e2e`, plan in xtask/web-e2e.json) runs through the npm package and is judged against the
-# same plan's sentences and clips. On every pull request that touches what the loops run, whatever its base, so a
-# stacked pull request runs it too.
+# text-to-speech build and transcribed by the speech-to-text builds of its language (Whisper on sherpa-onnx and on
+# whisper.cpp among them), and real recorded clips transcribed, in English and Spanish, each transcript held to a word
+# error rate. The table, and the accelerator each build was loaded on, go to the job's summary; what each model said
+# is kept as an artifact. In a headless Chrome too: the web loop (`cargo xtask web-e2e`, plan in xtask/web-e2e.json)
+# runs through the npm package and is judged against the same plan's sentences and clips. On every pull request that
+# touches what the loops run, whatever its base, so a stacked pull request runs it too.
 on:
   pull_request:
     paths:

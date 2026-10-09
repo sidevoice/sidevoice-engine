@@ -1,6 +1,5 @@
-//! The only platform conditions in the engine, named once. A backend file that uses a library which cannot compile
-//! everywhere starts with `#![cfg(<alias>)]`; everything else (OS, architecture, memory, GPU, CUDA, WebGPU) is decided
-//! at run time in that backend's `probe()`. A backend linked in only with a Cargo feature has an alias that says both.
+//! The engine's platform aliases, named once: `web`, `native` and `apple_silicon`. They name platforms only; which
+//! of them a module needs is that module's own `#[cfg]` to say.
 //!
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.
@@ -15,7 +14,6 @@ fn main() {
         web: { target_arch = "wasm32" },
         native: { not(target_arch = "wasm32") },
         apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
-        sherpa_onnx: { all(not(target_arch = "wasm32"), feature = "sherpa-onnx") },
     }
     bundled_families();
 }
