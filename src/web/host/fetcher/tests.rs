@@ -79,7 +79,9 @@ async fn an_api_call_resolves_with_its_status_and_whole_body() {
 
 #[wasm_bindgen_test]
 async fn an_api_call_with_no_answer_fails_with_request_failed() {
-    for url in ["http://127.0.0.1:9/nothing", "not a url"] {
+    // Nothing listens on port 9 here, and a host with a space is no URL, in Node and in a page alike (a bare word would be
+    // a relative URL in a page, which its server answers).
+    for url in ["http://127.0.0.1:9/nothing", "http://no such host/"] {
         let failed = WebFetcher.send(get(url)).await.err();
         assert_eq!(
             failed.map(|error| error.code),
