@@ -25,6 +25,7 @@ use serde::Deserialize;
 
 use super::SherpaOnnx;
 use crate::backend::{Backend, BackendModel};
+use crate::catalog::Voice;
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::test_support::{build, ready, sha256 as sha256_of};
@@ -310,16 +311,18 @@ fn kokoro_speaks_a_sentence() {
         "named voices"
     );
     assert_eq!(tts.sample_rate(), 24_000);
-    let audio = ready(tts.speak("Hello from the engine.", "af_bella", None, 1.0)).expect("speech");
+    let audio =
+        ready(tts.speak("Hello from the engine.", &voice("af_bella"), None, 1.0)).expect("speech");
     let seconds = audio.len() as f32 / tts.sample_rate() as f32;
     println!("Kokoro spoke {seconds:.2} s");
     assert!((0.5..5.0).contains(&seconds), "{seconds} s of speech");
     let rms = (audio.iter().map(|s| s * s).sum::<f32>() / audio.len() as f32).sqrt();
     assert!(rms > 0.01, "audible: RMS {rms}");
     // Faster is shorter.
-    let fast = ready(tts.speak("Hello from the engine.", "af_bella", None, 1.5)).expect("speech");
+    let fast =
+        ready(tts.speak("Hello from the engine.", &voice("af_bella"), None, 1.5)).expect("speech");
     assert!(fast.len() < audio.len());
-    let unknown = ready(tts.speak("Hello.", "nobody", None, 1.0)).map(|_| ());
+    let unknown = ready(tts.speak("Hello.", &voice("nobody"), None, 1.0)).map(|_| ());
     assert_eq!(unknown.unwrap_err().code, "unknown-voice");
 }
 
@@ -330,7 +333,7 @@ fn whisper_hears_what_kokoro_says() {
     let sentence = "The quick brown fox jumps over the lazy dog.";
     let mut kokoro = load(&prepared.kokoro);
     let tts = kokoro.as_tts().expect("Kokoro speaks");
-    let speech = ready(tts.speak(sentence, "am_adam", Some("en-US"), 1.0)).expect("speech");
+    let speech = ready(tts.speak(sentence, &voice("am_adam"), Some("en-US"), 1.0)).expect("speech");
     let speech = to_16k(&speech, tts.sample_rate());
     let mut whisper = load(&prepared.whisper);
     let stt = whisper.as_stt().expect("Whisper transcribes");
@@ -472,4 +475,13 @@ fn catalogue_builds_transcribe_the_clips_they_name() {
         );
     }
     assert!(failed.is_empty(), "{failed:#?}");
+}
+
+/// The voice `id`, declaring no language: what these tests speak with.
+fn voice(id: &str) -> Voice {
+    Voice {
+        id: id.to_owned(),
+        languages: Vec::new(),
+        gender: None,
+    }
 }

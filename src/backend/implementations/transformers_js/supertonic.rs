@@ -10,6 +10,7 @@ use wasm_bindgen_futures::JsFuture;
 use super::{call, dispose, failed, finite, object, voices, Model, VOICES};
 use crate::backend::loaded_model::TtsModel;
 use crate::backend::BackendModel;
+use crate::catalog::Voice;
 use crate::install::Installed;
 use crate::web::opfs;
 use crate::{Error, Result};
@@ -108,11 +109,11 @@ impl TtsModel for Supertonic {
     async fn speak(
         &mut self,
         text: &str,
-        voice: &str,
+        voice: &Voice,
         language: Option<&str>,
         speed: f32,
     ) -> Result<Vec<f32>> {
-        let style = self.style(voice).await?;
+        let style = self.style(&voice.id).await?;
         let text = match language {
             Some(language) => {
                 let primary = language

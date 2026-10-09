@@ -5,7 +5,9 @@
 //! config's `lang` and to the model's own (`offline-tts-kokoro-impl.h`, `offline-tts-supertonic-impl.cc`), and which a
 //! model that takes none ignores (VITS). Where the config has espeak-ng's data (a `*.data_dir` key), it is the
 //! espeak-ng voice that reads the text: the BCP 47 tag lowercased (`en-us`, `pt-br`) where espeak-ng has a voice of
-//! that name, its primary subtag (`es`) otherwise. Without espeak-ng's data, it is the primary subtag.
+//! that name, its primary subtag (`es`) otherwise. A tag without a region takes the region of the chosen voice when
+//! the catalogue declares the voice in that language with one (`en` and a voice declared `en-US` read as `en-us`).
+//! Without espeak-ng's data, it is the primary subtag.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -17,6 +19,7 @@ use sherpa_onnx::{GenerationConfig, OfflineTts, OfflineTtsConfig};
 use super::{model_metadata, text};
 use crate::backend::loaded_model::TtsModel;
 use crate::backend::BackendModel;
+use crate::catalog::Voice;
 use crate::install::Installed;
 use crate::{Error, Result};
 
@@ -81,10 +84,21 @@ fn espeak_voices(data_dir: &Path) -> BTreeSet<String> {
     names
 }
 
-/// The espeak-ng voice that reads the BCP 47 tag `tag`, among `voices`: the tag lowercased if there is one of that
-/// name, its primary subtag otherwise.
-pub(super) fn espeak_voice(tag: &str, voices: &BTreeSet<String>) -> String {
+/// The espeak-ng voice that reads the BCP 47 tag `tag` spoken with a voice declared in `declared`, among `voices`.
+/// A `tag` without a region takes the first declared language with its primary subtag and a region (`en` and
+/// `en-US` → `en-US`); then the tag lowercased if `voices` has one of that name, its primary subtag otherwise.
+pub(super) fn espeak_voice(tag: &str, declared: &[String], voices: &BTreeSet<String>) -> String {
     let lowered = tag.replace('_', "-").to_ascii_lowercase();
+    let regional = |language: &String| {
+        let language = language.replace('_', "-").to_ascii_lowercase();
+        let (primary, region) = language.split_once('-')?;
+        (primary == lowered && !region.is_empty()).then_some(language)
+    };
+    let lowered = if lowered.contains('-') {
+        lowered
+    } else {
+        declared.iter().find_map(regional).unwrap_or(lowered)
+    };
     if voices.contains(&lowered) {
         return lowered;
     }
@@ -117,7 +131,7 @@ impl TtsModel for Synthesizer {
     async fn speak(
         &mut self,
         words: &str,
-        voice: &str,
+        voice: &Voice,
         language: Option<&str>,
         speed: f32,
     ) -> Result<Vec<f32>> {
@@ -125,9 +139,9 @@ impl TtsModel for Synthesizer {
         let sid = self
             .voices
             .iter()
-            .position(|name| name == voice)
+            .position(|name| *name == voice.id)
             .ok_or(Error::new("unknown-voice"))?;
-        let lang = language.map(|tag| espeak_voice(tag, &self.espeak));
+        let lang = language.map(|tag| espeak_voice(tag, &voice.languages, &self.espeak));
         let extra =
             lang.map(|lang| HashMap::from([("lang".to_owned(), serde_json::Value::String(lang))]));
         let config = GenerationConfig {

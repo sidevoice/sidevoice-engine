@@ -12,6 +12,7 @@ use super::phonemes::Espeak;
 use super::{call, call_method, dispose, failed, finite, object, voices, Model, VOICES};
 use crate::backend::loaded_model::TtsModel;
 use crate::backend::BackendModel;
+use crate::catalog::Voice;
 use crate::install::Installed;
 use crate::web::opfs;
 use crate::{Error, Result};
@@ -183,10 +184,11 @@ impl TtsModel for Kokoro {
     async fn speak(
         &mut self,
         text: &str,
-        voice: &str,
+        voice: &Voice,
         _language: Option<&str>,
         speed: f32,
     ) -> Result<Vec<f32>> {
+        let voice = voice.id.as_str();
         if !self.voices.contains_key(voice) {
             return Err(Error::new("unknown-voice"));
         }
