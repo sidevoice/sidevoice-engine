@@ -5,6 +5,8 @@
 //! (`OfflineRecognizerConfig.model_config`) for speech to text, the offline TTS's (`OfflineTtsConfig.model`) for text
 //! to speech. What a sherpa-onnx build's file keys name. If the crate derives serde for its configs one day, this
 //! table gives way to `serde_json::from_value`.
+//!
+//! And every field a call's argument may set through a build's `call_params`: a language, a task.
 
 use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
 
@@ -102,6 +104,23 @@ pub(in crate::backend::implementations::sherpa_onnx) fn tts_field<'a>(
         "supertonic.tts_json" => &mut config.supertonic.tts_json,
         "supertonic.unicode_indexer" => &mut config.supertonic.unicode_indexer,
         "supertonic.voice_style" => &mut config.supertonic.voice_style,
+        _ => return None,
+    })
+}
+
+/// The field of `OfflineRecognizerConfig.model_config` that `path` names, if a call's argument may set it.
+pub(in crate::backend::implementations::sherpa_onnx) fn stt_option<'a>(
+    config: &'a mut OfflineModelConfig,
+    path: &str,
+) -> Option<&'a mut Option<String>> {
+    Some(match path {
+        "whisper.language" => &mut config.whisper.language,
+        "whisper.task" => &mut config.whisper.task,
+        "canary.src_lang" => &mut config.canary.src_lang,
+        "canary.tgt_lang" => &mut config.canary.tgt_lang,
+        "sense_voice.language" => &mut config.sense_voice.language,
+        "cohere_transcribe.language" => &mut config.cohere_transcribe.language,
+        "funasr_nano.language" => &mut config.funasr_nano.language,
         _ => return None,
     })
 }
