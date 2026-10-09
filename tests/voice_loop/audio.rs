@@ -1,5 +1,5 @@
 //! The audio the loop reads and keeps: WAV files read (the clips) and written (what each model said). Bringing audio
-//! to a model's rate is the engine's.
+//! to a model's rate is the engine's, except for a voice activity stream, which takes its model's rate: `resample`.
 
 /// The samples of a WAV file (PCM of 16 bits, or IEEE floats of 32), its channels mixed down to one, and their rate.
 pub(crate) fn read_wav(wav: &[u8]) -> Result<(Vec<f32>, u32), String> {
@@ -80,4 +80,22 @@ pub(crate) fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
         out.extend_from_slice(&pcm.to_le_bytes());
     }
     out
+}
+
+/// `samples` at `from` Hz, linearly resampled to `to` Hz, for a voice activity stream (which takes its model's rate).
+pub(crate) fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
+    if from == to || samples.is_empty() {
+        return samples.to_vec();
+    }
+    let step = f64::from(from) / f64::from(to);
+    let len = (samples.len() as f64 / step) as usize;
+    (0..len)
+        .map(|i| {
+            let at = i as f64 * step;
+            let (index, frac) = (at as usize, at.fract() as f32);
+            let here = samples[index.min(samples.len() - 1)];
+            let next = samples.get(index + 1).copied().unwrap_or(here);
+            here + (next - here) * frac
+        })
+        .collect()
 }

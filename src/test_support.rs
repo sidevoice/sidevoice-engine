@@ -569,6 +569,7 @@ pub(crate) fn build(id: &str, backend: &str, memory_mb: u32) -> BuildEntry {
             mutable: false,
         }],
         call_params: Default::default(),
+        config: Default::default(),
     }
 }
 

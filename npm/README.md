@@ -27,6 +27,9 @@ const stt = whisper.asStt();
 const text = await stt.transcribe(samples, 48000, "es"); // any rate: the engine resamples
 const kokoro = await engine.load("kokoro-82m-v1.0");
 const { samples: speech, sampleRate } = await kokoro.asTts().speak("Hola", "ef_dora", "es");
+const silero = await engine.load("silero-vad");
+const mic = await silero.asVad().stream({ minSilenceMs: 500 }); // a state of its own; mic.sampleRate is 16000
+const { frames, events } = await mic.accept(pcm); // events: { type: "speech-start", at } | { type: "speech-end", start, end }
 stt.free(); // the model leaves memory once its LoadedModel and the Stt and Tts it handed out are freed
 whisper.free(); // (or collected)
 ```

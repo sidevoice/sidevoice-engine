@@ -1,10 +1,10 @@
 //! The engine of one place: its host, its catalogue and the backends compiled into it, and what an app does with a
 //! model: list them ([`Engine::models`]), install and uninstall one, and load one ([`Engine::load`]), which returns a
-//! [`LoadedModel`] that transcribes or speaks and is unloaded when dropped.
+//! [`LoadedModel`] that transcribes, speaks or detects speech, and is unloaded when dropped.
 //!
 //! Inside: `model` (a model as [`Engine::models`] lists it), `loaded` (a model in memory: [`LoadedModel`], [`Stt`],
-//! [`Tts`]), `audio` ([`Audio`], and resampling), `memory` (weak references: one library per backend, one model per
-//! build) and `error` (why an engine cannot be built).
+//! [`Tts`], [`Vad`] and its [`VadStream`]), `audio` ([`Audio`], and resampling), `memory` (weak references: one
+//! library per backend, one model per build) and `error` (why an engine cannot be built).
 
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -26,7 +26,9 @@ mod tests;
 
 pub use audio::Audio;
 pub use error::ConfigError;
-pub use loaded::{LoadedModel, Stt, Tts};
+pub use loaded::{
+    LoadedModel, Stt, Tts, Vad, VadEvent, VadFrame, VadOptions, VadOutput, VadStream,
+};
 pub use model::{Model, ModelBuild};
 
 use loaded::Resident;

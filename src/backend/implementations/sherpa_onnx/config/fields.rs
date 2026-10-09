@@ -3,12 +3,13 @@
 //!
 //! Every field that takes a file, by its path from the config root it is in: the offline recognizer's model config
 //! (`OfflineRecognizerConfig.model_config`) for speech to text, the offline TTS's (`OfflineTtsConfig.model`) for text
-//! to speech. What a sherpa-onnx build's file keys name. If the crate derives serde for its configs one day, this
-//! table gives way to `serde_json::from_value`.
+//! to speech, the voice activity detector's (`VadModelConfig`) for voice activity. What a sherpa-onnx build's file
+//! keys name. If the crate derives serde for its configs one day, this table gives way to `serde_json::from_value`.
 //!
-//! And every field a call's argument may set through a build's `call_params`: a language, a task.
+//! And every field a call's argument may set through a build's `call_params`: a language, a task; and every number
+//! of the voice activity detector's config a build's `config` may set: a window, a sample rate.
 
-use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig};
+use sherpa_onnx::{OfflineModelConfig, OfflineTtsModelConfig, VadModelConfig};
 
 /// The field of `OfflineRecognizerConfig.model_config` that `key` names, if it takes a file.
 pub(in crate::backend::implementations::sherpa_onnx) fn stt_field<'a>(
@@ -104,6 +105,32 @@ pub(in crate::backend::implementations::sherpa_onnx) fn tts_field<'a>(
         "supertonic.tts_json" => &mut config.supertonic.tts_json,
         "supertonic.unicode_indexer" => &mut config.supertonic.unicode_indexer,
         "supertonic.voice_style" => &mut config.supertonic.voice_style,
+        _ => return None,
+    })
+}
+
+/// The field of `VadModelConfig` that `key` names, if it takes a file.
+pub(in crate::backend::implementations::sherpa_onnx) fn vad_field<'a>(
+    config: &'a mut VadModelConfig,
+    key: &str,
+) -> Option<&'a mut Option<String>> {
+    Some(match key {
+        "silero_vad.model" => &mut config.silero_vad.model,
+        "ten_vad.model" => &mut config.ten_vad.model,
+        _ => return None,
+    })
+}
+
+/// The number of `VadModelConfig` that `path` names: what a build's `config` may set.
+pub(in crate::backend::implementations::sherpa_onnx) fn vad_number<'a>(
+    config: &'a mut VadModelConfig,
+    path: &str,
+) -> Option<&'a mut i32> {
+    Some(match path {
+        "silero_vad.window_size" => &mut config.silero_vad.window_size,
+        "ten_vad.window_size" => &mut config.ten_vad.window_size,
+        "sample_rate" => &mut config.sample_rate,
+        "num_threads" => &mut config.num_threads,
         _ => return None,
     })
 }

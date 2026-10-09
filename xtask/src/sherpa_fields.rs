@@ -1,11 +1,11 @@
 //! The sherpa-onnx config fields a build's files fill, generated from the source of the `sherpa-onnx` crate that
 //! Cargo.lock pins, so that nobody types them: `src/backend/implementations/sherpa_onnx/config/fields.rs`.
 //!
-//! The crate's source is read with `syn` from where Cargo keeps it (`cargo metadata`). From the two roots the engine
-//! fills, the offline recognizer's model config (`OfflineModelConfig`) and the offline TTS's (`OfflineTtsModelConfig`),
-//! every field is followed into the crate's own structs, and every `Option<String>` met is a path, named as the crate
-//! names it from its root (`whisper.encoder`, `tokens`, `kokoro.data_dir`), except the few that are options rather
-//! than files ([`NOT_FILES`]): the crate types both alike. The file is written through `rustfmt`; `--check` makes it
+//! The crate's source is read with `syn` from where Cargo keeps it (`cargo metadata`). From the three roots the engine
+//! fills, the offline recognizer's model config (`OfflineModelConfig`), the offline TTS's (`OfflineTtsModelConfig`) and
+//! the voice activity detector's (`VadModelConfig`), every field is followed into the crate's own structs, and every
+//! `Option<String>` met is a path, named as the crate names it from its root (`whisper.encoder`, `tokens`,
+//! `kokoro.data_dir`, `silero_vad.model`), except the few that are options rather than files ([`NOT_FILES`]): the crate types both alike. The file is written through `rustfmt`; `--check` makes it
 //! again and fails if the committed one differs, or if [`NOT_FILES`] names a field the crate no longer has.
 
 use std::collections::HashMap;
@@ -36,6 +36,7 @@ const NOT_FILES: &[(&str, &str)] = &[
     ("OfflineModelConfig", "funasr_nano.user_prompt"),
     ("OfflineTtsModelConfig", "provider"),
     ("OfflineTtsModelConfig", "kokoro.lang"),
+    ("VadModelConfig", "provider"),
 ];
 
 /// The fields of [`NOT_FILES`] below `OfflineModelConfig` that a call's argument may set, through a build's `call_params`
@@ -59,8 +60,10 @@ pub(crate) fn generate() -> Result<(String, String)> {
     let structs = parse(&src)?;
     let stt = paths(&structs, "OfflineModelConfig")?;
     let tts = paths(&structs, "OfflineTtsModelConfig")?;
+    let vad = paths(&structs, "VadModelConfig")?;
+    let vad_numbers = numbers(&structs, "VadModelConfig")?;
     let options = call_fields()?;
-    let text = render(&version, &stt, &tts, &options);
+    let text = render(&version, &stt, &tts, &vad, &vad_numbers, &options);
     Ok((rustfmt(&text)?, version))
 }
 
@@ -161,15 +164,36 @@ fn paths(structs: &Structs, root: &str) -> Result<Vec<String>> {
 
 /// Collects into `out` every `Option<String>` field below `name`, as `prefix` + its path.
 fn walk(structs: &Structs, name: &str, prefix: &str, out: &mut Vec<String>) -> Result<()> {
+    walk_by(structs, name, prefix, out, &is_option_string)
+}
+
+/// Every `i32` field below the struct `root`, in the crate's field order: the numbers a build's `config` may set
+/// (a window, a sample rate).
+fn numbers(structs: &Structs, root: &str) -> Result<Vec<String>> {
+    let mut numbers = Vec::new();
+    walk_by(structs, root, "", &mut numbers, &|ty| {
+        last_ident(ty).as_deref() == Some("i32")
+    })?;
+    Ok(numbers)
+}
+
+/// Collects into `out` every field below `name` whose type `pick` takes, as `prefix` + its path.
+fn walk_by(
+    structs: &Structs,
+    name: &str,
+    prefix: &str,
+    out: &mut Vec<String>,
+    pick: &dyn Fn(&syn::Type) -> bool,
+) -> Result<()> {
     let fields = structs
         .get(name)
         .ok_or(format!("sherpa-onnx: no struct {name}"))?;
     for (field, ty) in fields {
         let path = format!("{prefix}{field}");
-        if is_option_string(ty) {
+        if pick(ty) {
             out.push(path);
         } else if let Some(inner) = last_ident(ty).filter(|ident| structs.contains_key(ident)) {
-            walk(structs, &inner, &format!("{path}."), out)?;
+            walk_by(structs, &inner, &format!("{path}."), out, pick)?;
         }
     }
     Ok(())
@@ -203,7 +227,14 @@ fn is_option_string(ty: &syn::Type) -> bool {
 }
 
 /// The file's text, before `rustfmt`.
-fn render(version: &str, stt: &[String], tts: &[String], options: &[String]) -> String {
+fn render(
+    version: &str,
+    stt: &[String],
+    tts: &[String],
+    vad: &[String],
+    vad_numbers: &[String],
+    options: &[String],
+) -> String {
     let arms = |paths: &[String]| {
         paths
             .iter()
@@ -219,13 +250,15 @@ fn render(version: &str, stt: &[String], tts: &[String], options: &[String]) -> 
          config\n\
          //! (`OfflineRecognizerConfig.model_config`) for speech to text, the offline TTS's (`OfflineTtsConfig.model`) \
          for text\n\
-         //! to speech. What a sherpa-onnx build's file keys name. If the crate derives serde for its configs one day, \
-         this\n\
-         //! table gives way to `serde_json::from_value`.\n\
+         //! to speech, the voice activity detector's (`VadModelConfig`) for voice activity. What a sherpa-onnx \
+         build's file\n\
+         //! keys name. If the crate derives serde for its configs one day, this table gives way to \
+         `serde_json::from_value`.\n\
          //!\n\
-         //! And every field a call's argument may set through a build's `call_params`: a language, a task.\n\
+         //! And every field a call's argument may set through a build's `call_params`: a language, a task; and every number\n\
+         //! of the voice activity detector's config a build's `config` may set: a window, a sample rate.\n\
          \n\
-         use sherpa_onnx::{{OfflineModelConfig, OfflineTtsModelConfig}};\n\
+         use sherpa_onnx::{{OfflineModelConfig, OfflineTtsModelConfig, VadModelConfig}};\n\
          \n\
          /// The field of `OfflineRecognizerConfig.model_config` that `key` names, if it takes a file.\n\
          pub(in crate::backend::implementations::sherpa_onnx) fn stt_field<'a>(\n\
@@ -241,6 +274,20 @@ fn render(version: &str, stt: &[String], tts: &[String], options: &[String]) -> 
          ) -> Option<&'a mut Option<String>> {{\n\
              Some(match key {{\n{}        _ => return None,\n    }})\n}}\n\
          \n\
+         /// The field of `VadModelConfig` that `key` names, if it takes a file.\n\
+         pub(in crate::backend::implementations::sherpa_onnx) fn vad_field<'a>(\n\
+             config: &'a mut VadModelConfig,\n\
+             key: &str,\n\
+         ) -> Option<&'a mut Option<String>> {{\n\
+             Some(match key {{\n{}        _ => return None,\n    }})\n}}\n\
+         \n\
+         /// The number of `VadModelConfig` that `path` names: what a build's `config` may set.\n\
+         pub(in crate::backend::implementations::sherpa_onnx) fn vad_number<'a>(\n\
+             config: &'a mut VadModelConfig,\n\
+             path: &str,\n\
+         ) -> Option<&'a mut i32> {{\n\
+             Some(match path {{\n{}        _ => return None,\n    }})\n}}\n\
+         \n\
          /// The field of `OfflineRecognizerConfig.model_config` that `path` names, if a call's argument may set it.\n\
          pub(in crate::backend::implementations::sherpa_onnx) fn stt_option<'a>(\n\
              config: &'a mut OfflineModelConfig,\n\
@@ -249,6 +296,8 @@ fn render(version: &str, stt: &[String], tts: &[String], options: &[String]) -> 
              Some(match path {{\n{}        _ => return None,\n    }})\n}}\n",
         arms(stt),
         arms(tts),
+        arms(vad),
+        arms(vad_numbers),
         arms(options),
     )
 }

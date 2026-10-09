@@ -1,7 +1,8 @@
-//! A model in memory, as the app holds it: [`LoadedModel`], and what it can do, [`Stt`] and [`Tts`]. Every
-//! `LoadedModel` of one build shares one model in memory (`Resident`), and that model holds its backend's library: so
-//! the model is unloaded when the last `LoadedModel` of its build is dropped, and the library when the last model of
-//! its backend is. Calls on one model are one at a time: a second waits for the first to end.
+//! A model in memory, as the app holds it: [`LoadedModel`], and what it can do, [`Stt`], [`Tts`] and [`Vad`] (in
+//! `vad`). Every `LoadedModel` of one build shares one model in memory (`Resident`), and that model holds its backend's
+//! library: so the model is unloaded when the last `LoadedModel` of its build (or a `VadStream` of it) is dropped, and
+//! the library when the last model of its backend is. Calls on one model are one at a time: a second waits for the
+//! first to end; a voice activity stream has a state of its own and runs on its own.
 
 use std::sync::Arc;
 
@@ -11,6 +12,10 @@ use super::audio::{self, Audio};
 use crate::backend::{BackendModel, Library};
 use crate::catalog::{Capability, Voice};
 use crate::{Error, Result};
+
+mod vad;
+
+pub use vad::{Vad, VadEvent, VadFrame, VadOptions, VadOutput, VadStream};
 
 /// The sample rate every speech-to-text backend takes (`SttModel::transcribe`).
 const STT_RATE: u32 = 16_000;
@@ -51,6 +56,9 @@ impl Resident {
         }
         if model.as_tts().is_some() {
             capabilities.push(Capability::Tts);
+        }
+        if model.as_vad().is_some() {
+            capabilities.push(Capability::Vad);
         }
         Arc::new(Self {
             model: Mutex::new(model),
@@ -135,6 +143,14 @@ impl LoadedModel {
         self.capabilities()
             .contains(&Capability::Tts)
             .then_some(Tts(self))
+    }
+
+    /// The model as a voice activity detector, if it is one.
+    #[must_use]
+    pub fn as_vad(&self) -> Option<Vad<'_>> {
+        self.capabilities()
+            .contains(&Capability::Vad)
+            .then_some(Vad(self))
     }
 }
 

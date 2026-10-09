@@ -2,7 +2,8 @@
 //! with the methods of [`JsHost`]. Only in the wasm32 build (the npm package).
 //!
 //! A thin wrapper over [`Engine`]: the same operations under JavaScript's names (`models`, `install`, `uninstall`,
-//! `load`, and on what `load` returns, `capabilities`, `asStt().transcribe`, `asTts().voices` and `speak`), with a
+//! `load`, and on what `load` returns, `capabilities`, `asStt().transcribe`, `asTts().voices` and `speak`, and
+//! `asVad().stream`, whose stream `accept`s audio), with a
 //! progress callback and an `AbortSignal` where the engine takes a [`ProgressSink`](crate::ProgressSink) and a
 //! [`Cancel`]. Every failure rejects with an `Error` that carries the engine's stable `code` and its `params`, which
 //! the page translates; its message is the code too.
@@ -21,7 +22,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{future_to_promise, JsFuture};
 use web_sys::AbortSignal;
 
-use crate::{BundledCatalog, Cancel, Capability, Engine, Error, LoadedModel, Progress};
+use crate::{BundledCatalog, Cancel, Capability, Engine, Error, LoadedModel, Progress, VadStream};
 
 mod host;
 pub(crate) mod opfs;
@@ -44,13 +45,20 @@ export interface ModelBuild {
   available: boolean; reasons: Reason[]; installed: boolean;
 }
 export interface Model {
-  id: string; family: string; capabilities: ("stt" | "tts")[]; parametersM: number; languages: string[];
+  id: string; family: string; capabilities: ("stt" | "tts" | "vad")[]; parametersM: number; languages: string[];
   license: string;
   voices: Voice[]; installed: boolean; builds: ModelBuild[]; recommendedBuild?: string;
 }
 /** How far an install has got: files done of all, and the bytes of the file being downloaded. */
 export interface Progress { files: number; done: number; received: number; size?: number; }
 export interface Audio { samples: Float32Array; sampleRate: number; }
+/** How a voice activity stream decides what is speech; each left out takes its default (0.5, 500 ms, 250 ms). */
+export interface VadOptions { threshold?: number; minSilenceMs?: number; minSpeechMs?: number; }
+/** One window of a stream: where it ends (in samples), whether the stream is in speech, the model's probability. */
+export interface VadFrame { end: number; speech: boolean; probability?: number; }
+/** Speech confirmed at `at`, or speech that ran from `start` to just before `end`: positions in samples. */
+export type VadEvent = { type: "speech-start"; at: number } | { type: "speech-end"; start: number; end: number };
+export interface VadOutput { frames: VadFrame[]; events: VadEvent[]; }
 "#;
 
 /// The engine, for JavaScript.
@@ -179,8 +187,8 @@ impl WebLoadedModel {
         self.loaded.build().to_owned()
     }
 
-    /// What it can do: `"stt"`, `"tts"`.
-    #[wasm_bindgen(unchecked_return_type = "(\"stt\" | \"tts\")[]")]
+    /// What it can do: `"stt"`, `"tts"`, `"vad"`.
+    #[wasm_bindgen(unchecked_return_type = "(\"stt\" | \"tts\" | \"vad\")[]")]
     pub fn capabilities(&self) -> Vec<String> {
         let capabilities = self.loaded.capabilities().iter();
         capabilities
@@ -200,6 +208,14 @@ impl WebLoadedModel {
     #[wasm_bindgen(js_name = asTts)]
     pub fn as_tts(&self) -> Option<WebTts> {
         (self.loaded.capabilities().contains(&Capability::Tts)).then(|| WebTts {
+            loaded: self.loaded.clone(),
+        })
+    }
+
+    /// The model as a voice activity detector, if it is one.
+    #[wasm_bindgen(js_name = asVad)]
+    pub fn as_vad(&self) -> Option<WebVad> {
+        (self.loaded.capabilities().contains(&Capability::Vad)).then(|| WebVad {
             loaded: self.loaded.clone(),
         })
     }
@@ -269,6 +285,91 @@ impl WebTts {
             let tts = loaded.as_tts().ok_or(Error::new("model-cannot-speak"))?;
             let audio = tts.speak(&text, &voice, language.as_deref(), speed).await?;
             Ok(values::audio(&audio))
+        })
+    }
+}
+
+/// A loaded model, as a voice activity detector.
+#[wasm_bindgen(js_name = Vad)]
+pub struct WebVad {
+    loaded: LoadedModel,
+}
+
+#[wasm_bindgen(js_class = Vad)]
+impl WebVad {
+    /// A new stream, from sample 0 and with no speech, deciding with `options` (each left out takes its default).
+    /// Rejects with `invalid-vad-options` for options out of their bounds or of the wrong type.
+    #[wasm_bindgen(unchecked_return_type = "Promise<VadStream>")]
+    pub fn stream(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "VadOptions")] options: Option<js_sys::Object>,
+    ) -> Promise {
+        let loaded = self.loaded.clone();
+        promise(async move {
+            let options = values::vad_options(options.as_ref())?;
+            let vad = loaded.as_vad().ok_or(Error::new("model-cannot-detect"))?;
+            let stream = vad.stream(options).await?;
+            Ok(WebVadStream {
+                sample_rate: stream.sample_rate(),
+                window: stream.window(),
+                stream: Rc::new(async_lock::Mutex::new(stream)),
+            }
+            .into())
+        })
+    }
+}
+
+/// One stream of audio through a voice activity detector: feed it mono samples at `sampleRate` as they come, in pieces
+/// of any length. It keeps the model in memory until it is freed. Calls on it wait for one another.
+#[wasm_bindgen(js_name = VadStream)]
+pub struct WebVadStream {
+    stream: Rc<async_lock::Mutex<VadStream>>,
+    sample_rate: u32,
+    window: usize,
+}
+
+#[wasm_bindgen(js_class = VadStream)]
+impl WebVadStream {
+    /// The rate the stream takes, in Hz: the model's own. It is not resampled.
+    #[wasm_bindgen(getter, js_name = sampleRate)]
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// How many samples one window, one frame, holds.
+    #[wasm_bindgen(getter)]
+    pub fn window(&self) -> usize {
+        self.window
+    }
+
+    /// Takes the next `samples` and runs the model on every whole window it now has: `{ frames, events }`.
+    #[wasm_bindgen(unchecked_return_type = "Promise<VadOutput>")]
+    pub fn accept(&self, samples: Vec<f32>) -> Promise {
+        let stream = Rc::clone(&self.stream);
+        promise(async move {
+            let output = stream.lock().await.accept(&samples).await?;
+            Ok(values::vad_output(&output))
+        })
+    }
+
+    /// Ends the stream's audio: the speech in progress, if any, as its `speech-end` event (else `undefined`); the
+    /// stream then starts over from sample 0.
+    #[wasm_bindgen(unchecked_return_type = "Promise<VadEvent | undefined>")]
+    pub fn finish(&self) -> Promise {
+        let stream = Rc::clone(&self.stream);
+        promise(async move {
+            let ended = stream.lock().await.finish();
+            Ok(ended.map_or(JsValue::UNDEFINED, |event| values::vad_event(&event)))
+        })
+    }
+
+    /// Starts over from sample 0, forgetting any speech in progress.
+    #[wasm_bindgen(unchecked_return_type = "Promise<void>")]
+    pub fn reset(&self) -> Promise {
+        let stream = Rc::clone(&self.stream);
+        promise(async move {
+            stream.lock().await.reset();
+            Ok(JsValue::UNDEFINED)
         })
     }
 }

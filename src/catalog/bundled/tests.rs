@@ -239,3 +239,27 @@ fn only_sherpa_onnx_builds_map_a_calls_arguments_into_their_config() {
         ["canary.src_lang", "canary.tgt_lang"]
     );
 }
+
+/// A build's `config` is sherpa-onnx's: the numbers its config takes that the engine must know. Silero's sherpa-onnx
+/// build says its window and rate there.
+#[test]
+fn only_sherpa_onnx_builds_set_config_numbers() {
+    let fragment = BundledCatalog.load().expect("bundled catalogue");
+    let builds: Vec<_> = fragment
+        .families
+        .iter()
+        .flat_map(|family| &family.models)
+        .flat_map(|model| &model.builds)
+        .collect();
+    for build in &builds {
+        if !build.config.is_empty() {
+            assert_eq!(build.backend, "sherpa-onnx", "{}", build.id);
+        }
+    }
+    let silero = builds
+        .iter()
+        .find(|build| build.id == "silero-vad/sherpa-onnx-fp32")
+        .expect("Silero on sherpa-onnx");
+    assert_eq!(silero.config.get("silero_vad.window_size"), Some(&512));
+    assert_eq!(silero.config.get("sample_rate"), Some(&16_000));
+}

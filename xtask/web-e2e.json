@@ -6,6 +6,10 @@
     "model": "whisper-base",
     "build": "whisper-base/transformers-js-q8"
   },
+  "vad": {
+    "model": "silero-vad",
+    "build": "silero-vad/transformers-js-fp32"
+  },
   "tts": [
     {
       "model": "kokoro-82m-v1.0",

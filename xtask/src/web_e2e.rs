@@ -3,7 +3,9 @@
 //! its dependencies), and a page (`xtask/web-e2e/page.mjs`) that installs, cancels, loads and uninstalls through
 //! `WebEngine`, so the files go through the engine's own OPFS storage and `fetch` downloads, then transcribes the native
 //! loop's recorded clips (`tests/voice_loop.json`) with the plan's speech-to-text build, each once told its language and
-//! once with none (the model detects it), and what each text-to-speech build says in its language's sentence. `xtask/web-e2e/run.mjs` serves the page and drives Chrome.
+//! once with none (the model detects it), and what each text-to-speech build says in its language's sentence; then the
+//! voice activity build hears each clip between two silences, through a stream, judged by the native loop's rule
+//! (`voice_loop.rs`). `xtask/web-e2e/run.mjs` serves the page and drives Chrome.
 //!
 //! What it runs is data, `xtask/web-e2e.json`: the accelerators the page reports, the speech-to-text build, and each
 //! text-to-speech build with its voice and language. Every check the page makes must pass, and every transcript must
@@ -20,7 +22,7 @@ use std::process::{Command, Stdio};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::voice_loop::{fetch, primary, report, Clip, Row};
+use crate::voice_loop::{fetch, primary, report, report_detections, Clip, Detection, Row, VadRule};
 use crate::{empty_dir, npm, read, repo, run_in, write, Result};
 
 const PAGE: &str = include_str!("../web-e2e/page.mjs");
@@ -34,6 +36,8 @@ struct Plan {
     accelerators: Vec<String>,
     /// What transcribes.
     stt: Build,
+    /// What detects speech.
+    vad: Build,
     /// What speaks.
     tts: Vec<Speaker>,
 }
@@ -55,13 +59,14 @@ struct Speaker {
     language: String,
 }
 
-/// What the web loop takes from the native one's plan (`tests/voice_loop.json`): its one word error rate, its sentences
-/// and its recorded clips.
+/// What the web loop takes from the native one's plan (`tests/voice_loop.json`): its one word error rate, its sentences,
+/// its recorded clips and the rule a detector is judged by.
 #[derive(Debug, Deserialize)]
 struct Shared {
     max_wer: f64,
     sentences: BTreeMap<String, String>,
     clips: Vec<Clip>,
+    vad: VadRule,
 }
 
 /// What the page posts.
@@ -72,6 +77,8 @@ struct Report {
     checks: Vec<Check>,
     #[serde(default)]
     rows: Vec<PageRow>,
+    #[serde(default)]
+    detections: Vec<PageDetection>,
     #[serde(default)]
     error: Option<Value>,
 }
@@ -90,6 +97,21 @@ struct PageRow {
     language: String,
     said: String,
     heard: Option<String>,
+    error: Option<String>,
+}
+
+/// One clip heard by the detector, in seconds.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageDetection {
+    pair: String,
+    clip: [f64; 2],
+    #[serde(default)]
+    segments: Vec<[f64; 2]>,
+    #[serde(default)]
+    finished: bool,
+    #[serde(default)]
+    starts: usize,
     error: Option<String>,
 }
 
@@ -155,6 +177,11 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             "model": plan.stt.model,
             "build": plan.stt.build,
         },
+        "vad": {
+            "model": plan.vad.model,
+            "build": plan.vad.build,
+            "silenceS": shared.vad.silence_s,
+        },
         "tts": speakers,
         "clips": page_clips,
     });
@@ -212,6 +239,24 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
     let accelerators = plan.accelerators.join(", ");
     let title = format!("Voice loop (web: headless Chrome, {accelerators})");
     let judged = report(&title, &rows, shared.max_wer);
+    let detections: Vec<Detection> = page
+        .detections
+        .into_iter()
+        .map(|detection| Detection {
+            pair: detection.pair,
+            clip: detection.clip[0]..detection.clip[1],
+            segments: detection
+                .segments
+                .iter()
+                .map(|segment| segment[0]..segment[1])
+                .collect(),
+            finished: detection.finished,
+            starts: detection.starts,
+            error: detection.error,
+        })
+        .collect();
+    let title = format!("Voice activity (web: headless Chrome, {accelerators})");
+    let detected = report_detections(&title, &detections, &shared.vad);
     if !failed.is_empty() {
         return Err(format!(
             "{} check(s) failed: {}",
@@ -219,7 +264,7 @@ pub(crate) fn run(dir: Option<&str>) -> Result<()> {
             failed.join("; ")
         ));
     }
-    judged
+    judged.and(detected)
 }
 
 fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8], what: &str) -> Result<T> {

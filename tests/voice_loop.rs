@@ -8,7 +8,9 @@
 //! rate (the engine resamples it); then each real recorded clip (downloaded once through the host, checked against its
 //! sha256) is transcribed by the same models. Every transcript is printed and compared with what was said by its
 //! normalised word error rate (`voice_loop/wer.rs`); the test fails if any is above the plan's one `max_wer`, or if
-//! anything fails to install, load, speak or transcribe.
+//! anything fails to install, load, speak or transcribe. Each voice activity detector of the plan then hears each clip
+//! between two stretches of silence, through a stream fed 20 ms at a time, and must find its speech there and nowhere
+//! else (`voice_loop/vad.rs`).
 //!
 //! It downloads about 1.5 GB the first time, so it is ignored unless asked for; the `e2e` workflow asks, on each native
 //! platform, through `cargo xtask e2e`:
@@ -26,6 +28,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::{env, fs};
@@ -33,13 +36,16 @@ use std::{env, fs};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
-    Accelerator, BundledCatalog, Cancel, Engine, Host, LoadedModel, NativeHost, Progress,
+    Accelerator, BundledCatalog, Cancel, Engine, Host, LoadedModel, NativeHost, Progress, Vad,
+    VadEvent, VadOptions,
 };
 
 #[path = "voice_loop/audio.rs"]
 mod audio;
 #[path = "voice_loop/tests.rs"]
 mod tests;
+#[path = "voice_loop/vad.rs"]
+mod vad;
 #[path = "voice_loop/wer.rs"]
 mod wer;
 
@@ -61,6 +67,8 @@ struct Plan {
     stt: BTreeMap<String, Vec<String>>,
     /// Real recordings.
     clips: Vec<Clip>,
+    /// The voice activity detectors that hear the clips, and how they are judged.
+    vad: vad::VadPlan,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +102,15 @@ struct Row {
     language: String,
     said: String,
     heard: Result<String>,
+}
+
+/// One clip heard by one voice activity detector: where the clip lies in what it heard, the speech it found, in seconds,
+/// and the verdict.
+struct Detection {
+    pair: String,
+    clip: Range<f64>,
+    segments: Vec<Range<f64>>,
+    verdict: Result<()>,
 }
 
 #[test]
@@ -169,6 +186,7 @@ fn run() -> Result<()> {
             }
         }
     }
+    let mut recorded = Vec::new();
     for clip in &plan.clips {
         let bytes = fetch(&fetcher, &dir.join("clips"), clip)?;
         let (samples, rate) = audio::read_wav(&bytes).map_err(|e| format!("{}: {e}", clip.url))?;
@@ -185,8 +203,93 @@ fn run() -> Result<()> {
                 audio,
             ));
         }
+        recorded.push((what, samples, rate));
     }
-    report(&rows, plan.max_wer, &loaded_on, &dir.join("summary.md"))
+    let mut detections = Vec::new();
+    for build in &plan.vad.builds {
+        let loaded = load(&engine, build, &mut loaded_on)?;
+        let vad = loaded
+            .as_vad()
+            .ok_or(format!("{build}: not a voice activity detector"))?;
+        for (what, samples, rate) in &recorded {
+            detections.push(detect(&vad, build, what, (samples, *rate), &plan.vad));
+        }
+    }
+    report(
+        &rows,
+        plan.max_wer,
+        &detections,
+        &loaded_on,
+        &dir.join("summary.md"),
+    )
+}
+
+/// What `vad` finds in the clip `what` (its samples and their rate), set between silences and fed 20 ms at a time,
+/// judged by the plan's rule.
+fn detect(
+    vad: &Vad<'_>,
+    build: &str,
+    what: &str,
+    (samples, rate): (&[f32], u32),
+    plan: &vad::VadPlan,
+) -> Detection {
+    let pair = format!("{what} → {build}");
+    let heard = (|| {
+        let mut stream = block_on(vad.stream(VadOptions::default())).map_err(|e| e.code)?;
+        let at = stream.sample_rate();
+        let clip = audio::resample(samples, rate, at);
+        let (padded, span) = vad::padded(&clip, at, plan.silence_s);
+        let mut events = Vec::new();
+        for piece in padded.chunks((at / 50) as usize) {
+            events.extend(block_on(stream.accept(piece)).map_err(|e| e.code)?.events);
+        }
+        let finished = stream.finish();
+        let starts = events
+            .iter()
+            .filter(|event| matches!(event, VadEvent::SpeechStart { .. }))
+            .count();
+        let seconds = |sample: u64| sample as f64 / f64::from(at);
+        let segments: Vec<Range<f64>> = events
+            .iter()
+            .chain(&finished)
+            .filter_map(|event| match event {
+                VadEvent::SpeechEnd { start, end } => Some(seconds(*start)..seconds(*end)),
+                _ => None,
+            })
+            .collect();
+        Ok::<_, &str>((span, segments, finished.is_some(), starts))
+    })();
+    let (clip, segments, verdict) = match heard {
+        Ok((span, segments, finished, starts)) => {
+            let verdict = if starts == segments.len() {
+                vad::judge(&segments, finished, &span, plan)
+            } else {
+                Err(format!(
+                    "{starts} speech starts for {} ends",
+                    segments.len()
+                ))
+            };
+            (span, segments, verdict)
+        }
+        Err(code) => (0.0..0.0, Vec::new(), Err(format!("`{code}`"))),
+    };
+    let found: Vec<String> = segments
+        .iter()
+        .map(|segment| format!("{:.2}–{:.2}", segment.start, segment.end))
+        .collect();
+    println!(
+        "{pair}: clip at {:.2}–{:.2} s, speech at {}: {}",
+        clip.start,
+        clip.end,
+        found.join(", "),
+        verdict.as_ref().map_or_else(Clone::clone, |()| "ok".into())
+    );
+    Detection {
+        pair,
+        clip,
+        segments,
+        verdict,
+    }
 }
 
 fn plan_path() -> PathBuf {
@@ -305,11 +408,13 @@ fn fetch(host: &NativeHost, clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Prints the table and the accelerator each build was loaded on, writes them to `summary` with a heading for this
-/// platform, and fails if any row failed or is above `max_wer`.
+/// Prints the tables (transcripts, then detections) and the accelerator each build was loaded on, writes them to
+/// `summary` with a heading for this platform, and fails if any row failed or is above `max_wer`, or any detection
+/// failed.
 fn report(
     rows: &[Row],
     max_wer: f64,
+    detections: &[Detection],
     loaded_on: &BTreeMap<String, Option<Accelerator>>,
     summary: &Path,
 ) -> Result<()> {
@@ -345,20 +450,34 @@ fn report(
         rows.len(),
         max_wer * 100.0
     );
+    let (detected, missed) = vad::table(detections.iter().map(|detection| {
+        (
+            detection.pair.as_str(),
+            &detection.clip,
+            &detection.segments[..],
+            &detection.verdict,
+        )
+    }));
     let mut builds = String::from("Builds, and the accelerator the engine loaded each on:\n\n");
     for (build, accelerator) in loaded_on {
         let on =
             accelerator.map_or_else(|| "?".to_owned(), |accelerator| format!("{accelerator:?}"));
         builds.push_str(&format!("- `{build}`: {on}\n"));
     }
-    println!("\n{table}\n{verdict}\n\n{builds}");
+    println!("\n{table}\n{verdict}\n\n{detected}\n{builds}");
     let heading = format!("## Voice loop ({} {})", env::consts::OS, env::consts::ARCH);
     write(
         summary,
-        format!("{heading}\n\n{table}\n{verdict}\n\n{builds}").as_bytes(),
+        format!("{heading}\n\n{table}\n{verdict}\n\n{detected}\n{builds}").as_bytes(),
     )?;
     if bad > 0 || rows.is_empty() {
         return Err(format!("{bad} of {} comparisons failed", rows.len()));
+    }
+    if missed > 0 || detections.is_empty() {
+        return Err(format!(
+            "{missed} of {} detections failed",
+            detections.len()
+        ));
     }
     Ok(())
 }
