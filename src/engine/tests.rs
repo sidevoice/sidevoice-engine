@@ -1,77 +1,108 @@
-//! The funnel over a fake host and catalogue: what fits is offered, and every other build comes back with why not.
-//! Then a build's lifecycle with a fake backend: installed, loaded, unloaded when idle, failed, cancelled, and its
-//! backend's library opened with its first model and closed with its last.
+//! The engine over fake hosts, catalogues and a fake backend. What [`Engine::models`] says: builds ranked, those that
+//! run here first, the rest with why not, and what is installed. Then the interface: install, load (installing first,
+//! one model in memory per build, one library per backend, closed with its last model), the build `load` chooses,
+//! what fails and why, uninstalling, and a loaded model's calls: resampled audio, voices described by the catalogue,
+//! and calls on one model waiting for one another.
 
+#[cfg(native)]
+use std::future::Future;
+#[cfg(native)]
+use std::pin::pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+#[cfg(native)]
+use std::task::{Context, Poll};
 
-use super::{lock, Preparing};
-use crate::backend::{Backend, BackendSpec, Library, LoadedModel};
+use crate::backend::{Backend, BackendModel, BackendSpec, Library, SttModel, TtsModel};
+use crate::catalog::{CatalogFragment, CatalogSource};
 use crate::host::Platform;
 use crate::install::Installed;
-use crate::test_support::{artifact, block_on, FakeCatalog, FakeHost, MemoryHost};
+use crate::test_support::{
+    artifact, block_on, build, family, model, sha256, FakeCatalog, FakeHost, MemoryHost,
+};
 use crate::{
-    async_trait, Accelerator, Artifact, Build, BuildState, BundledCatalog, Cancel, Capabilities,
-    Capability, Engine, Error, Fetcher, Host, ModelFile, Offer, Reason, Rejection, Result, Runs,
-    Selection, Storage,
+    async_trait, Accelerator, Artifact, BuildEntry, BundledCatalog, Cancel, Capabilities,
+    Capability, Engine, Error, Fetcher, Gender, Host, LoadedModel, ModelFile, Reason, Result, Runs,
+    Storage, Voice,
 };
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
 #[test]
-fn an_engine_with_a_fake_host_offers_what_fits_and_says_why_the_rest_does_not() {
+fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     let engine = Engine::new(Box::new(FakeHost), vec![Box::new(FakeCatalog)]).expect("engine");
-    let offers = engine.offers(Capability::Stt);
-
-    let offered: Vec<_> = offers
+    let models = block_on(engine.models()).expect("models");
+    let small = models
         .iter()
-        .filter_map(|offer| match offer {
-            Offer::Offered { model, build, .. } => Some((model.id.as_str(), build.id.as_str())),
-            Offer::Rejected { .. } => None,
-        })
-        .collect();
-    let rejected: Vec<_> = offers
-        .iter()
-        .filter_map(|offer| match offer {
-            Offer::Rejected { build, why, .. } => Some((build.id.as_str(), why.clone())),
-            Offer::Offered { .. } => None,
-        })
-        .collect();
+        .find(|m| m.id == "whisper-small")
+        .expect("small");
+    assert_eq!(small.family, "whisper", "its family, from the catalogue");
 
-    if cfg!(target_arch = "wasm32") {
-        assert_eq!(offered, [("whisper-small", "whisper-small-web")]);
+    let recommended = if cfg!(target_arch = "wasm32") {
+        "whisper-small-web"
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        assert_eq!(offered, [("whisper-small", "whisper-small-mlx")]);
+        "whisper-small-mlx"
     } else {
-        assert_eq!(offered, [("whisper-small", "whisper-small-onnx")]);
-    }
-    assert!(rejected.contains(&("whisper-small-gguf", Rejection::BackendNotInThisBuild)));
-    let large_rejection = if cfg!(target_arch = "wasm32") {
-        // Its only build is native: on the web, its backend does not exist.
-        Rejection::BackendNotInThisBuild
-    } else {
-        Rejection::DoesNotFit(Reason::with_numbers("memory", 16_384, 8_192))
+        "whisper-small-onnx"
     };
-    assert!(rejected.contains(&("whisper-large-onnx", large_rejection)));
-    assert!(offers
+    assert_eq!(small.recommended_build.as_deref(), Some(recommended));
+    assert_eq!(small.builds[0].id, recommended);
+    assert!(small.builds[0].available && small.builds[0].accelerator.is_some());
+    assert!(small.builds[0].reasons.is_empty());
+    let gguf = small
+        .builds
         .iter()
-        .all(|offer| !matches!(offer, Offer::Offered { model, .. } if !model.capabilities.contains(&Capability::Stt))));
+        .find(|b| b.id == "whisper-small-gguf")
+        .expect("gguf");
+    assert!(!gguf.available && gguf.accelerator.is_none());
+    assert_eq!(gguf.reasons, [Reason::new("backend-not-in-this-build")]);
+    let available: Vec<_> = small.builds.iter().map(|build| build.available).collect();
+    assert!(
+        available.windows(2).all(|pair| pair[0] >= pair[1]),
+        "runs first"
+    );
+    assert!(!small.installed && small.builds.iter().all(|build| !build.installed));
+    assert_eq!((small.parameters_m, small.download_bytes()), (1, 1));
+
+    let large = models
+        .iter()
+        .find(|m| m.id == "whisper-large")
+        .expect("large");
+    assert_eq!(large.recommended_build, None);
+    let why = if cfg!(target_arch = "wasm32") {
+        // Its only build is native: on the web, its backend does not exist.
+        Reason::new("backend-not-in-this-build")
+    } else {
+        Reason::with_numbers("memory", 16_384, 8_192)
+    };
+    assert_eq!(large.builds[0].reasons, [why]);
+}
+
+/// A model's builds' download sizes, for the test above: each build of the fake catalogue downloads one byte.
+trait DownloadBytes {
+    fn download_bytes(&self) -> u64;
+}
+
+impl DownloadBytes for crate::Model {
+    fn download_bytes(&self) -> u64 {
+        self.builds[0].download_bytes
+    }
 }
 
 #[cfg(native)]
 #[test]
-fn a_native_engine_and_its_futures_can_cross_threads() {
+fn a_native_engine_its_futures_and_its_loaded_models_can_cross_threads() {
     fn shared<T: Send + Sync>(_: &T) {}
     fn sent<T: Send>(_: T) {}
+    fn shared_type<T: Send + Sync>() {}
 
     let engine = Engine::new(Box::new(FakeHost), vec![Box::new(FakeCatalog)]).expect("engine");
     shared(&engine);
-    let selection = engine
-        .select(Capability::Stt, &crate::Preferences::default())
-        .expect("a selection");
-    sent(engine.prepare(&selection, &|_| {}, &Cancel::new()));
+    sent(engine.models());
+    sent(engine.load("whisper-small", None, &|_| {}, &Cancel::new()));
+    sent(engine.install("whisper-small", None, &|_| {}, &Cancel::new()));
+    shared_type::<LoadedModel>();
 }
 
 /// A native host on a platform backends.json has no entry for.
@@ -96,26 +127,21 @@ impl Host for Elsewhere {
 }
 
 #[test]
-fn a_platform_with_no_runtime_rejects_every_build_of_this_engine_in_the_funnel() {
+fn on_a_platform_with_no_runtime_no_build_of_this_engine_is_available() {
     let engine = Engine::new(Box::new(Elsewhere), vec![Box::new(FakeCatalog)]).expect("engine");
-    let offers = engine.offers(Capability::Stt);
-    assert!(!offers.is_empty());
-    for offer in offers {
-        let Offer::Rejected { build, why, .. } = offer else {
-            panic!("nothing runs on plan9: {offer:?}");
-        };
-        if engine.backends().contains(&build.backend.as_str()) {
-            let no_runtime = Reason::new("no-runtime-for-platform");
-            assert_eq!(
-                why,
-                Rejection::BackendUnavailable(no_runtime),
-                "{}",
-                build.id
-            );
-        } else {
-            assert_eq!(why, Rejection::BackendNotInThisBuild, "{}", build.id);
+    for model in block_on(engine.models()).expect("models") {
+        assert_eq!(model.recommended_build, None, "{}", model.id);
+        for build in model.builds {
+            let why = if engine.backends().contains(&build.backend.as_str()) {
+                "no-runtime-for-platform"
+            } else {
+                "backend-not-in-this-build"
+            };
+            assert_eq!(build.reasons, [Reason::new(why)], "{}", build.id);
         }
     }
+    let load = block_on(engine.load("whisper-small", None, &|_| {}, &Cancel::new()));
+    assert_eq!(load.map(drop), Err(Error::new("no-build-available")));
 }
 
 /// What each CI platform offers with the catalogue this repository ships: every bundled model of a capability, each
@@ -123,13 +149,15 @@ fn a_platform_with_no_runtime_rejects_every_build_of_this_engine_in_the_funnel()
 #[test]
 fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     let engine = Engine::new(Box::new(FakeHost), vec![Box::new(BundledCatalog)]).expect("engine");
+    let models = block_on(engine.models()).expect("models");
     let offered = |capability| {
-        let mut offered: Vec<_> = engine
-            .offers(capability)
-            .into_iter()
-            .filter_map(|offer| match offer {
-                Offer::Offered { model, build, .. } => Some((model.id, build.backend)),
-                Offer::Rejected { .. } => None,
+        let mut offered: Vec<_> = models
+            .iter()
+            .filter(|model| model.capabilities.contains(&capability))
+            .filter_map(|model| {
+                let recommended = model.recommended_build.as_ref()?;
+                let build = model.builds.iter().find(|build| &build.id == recommended)?;
+                Some((model.id.clone(), build.backend.clone()))
             })
             .collect();
         offered.sort();
@@ -197,15 +225,72 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     }
 }
 
-const MODEL_A: &[u8] = b"model a";
-const MODEL_B: &[u8] = b"model b";
 const LIBRARY: &[u8] = b"the fake backend's library";
 
-/// A backend whose library counts how many times it was opened, and how many are open.
-struct FakeBackend {
+/// A file of a fake build: `https://models/<id>`, holding `<id>`'s bytes.
+fn file(id: &str) -> ModelFile {
+    ModelFile {
+        key: "model.onnx".to_owned(),
+        url: format!("https://models/{id}"),
+        sha256: sha256(id.as_bytes()),
+        bytes: id.len() as u64,
+        archive_path: None,
+        mutable: false,
+    }
+}
+
+/// A build of the fake backend, `id`, with its file.
+fn fake(id: &str) -> BuildEntry {
+    BuildEntry {
+        files: vec![file(id)],
+        ..build(id, "fake", 0)
+    }
+}
+
+/// The fake catalogue: `ear` (speech to text, two builds), `voice` (text to speech, voices "a" declared and "b" not),
+/// `broken` (fails to load), and `other`, which shares `ear`'s first file.
+struct FakeModels;
+
+impl CatalogSource for FakeModels {
+    fn load(&self) -> Result<CatalogFragment> {
+        let mut voice = model("voice", Capability::Tts, vec![fake("voice-1")]);
+        voice.languages = vec!["es".to_owned(), "en".to_owned()];
+        voice.voices = vec![Voice {
+            id: "a".to_owned(),
+            languages: vec!["es".to_owned()],
+            gender: Some(Gender::Female),
+        }];
+        let mut other = model("other", Capability::Stt, vec![fake("other-1")]);
+        other.builds[0].files.push(ModelFile {
+            key: "shared".to_owned(),
+            ..file("ear-1")
+        });
+        Ok(CatalogFragment {
+            families: vec![family(
+                "fake",
+                vec![
+                    model("ear", Capability::Stt, vec![fake("ear-1"), fake("ear-2")]),
+                    voice,
+                    model("broken", Capability::Stt, vec![fake("broken-1")]),
+                    other,
+                ],
+            )],
+        })
+    }
+}
+
+/// A backend whose library counts how many times it was opened and how many are open, and whose models count how
+/// many were loaded and how many of their calls run at once.
+#[derive(Default, Clone)]
+struct Counters {
     opened: Arc<AtomicUsize>,
     open: Arc<AtomicUsize>,
+    loaded: Arc<AtomicUsize>,
+    running: Arc<AtomicUsize>,
+    most_running: Arc<AtomicUsize>,
 }
+
+struct FakeBackend(Counters);
 
 const FAKE: BackendSpec = BackendSpec {
     id: "fake",
@@ -227,21 +312,17 @@ impl Backend for FakeBackend {
             library.starts_with("memory:models/") && library.ends_with("/library"),
             "{library}"
         );
-        self.opened.fetch_add(1, Ordering::Relaxed);
-        self.open.fetch_add(1, Ordering::Relaxed);
-        Ok(Box::new(FakeLibrary {
-            open: Arc::clone(&self.open),
-        }))
+        self.0.opened.fetch_add(1, Ordering::Relaxed);
+        self.0.open.fetch_add(1, Ordering::Relaxed);
+        Ok(Box::new(FakeLibrary(self.0.clone())))
     }
 }
 
-struct FakeLibrary {
-    open: Arc<AtomicUsize>,
-}
+struct FakeLibrary(Counters);
 
 impl Drop for FakeLibrary {
     fn drop(&mut self) {
-        self.open.fetch_sub(1, Ordering::Relaxed);
+        self.0.open.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -250,23 +331,93 @@ impl Drop for FakeLibrary {
 impl Library for FakeLibrary {
     async fn load(
         &self,
-        build: &Build,
+        build: &BuildEntry,
         _accelerator: Accelerator,
         files: &Installed,
-    ) -> Result<Box<dyn LoadedModel>> {
-        if build.id == "broken" {
-            return Err(Error::new("model-did-not-load"));
+    ) -> Result<Box<dyn BackendModel>> {
+        if build.id.starts_with("broken") {
+            return Err(Error::new("model-load-failed"));
         }
         assert!(files.file("model.onnx").is_some());
-        Ok(Box::new(FakeModel))
+        self.0.loaded.fetch_add(1, Ordering::Relaxed);
+        Ok(Box::new(FakeModel(self.0.clone())))
     }
 }
 
-struct FakeModel;
+/// Speech to text that says how many samples it heard and in which language, yielding once on the way; and text to
+/// speech with voices "a" and "b" at 8 kHz, which says as many samples as the text has bytes, times the speed.
+struct FakeModel(Counters);
 
-impl LoadedModel for FakeModel {
+impl BackendModel for FakeModel {
+    fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
+        Some(self)
+    }
+
+    fn as_tts(&mut self) -> Option<&mut dyn TtsModel> {
+        Some(self)
+    }
+
     fn memory_mb(&self) -> Option<u32> {
         None
+    }
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl SttModel for FakeModel {
+    async fn transcribe(&mut self, pcm: &[f32], language: Option<&str>) -> Result<String> {
+        let running = self.0.running.fetch_add(1, Ordering::Relaxed) + 1;
+        self.0.most_running.fetch_max(running, Ordering::Relaxed);
+        // Natively, the call waits once, so that two calls overlap if nothing stops them (the web's test executor
+        // cannot wait).
+        #[cfg(native)]
+        YieldOnce(false).await;
+        self.0.running.fetch_sub(1, Ordering::Relaxed);
+        Ok(format!("{} samples in {language:?}", pcm.len()))
+    }
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl TtsModel for FakeModel {
+    fn voices(&self) -> Vec<String> {
+        vec!["a".to_owned(), "b".to_owned()]
+    }
+
+    fn sample_rate(&self) -> u32 {
+        8_000
+    }
+
+    async fn speak(
+        &mut self,
+        text: &str,
+        voice: &str,
+        _language: Option<&str>,
+        speed: f32,
+    ) -> Result<Vec<f32>> {
+        if voice != "a" && voice != "b" {
+            return Err(Error::new("unknown-voice"));
+        }
+        Ok(vec![0.0; (text.len() as f32 * speed) as usize])
+    }
+}
+
+/// A future that waits once: pending the first time it is polled (waking itself), ready the second.
+#[cfg(native)]
+struct YieldOnce(bool);
+
+#[cfg(native)]
+impl Future for YieldOnce {
+    type Output = ();
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, context: &mut Context<'_>) -> Poll<()> {
+        if self.0 {
+            Poll::Ready(())
+        } else {
+            self.0 = true;
+            context.waker().wake_by_ref();
+            Poll::Pending
+        }
     }
 }
 
@@ -280,161 +431,273 @@ fn fake_runtime(_backend: &str, _platform: Platform) -> Option<Vec<Artifact>> {
 }
 
 fn served() -> MemoryHost {
-    MemoryHost::serving(&[
-        ("https://models/a", MODEL_A),
-        ("https://models/b", MODEL_B),
-        ("https://models/broken", MODEL_A),
-        ("https://backends/library", LIBRARY),
-    ])
+    let ids = ["ear-1", "ear-2", "voice-1", "broken-1", "other-1"];
+    let urls: Vec<_> = ids
+        .iter()
+        .map(|id| format!("https://models/{id}"))
+        .collect();
+    let mut files: Vec<(&str, &[u8])> = urls
+        .iter()
+        .zip(ids)
+        .map(|(url, id)| (url.as_str(), id.as_bytes()))
+        .collect();
+    files.push(("https://backends/library", LIBRARY));
+    MemoryHost::serving(&files)
 }
 
 struct Fixture {
     engine: Engine,
-    opened: Arc<AtomicUsize>,
-    open: Arc<AtomicUsize>,
+    counters: Counters,
 }
 
 impl Fixture {
-    fn new(host: MemoryHost) -> Self {
-        let opened = Arc::new(AtomicUsize::new(0));
-        let open = Arc::new(AtomicUsize::new(0));
-        let backend = FakeBackend {
-            opened: Arc::clone(&opened),
-            open: Arc::clone(&open),
-        };
+    fn new() -> Self {
+        let counters = Counters::default();
+        let backend = FakeBackend(counters.clone());
         let engine = Engine::with_backends(
-            Box::new(host),
-            vec![],
+            Box::new(served()),
+            vec![Box::new(FakeModels)],
             vec![Box::new(backend)],
             fake_runtime,
         )
         .expect("engine");
-        Self {
-            engine,
-            opened,
-            open,
-        }
+        Self { engine, counters }
     }
 
-    fn prepare(&self, selection: &Selection) -> Result<super::Handle> {
-        block_on(self.engine.prepare(selection, &|_| {}, &Cancel::new()))
+    fn load(&self, model: &str, build: Option<&str>) -> Result<LoadedModel> {
+        block_on(self.engine.load(model, build, &|_| {}, &Cancel::new()))
     }
 
-    fn state(&self, selection: &Selection) -> Result<BuildState> {
-        block_on(self.engine.state(&selection.build))
+    fn install(&self, model: &str, build: Option<&str>) -> Result<()> {
+        block_on(self.engine.install(model, build, &|_| {}, &Cancel::new()))
     }
 
-    fn opened(&self) -> usize {
-        self.opened.load(Ordering::Relaxed)
+    fn installed(&self, model: &str) -> Vec<(String, bool)> {
+        let models = block_on(self.engine.models()).expect("models");
+        let model = models.iter().find(|m| m.id == model).expect("listed");
+        model
+            .builds
+            .iter()
+            .map(|build| (build.id.clone(), build.installed))
+            .collect()
     }
 
-    fn open(&self) -> usize {
-        self.open.load(Ordering::Relaxed)
+    fn count(counter: &AtomicUsize) -> usize {
+        counter.load(Ordering::Relaxed)
     }
 }
 
-/// Build `id` of the fake backend, whose model file is `https://models/<id>` and should be `bytes`.
-fn selection(id: &str, bytes: &[u8]) -> Selection {
-    let mut build = crate::test_support::build(id, "fake", 0);
-    build.files = vec![ModelFile {
-        key: "model.onnx".to_owned(),
-        url: format!("https://models/{id}"),
-        sha256: crate::test_support::sha256(bytes),
-        bytes: bytes.len() as u64,
-        archive_path: None,
-        mutable: false,
-    }];
-    Selection {
-        model: crate::test_support::model(id, Capability::Stt, vec![build.clone()]),
-        build,
-        accelerator: Accelerator::Cpu,
-    }
+fn pair(build: &str, installed: bool) -> (String, bool) {
+    (build.to_owned(), installed)
 }
 
 #[test]
-fn preparing_installs_and_loads_a_build_once_and_its_state_follows() {
-    let fixture = Fixture::new(served());
-    let a = selection("a", MODEL_A);
-    assert_eq!(fixture.state(&a), Ok(BuildState::Absent));
-
-    let handle = fixture.prepare(&a).expect("prepared");
-    assert_eq!(fixture.state(&a), Ok(BuildState::Ready));
-    assert_eq!(fixture.prepare(&a), Ok(handle), "already loaded");
-    assert_eq!((fixture.opened(), fixture.open()), (1, 1));
-}
-
-#[test]
-fn a_backends_library_opens_with_its_first_model_and_closes_with_its_last() {
-    let fixture = Fixture::new(served());
-    let a = selection("a", MODEL_A);
-    let b = selection("b", MODEL_B);
-    let first = fixture.prepare(&a).expect("a");
-    fixture.prepare(&b).expect("b");
-    assert_eq!((fixture.opened(), fixture.open()), (1, 1), "one library");
-
-    fixture.engine.unload_idle();
-    assert_eq!(fixture.state(&a), Ok(BuildState::Ready), "not idle yet");
-
-    lock(&fixture.engine.memory).set_idle(Duration::ZERO);
-    fixture.engine.unload_idle();
-    assert_eq!(fixture.open(), 0, "closed with the last model");
-    assert_eq!(fixture.state(&a), Ok(BuildState::Installed));
-    assert_eq!(fixture.state(&b), Ok(BuildState::Installed));
-
-    let again = Engine::with_idle_unload(fixture.engine, super::DEFAULT_IDLE_UNLOAD);
-    let reloaded = block_on(again.prepare(&a, &|_| {}, &Cancel::new())).expect("a again");
-    assert_ne!(reloaded, first);
-    assert_eq!(fixture.opened.load(Ordering::Relaxed), 2);
-    assert_eq!(fixture.open.load(Ordering::Relaxed), 1);
-}
-
-#[test]
-fn a_build_that_fails_to_install_or_load_is_failed_until_prepared_again() {
-    let fixture = Fixture::new(MemoryHost::serving(&[
-        ("https://models/a", b"tampered"),
-        ("https://models/broken", MODEL_A),
-        ("https://backends/library", LIBRARY),
-    ]));
-    let a = selection("a", MODEL_A);
-    let digest_mismatch = Error::new("digest-mismatch");
-    assert_eq!(fixture.prepare(&a), Err(digest_mismatch));
-    assert_eq!(fixture.state(&a), Ok(BuildState::Failed(digest_mismatch)));
-    assert_eq!(fixture.opened(), 0, "nothing to open");
-
-    let broken = selection("broken", MODEL_A);
-    let did_not_load = Error::new("model-did-not-load");
-    assert_eq!(fixture.prepare(&broken), Err(did_not_load));
-    assert_eq!(fixture.state(&broken), Ok(BuildState::Failed(did_not_load)));
+fn installing_stores_a_build_and_models_say_it_is_installed() {
+    let fixture = Fixture::new();
     assert_eq!(
-        (fixture.opened(), fixture.open()),
-        (1, 0),
-        "a library no model holds is closed"
+        fixture.installed("ear"),
+        [pair("ear-1", false), pair("ear-2", false)]
+    );
+    fixture.install("ear", Some("ear-2")).expect("installed");
+    assert_eq!(
+        fixture.installed("ear"),
+        [pair("ear-1", false), pair("ear-2", true)]
+    );
+    let models = block_on(fixture.engine.models()).expect("models");
+    assert!(
+        models
+            .iter()
+            .find(|m| m.id == "ear")
+            .expect("ear")
+            .installed
+    );
+    assert_eq!(
+        Fixture::count(&fixture.counters.opened),
+        0,
+        "installing loads nothing"
     );
 }
 
 #[test]
-fn a_cancelled_prepare_leaves_the_build_as_storage_has_it() {
-    let fixture = Fixture::new(served());
-    let a = selection("a", MODEL_A);
-    let cancel = Cancel::new();
-    cancel.cancel();
-    let prepared = block_on(fixture.engine.prepare(&a, &|_| {}, &cancel));
+fn loading_installs_first_and_a_build_loaded_twice_is_one_model_with_one_library() {
+    let fixture = Fixture::new();
+    let first = fixture.load("ear", None).expect("loaded");
+    assert_eq!((first.id(), first.build()), ("ear", "ear-1"));
+    assert_eq!(first.capabilities(), [Capability::Stt, Capability::Tts]);
+    assert_eq!(fixture.installed("ear")[0], pair("ear-1", true));
 
-    assert_eq!(prepared, Err(Error::new("cancelled")));
-    assert_eq!(fixture.state(&a), Ok(BuildState::Absent));
+    let again = fixture.load("ear", Some("ear-1")).expect("loaded again");
+    let voice = fixture.load("voice", None).expect("another model");
+    let counters = &fixture.counters;
+    assert_eq!(Fixture::count(&counters.loaded), 2, "ear once, voice once");
+    assert_eq!(
+        (
+            Fixture::count(&counters.opened),
+            Fixture::count(&counters.open)
+        ),
+        (1, 1),
+        "one library"
+    );
+
+    drop((first, voice));
+    assert_eq!(Fixture::count(&counters.open), 1, "`again` still holds ear");
+    drop(again);
+    assert_eq!(
+        Fixture::count(&counters.open),
+        0,
+        "closed with its last model"
+    );
+
+    fixture.load("ear", None).expect("loaded once more");
+    assert_eq!(Fixture::count(&counters.opened), 2);
+    assert_eq!(Fixture::count(&counters.loaded), 3);
 }
 
 #[test]
-fn a_build_being_prepared_cannot_be_prepared_again_until_that_ends() {
-    let states = std::sync::Mutex::default();
-    let preparing = Preparing::start(&states, "a").expect("first");
-    let busy = Preparing::start(&states, "a").map(drop);
-    assert_eq!(busy, Err(Error::new("already-preparing")));
-    preparing.set(BuildState::Loading);
-    assert!(Preparing::start(&states, "a").is_err());
-    assert!(Preparing::start(&states, "b").is_ok(), "another build");
+fn load_without_a_build_takes_an_installed_one_that_runs_here_else_the_recommended() {
+    let fixture = Fixture::new();
+    fixture.install("ear", Some("ear-2")).expect("installed");
+    assert_eq!(fixture.load("ear", None).expect("loaded").build(), "ear-2");
+}
 
-    drop(preparing);
-    assert!(lock(&states).is_empty());
-    assert!(Preparing::start(&states, "a").is_ok());
+#[test]
+fn what_cannot_be_loaded_says_why_with_a_code() {
+    let fixture = Fixture::new();
+    let code = |result: Result<LoadedModel>| result.map(drop).expect_err("refused").code;
+    assert_eq!(code(fixture.load("nobody", None)), "model-not-found");
+    assert_eq!(
+        code(fixture.load("ear", Some("voice-1"))),
+        "build-not-found"
+    );
+    assert_eq!(code(fixture.load("broken", None)), "model-load-failed");
+    assert_eq!(
+        code(fixture.load("broken", None)),
+        "model-load-failed",
+        "not remembered"
+    );
+
+    let cancel = Cancel::new();
+    cancel.cancel();
+    let cancelled = block_on(fixture.engine.load("ear", None, &|_| {}, &cancel));
+    assert_eq!(code(cancelled), "cancelled");
+    assert_eq!(fixture.installed("ear")[0], pair("ear-1", false));
+}
+
+#[test]
+fn uninstalling_waits_for_the_model_to_be_dropped_and_keeps_what_another_model_uses() {
+    let fixture = Fixture::new();
+    let ear = fixture.load("ear", None).expect("loaded");
+    fixture.install("ear", Some("ear-2")).expect("installed");
+    fixture.install("other", None).expect("installed");
+    let uninstall = |model| block_on(fixture.engine.uninstall(model));
+    assert_eq!(uninstall("ear"), Err(Error::new("model-in-use")));
+    drop(ear);
+    uninstall("ear").expect("uninstalled");
+    // Both of ear's build folders go, and ear-2's file with them; ear-1's only file is one `other`'s folder links too,
+    // so it stays, and `other` still loads.
+    assert_eq!(
+        fixture.installed("ear"),
+        [pair("ear-1", false), pair("ear-2", false)]
+    );
+    assert_eq!(fixture.installed("other"), [pair("other-1", true)]);
+    fixture.load("other", None).expect("still whole");
+    assert_eq!(uninstall("nobody"), Err(Error::new("model-not-found")));
+}
+
+#[test]
+fn transcribing_brings_the_audio_to_the_models_rate() {
+    let fixture = Fixture::new();
+    let ear = fixture.load("ear", None).expect("loaded");
+    let stt = ear.as_stt().expect("speech to text");
+    let heard = block_on(stt.transcribe(&[0.0; 8_000], 8_000, Some("es")));
+    assert_eq!(heard.as_deref(), Ok("16000 samples in Some(\"es\")"));
+    let as_is = block_on(stt.transcribe(&[0.0; 10], 16_000, None));
+    assert_eq!(as_is.as_deref(), Ok("10 samples in None"));
+}
+
+#[test]
+fn a_models_voices_are_described_by_the_catalogue_and_speech_comes_at_its_rate() {
+    let fixture = Fixture::new();
+    let voice = fixture.load("voice", None).expect("loaded");
+    let tts = voice.as_tts().expect("text to speech");
+    let voices = block_on(tts.voices());
+    assert_eq!(
+        voices,
+        [
+            Voice {
+                id: "a".to_owned(),
+                languages: vec!["es".to_owned()],
+                gender: Some(Gender::Female),
+            },
+            // Not in the catalogue: the model's languages, and no gender.
+            Voice {
+                id: "b".to_owned(),
+                languages: vec!["es".to_owned(), "en".to_owned()],
+                gender: None,
+            },
+        ]
+    );
+    let audio = block_on(tts.speak("hola", "b", Some("es"), None)).expect("spoken");
+    assert_eq!((audio.samples.len(), audio.sample_rate), (4, 8_000));
+    let faster = block_on(tts.speak("hola", "a", None, Some(2.0))).expect("spoken");
+    assert_eq!(faster.samples.len(), 8);
+    let unknown = block_on(tts.speak("hola", "z", None, None));
+    assert_eq!(unknown.map(drop), Err(Error::new("unknown-voice")));
+}
+
+/// Polls both futures, in turn, until both are done; this executor never sleeps, so it is only for futures that wake
+/// themselves.
+#[cfg(native)]
+fn both<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
+    let (mut a, mut b) = (pin!(a), pin!(b));
+    let (mut done_a, mut done_b) = (None, None);
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    while done_a.is_none() || done_b.is_none() {
+        if done_a.is_none() {
+            if let Poll::Ready(out) = a.as_mut().poll(&mut context) {
+                done_a = Some(out);
+            }
+        }
+        if done_b.is_none() {
+            if let Poll::Ready(out) = b.as_mut().poll(&mut context) {
+                done_b = Some(out);
+            }
+        }
+    }
+    (done_a.expect("done"), done_b.expect("done"))
+}
+
+#[cfg(native)]
+#[test]
+fn two_calls_on_one_model_run_one_after_the_other() {
+    let fixture = Fixture::new();
+    let ear = fixture.load("ear", None).expect("loaded");
+    let shared = fixture.load("ear", None).expect("the same model");
+    let (stt, other) = (ear.as_stt().expect("stt"), shared.as_stt().expect("stt"));
+    let (first, second) = both(
+        stt.transcribe(&[0.0; 2], 16_000, None),
+        other.transcribe(&[0.0; 3], 16_000, None),
+    );
+    assert_eq!((first.is_ok(), second.is_ok()), (true, true));
+    assert_eq!(
+        Fixture::count(&fixture.counters.most_running),
+        1,
+        "one at a time"
+    );
+}
+
+/// The resampling the engine does for speech to text: the length scales with the rates, and a constant stays constant.
+#[test]
+fn audio_is_resampled_linearly() {
+    let up = super::audio::resample(&[0.5; 100], 8_000, 16_000);
+    assert_eq!(up.len(), 200);
+    assert!(up.iter().all(|sample| (sample - 0.5).abs() < 1e-6));
+    assert_eq!(
+        super::audio::resample(&[0.1, 0.2], 16_000, 16_000),
+        [0.1, 0.2]
+    );
+    assert_eq!(
+        super::audio::resample(&[0.0; 48_000], 48_000, 16_000).len(),
+        16_000
+    );
 }

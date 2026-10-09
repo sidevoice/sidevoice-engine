@@ -24,7 +24,7 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 
 use super::SherpaOnnx;
-use crate::backend::{Backend, LoadedModel};
+use crate::backend::{Backend, BackendModel};
 use crate::host::Accelerator;
 use crate::install::Installed;
 use crate::test_support::{build, ready, sha256 as sha256_of};
@@ -233,7 +233,7 @@ fn accelerator(_files: &Installed) -> Accelerator {
     Accelerator::Cpu
 }
 
-fn load(files: &Installed) -> Box<dyn LoadedModel> {
+fn load(files: &Installed) -> Box<dyn BackendModel> {
     let model = if files.file("whisper.encoder").is_some() {
         "Whisper"
     } else {

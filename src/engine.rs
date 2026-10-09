@@ -1,48 +1,41 @@
-//! The engine of one place: its host, its catalogue and the backends compiled into it, and the steps from a capability
-//! to a loaded model: offers (resolver.rs), the choice per stage, installing (install.rs), loading, and unloading
-//! what goes unused.
+//! The engine of one place: its host, its catalogue and the backends compiled into it, and what an app does with a
+//! model: list them ([`Engine::models`]), install and uninstall one, and load one ([`Engine::load`]), which returns a
+//! [`LoadedModel`] that transcribes or speaks and is unloaded when dropped.
 //!
-//! Inside: `selection` (what the person asks for and what is chosen), `error` (why an engine cannot be built),
-//! `lifecycle` (a build's state) and `memory` (what is loaded, and when it is unloaded).
+//! Inside: `model` (a model as [`Engine::models`] lists it), `loaded` (a model in memory: [`LoadedModel`], [`Stt`],
+//! [`Tts`]), `audio` ([`Audio`], and resampling), `memory` (weak references: one library per backend, one model per
+//! build) and `error` (why an engine cannot be built).
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
 
 use crate::backend::{self, Backend, BackendId};
-use crate::catalog::{Build, Capability, Catalog, CatalogSource, ModelFile};
-use crate::host::{Host, Platform};
+use crate::catalog::{BuildEntry, Catalog, CatalogSource, ModelEntry, ModelFile};
+use crate::host::{Accelerator, Host, Platform};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
-use crate::resolver::{Offer, Resolver};
-use crate::{Error, Result};
+use crate::resolver::{Offer, Reason, Rejection, Resolver, RuntimeFiles};
+use crate::{Capability, Error, Result};
 
+mod audio;
 mod error;
-mod lifecycle;
+pub(super) mod loaded;
 mod memory;
-mod selection;
+mod model;
 #[cfg(test)]
 mod tests;
 
+pub use audio::Audio;
 pub use error::ConfigError;
-pub use lifecycle::BuildState;
-pub use selection::{Preferences, Selection};
+pub use loaded::{LoadedModel, Stt, Tts};
+pub use model::{Model, ModelBuild};
 
+use loaded::Resident;
 use memory::Memory;
 
-/// How long a model may go unused before it is unloaded from memory, unless [`Engine::with_idle_unload`] says
-/// otherwise.
-pub const DEFAULT_IDLE_UNLOAD: Duration = Duration::from_secs(10 * 60);
-
-/// The library files a backend needs on a platform (`backends.json`, or a test's own).
-type RuntimeFiles = fn(&str, Platform) -> Option<Vec<Artifact>>;
-
-/// The engine of one place: what can run here, the choice per stage, and the models prepared.
+/// The engine of one place: what can run here, what is installed, and what is loaded.
 ///
-/// A prepared model stays in memory while it is used; one unused for the idle time ([`DEFAULT_IDLE_UNLOAD`], or
-/// [`Engine::with_idle_unload`]) is unloaded, and its build is [`BuildState::Installed`] again. The engine has no
-/// timer of its own: it unloads idle models on each [`Engine::prepare`], and when the app calls
-/// [`Engine::unload_idle`], which it should do on a schedule of its own (once a minute is plenty).
+/// It holds no model itself: a [`LoadedModel`] does, and the model stays in memory while one of its build lives.
+/// Loading a build that is already in memory returns it again, and a backend's models share its library.
 pub struct Engine {
     host: Box<dyn Host>,
     catalog: Catalog,
@@ -50,10 +43,9 @@ pub struct Engine {
     runtime_files: RuntimeFiles,
     resolver: Resolver,
     installer: Installer,
-    /// Builds being installed or loaded, and those whose last attempt failed; any other build's state is read from
-    /// memory and storage.
-    states: Mutex<BTreeMap<String, BuildState>>,
     memory: Mutex<Memory>,
+    /// Held while a model is loaded, so that two loads of one build make one model in memory.
+    loading: async_lock::Mutex<()>,
 }
 
 impl fmt::Debug for Engine {
@@ -65,12 +57,8 @@ impl fmt::Debug for Engine {
     }
 }
 
-/// A prepared model. Once the model is unloaded for going unused, preparing its build again gives a new handle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Handle(usize);
-
 impl Engine {
-    /// Builds nothing heavy: the backends are empty objects until [`Engine::prepare`]. The catalogue is the merge of
+    /// Builds nothing heavy: the backends are empty objects until a model is loaded. The catalogue is the merge of
     /// `sources`, in order; the one this repository ships, [`BundledCatalog`](crate::BundledCatalog), is one of them
     /// only when passed.
     ///
@@ -93,7 +81,8 @@ impl Engine {
         runtime_files: RuntimeFiles,
     ) -> Result<Self, ConfigError> {
         let catalog = Catalog::merge(&sources).map_err(ConfigError::Source)?;
-        let problems = catalog.check();
+        let compiled: Vec<_> = backends.iter().map(|backend| backend.spec().id).collect();
+        let problems = catalog.check(&|id| backend::is_known(id) || compiled.contains(&id));
         if !problems.is_empty() {
             return Err(ConfigError::Catalog(problems));
         }
@@ -102,18 +91,11 @@ impl Engine {
             catalog,
             backends,
             runtime_files,
-            resolver: Resolver::default(),
+            resolver: Resolver::new(runtime_files),
             installer: Installer,
-            states: Mutex::default(),
-            memory: Mutex::new(Memory::new(DEFAULT_IDLE_UNLOAD)),
+            memory: Mutex::default(),
+            loading: async_lock::Mutex::new(()),
         })
-    }
-
-    /// The same engine, unloading models unused for `idle` instead of [`DEFAULT_IDLE_UNLOAD`].
-    #[must_use]
-    pub fn with_idle_unload(self, idle: Duration) -> Self {
-        lock(&self.memory).set_idle(idle);
-        self
     }
 
     /// The ids of the backends compiled into this build.
@@ -125,127 +107,218 @@ impl Engine {
             .collect()
     }
 
-    /// Every model that can do `capability` and runs here, with a build that fits, and every build that cannot, with
-    /// why.
-    #[must_use]
-    pub fn offers(&self, capability: Capability) -> Vec<Offer> {
-        self.resolver.offers(
-            &self.catalog,
-            &self.backends,
-            &self.host.capabilities(),
-            capability,
-        )
-    }
-
-    /// The choice for `capability`: the best offer, or the model asked for. Backend and accelerator preferences are not
-    /// applied yet.
-    #[must_use]
-    pub fn select(&self, capability: Capability, preferences: &Preferences) -> Option<Selection> {
-        self.offers(capability)
-            .into_iter()
-            .find_map(|offer| match offer {
-                Offer::Offered {
-                    model,
-                    build,
-                    accelerator,
-                    ..
-                } if preferences
-                    .model
-                    .as_ref()
-                    .is_none_or(|wanted| *wanted == model.id) =>
-                {
-                    Some(Selection {
-                        model,
-                        build,
-                        accelerator,
-                    })
-                }
-                _ => None,
-            })
-    }
-
-    /// Where `build` is now: being installed or loaded, failed, loaded, or else whether its folder is stored (which it
-    /// only is with every file in it).
+    /// Every model of the catalogue, in catalogue order, each with its builds ranked (those that run here first, with
+    /// the accelerator each would use; the rest with why not), whether it is installed, and the build the engine
+    /// recommends: the first that runs here.
     ///
     /// # Errors
     ///
-    /// `backend-not-in-this-build`, `no-runtime-for-platform` (as [`Engine::prepare`]), and whatever the host's storage
-    /// fails with.
-    pub async fn state(&self, build: &Build) -> Result<BuildState> {
-        if lock(&self.memory).is_loaded(&build.id) {
-            return Ok(BuildState::Ready);
+    /// What the host's storage fails with, asked what is installed.
+    pub async fn models(&self) -> Result<Vec<Model>> {
+        let caps = self.host.capabilities();
+        let mut models = Vec::new();
+        let mut entries = Vec::new();
+        for family in self.catalog.families() {
+            entries.extend(family.models.iter().map(|entry| (&family.id, entry)));
         }
-        if let Some(state) = lock(&self.states).get(&build.id) {
-            return Ok(state.clone());
+        for (family, entry) in entries {
+            let mut builds = Vec::new();
+            for (build, fit) in self.resolver.builds(entry, &self.backends, &caps) {
+                let installed = self.is_installed(build).await?;
+                builds.push(ModelBuild {
+                    id: build.id.clone(),
+                    backend: build.backend.clone(),
+                    accelerator: fit.as_ref().ok().copied(),
+                    precision: build.precision.clone(),
+                    download_bytes: download_bytes(build),
+                    memory_mb: build.memory.mb,
+                    available: fit.is_ok(),
+                    reasons: fit.err().map(reason).into_iter().collect(),
+                    installed,
+                });
+            }
+            models.push(Model {
+                id: entry.id.clone(),
+                family: family.clone(),
+                capabilities: entry.capabilities.clone(),
+                parameters_m: entry.parameters_m,
+                languages: entry.languages.clone(),
+                license: entry.license.clone(),
+                voices: entry.voices.clone(),
+                installed: builds.iter().any(|build| build.installed),
+                recommended_build: builds
+                    .iter()
+                    .find(|build| build.available)
+                    .map(|build| build.id.clone()),
+                builds,
+            });
         }
-        self.artifacts(build)?;
-        Ok(match self.host.storage().find_folder(&build.id).await? {
-            Some(_) => BuildState::Installed,
-            None => BuildState::Absent,
-        })
+        Ok(models)
     }
 
-    /// Installs the selected build and loads it: only that backend is ever activated. The installer gets the model's
-    /// files and the backend's files for this platform (`backends.json`), and nothing else; it tells `progress` how
-    /// far it has got, and stops once `cancel` is cancelled. The backend's library is opened with the first model of
-    /// that backend in memory. A build already loaded is not loaded again: its handle is returned.
-    ///
-    /// The build goes [`BuildState::Installing`], then [`BuildState::Loading`], then [`BuildState::Ready`]; if that
-    /// fails, [`BuildState::Failed`] with the error. Cancelled, or with the future dropped, it is left as storage
-    /// has it.
+    /// Installs `build` of the model `model`, or, with `None`, the build [`Engine::load`] would use: its files and its
+    /// backend's for this platform, nothing else. It tells `progress` how far it has got, and stops once `cancel` is
+    /// cancelled; cancelled, or with the future dropped, nothing half downloaded is stored.
     ///
     /// # Errors
     ///
-    /// `backend-not-in-this-build` if the selection's backend is not compiled in, `no-runtime-for-platform` if it has
-    /// nothing to download for this platform, `already-preparing` if the build is being prepared already, `cancelled`,
-    /// whatever installing fails with (`digest-mismatch`, `download-failed`, ...; see [`Cancel`] and
-    /// [`ProgressSink`]), and whatever loading fails with (today, `not-implemented`).
-    pub async fn prepare(
+    /// `model-not-found`, `build-not-found` (not a build of that model), `no-build-available` (none runs here), the
+    /// reason a build asked for does not run here (`backend-not-in-this-build`, `memory`, ...), `cancelled`, and what
+    /// installing fails with (`digest-mismatch`, `download-failed`, ...).
+    pub async fn install(
         &self,
-        selection: &Selection,
+        model: &str,
+        build: Option<&str>,
         progress: &dyn ProgressSink,
         cancel: &Cancel,
-    ) -> Result<Handle> {
-        self.unload_idle();
-        let build = &selection.build;
-        let (backend, artifacts) = self.artifacts(build)?;
-        if let Some(handle) = lock(&self.memory).handle(&build.id) {
-            return Ok(handle);
-        }
-        let preparing = Preparing::start(&self.states, &build.id)?;
-        let result: Result<Handle> = async {
-            let files = self
-                .installer
-                .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
-                .await?;
-            cancel.check()?;
-            preparing.set(BuildState::Loading);
-            let open = lock(&self.memory).library(backend.spec().id);
-            let library = match open {
-                Some(library) => library,
-                None => Arc::from(backend.open(&files).await?),
-            };
-            let model = library.load(build, selection.accelerator, &files).await?;
-            Ok(lock(&self.memory).insert(&build.id, backend.spec().id, library, model))
-        }
-        .await;
-        drop(preparing);
-        if let Err(error) = result {
-            if error.code != "cancelled" {
-                lock(&self.states).insert(build.id.clone(), BuildState::Failed(error));
-            }
-        }
-        result
+    ) -> Result<()> {
+        let (_, build, _) = self.choose(model, build).await?;
+        let (_, artifacts) = self.artifacts(build)?;
+        self.installer
+            .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
+            .await
+            .map(drop)
     }
 
-    /// Unloads from memory every model unused for the idle time, and closes the libraries of backends with no model
-    /// left. Their files stay installed.
-    pub fn unload_idle(&self) {
-        lock(&self.memory).unload_idle();
+    /// Removes every build of the model `model` from storage: each build's folder, then each of its files no other
+    /// build's folder links, so a file another model also uses stays.
+    ///
+    /// # Errors
+    ///
+    /// `model-not-found`, `model-in-use` while a [`LoadedModel`] of it lives, and what the host's storage fails with.
+    pub async fn uninstall(&self, model: &str) -> Result<()> {
+        let entry = self.entry(model)?;
+        let in_use = {
+            let memory = lock(&self.memory);
+            entry
+                .builds
+                .iter()
+                .any(|build| memory.model(&build.id).is_some())
+        };
+        if in_use {
+            return Err(Error::new("model-in-use"));
+        }
+        for build in &entry.builds {
+            let artifacts = match self.artifacts(build) {
+                Ok((_, artifacts)) => artifacts,
+                Err(_) => build.files.iter().map(ModelFile::artifact).collect(),
+            };
+            self.installer
+                .uninstall(&build.id, &artifacts, self.host.storage())
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Whether `build`'s folder is stored, which it only is with every file in it.
+    async fn is_installed(&self, build: &BuildEntry) -> Result<bool> {
+        Ok(self.host.storage().find_folder(&build.id).await?.is_some())
+    }
+
+    /// Loads `build` of the model `model`, or, with `None`, an installed build that runs here, else the recommended
+    /// one; it is installed first if it is not (telling `progress`, stopping once `cancel` is cancelled). A build
+    /// already in memory is not loaded again: the [`LoadedModel`] returned shares it. Only the build's backend is ever
+    /// activated, and its library is opened with the first of its models.
+    ///
+    /// # Errors
+    ///
+    /// What [`Engine::install`] fails with, and what loading fails with (`model-load-failed`, `file-not-installed`,
+    /// `unsupported-model`, `not-implemented`, ...).
+    pub async fn load(
+        &self,
+        model: &str,
+        build: Option<&str>,
+        progress: &dyn ProgressSink,
+        cancel: &Cancel,
+    ) -> Result<LoadedModel> {
+        let (entry, build, accelerator) = self.choose(model, build).await?;
+        if let Some(resident) = lock(&self.memory).model(&build.id) {
+            return Ok(LoadedModel::new(&entry.id, &build.id, resident));
+        }
+        let (backend, artifacts) = self.artifacts(build)?;
+        let files = self
+            .installer
+            .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
+            .await?;
+        cancel.check()?;
+        let _loading = self.loading.lock().await;
+        // Another load of this build may have finished while this one waited.
+        if let Some(resident) = lock(&self.memory).model(&build.id) {
+            return Ok(LoadedModel::new(&entry.id, &build.id, resident));
+        }
+        let id = backend.spec().id;
+        let open = lock(&self.memory).library(id);
+        let library = match open {
+            Some(library) => library,
+            None => Arc::from(backend.open(&files).await?),
+        };
+        let model = library.load(build, accelerator, &files).await?;
+        let languages = entry.languages.clone();
+        let resident = Resident::new(model, Arc::clone(&library), languages, entry.voices.clone());
+        lock(&self.memory).remember(id, &library, &build.id, &resident);
+        Ok(LoadedModel::new(&entry.id, &build.id, resident))
+    }
+
+    /// Every model that can do `capability`, offered with a build that fits, and every build that cannot run here,
+    /// with why: what the web bridge lists, until it takes [`Engine::models`].
+    #[cfg_attr(
+        not(web),
+        allow(dead_code, reason = "only the web bridge lists offers")
+    )]
+    pub(crate) fn offers(&self, capability: Capability) -> Vec<Offer> {
+        let caps = self.host.capabilities();
+        (self.resolver).offers(&self.catalog, &self.backends, &caps, capability)
+    }
+
+    /// Every model of the catalogue, in catalogue order.
+    fn entries(&self) -> impl Iterator<Item = &ModelEntry> {
+        self.catalog.entries()
+    }
+
+    /// The model `model` (`model-not-found` otherwise).
+    fn entry(&self, model: &str) -> Result<&ModelEntry> {
+        self.entries()
+            .find(|entry| entry.id == model)
+            .ok_or(Error::new("model-not-found"))
+    }
+
+    /// The build to install or load and the accelerator it runs on: `build` if it is one of `model`'s and runs here,
+    /// else the first build that runs here and is installed, else the first that runs here.
+    async fn choose(
+        &self,
+        model: &str,
+        build: Option<&str>,
+    ) -> Result<(&ModelEntry, &BuildEntry, Accelerator)> {
+        let entry = self.entry(model)?;
+        let ranked = self
+            .resolver
+            .builds(entry, &self.backends, &self.host.capabilities());
+        if let Some(wanted) = build {
+            let (build, fit) = ranked
+                .into_iter()
+                .find(|(build, _)| build.id == wanted)
+                .ok_or(Error::new("build-not-found"))?;
+            let accelerator = fit.map_err(|why| Error::new(reason(why).code))?;
+            return Ok((entry, build, accelerator));
+        }
+        let available: Vec<_> = ranked
+            .into_iter()
+            .filter_map(|(build, fit)| fit.ok().map(|accelerator| (build, accelerator)))
+            .collect();
+        for &(build, accelerator) in &available {
+            if self.is_installed(build).await? {
+                return Ok((entry, build, accelerator));
+            }
+        }
+        let (build, accelerator) = available
+            .first()
+            .copied()
+            .ok_or(Error::new("no-build-available"))?;
+        Ok((entry, build, accelerator))
     }
 
     /// `build`'s backend, and every file it needs here: the model's, then the backend's for this platform.
-    fn artifacts(&self, build: &Build) -> Result<(&dyn Backend, Vec<Artifact>)> {
+    fn artifacts(&self, build: &BuildEntry) -> Result<(&dyn Backend, Vec<Artifact>)> {
         let backend = backend::find(&self.backends, &build.backend)
             .ok_or(Error::new("backend-not-in-this-build"))?;
         let runtime = Platform::of(&self.host.capabilities())
@@ -257,35 +330,26 @@ impl Engine {
     }
 }
 
-/// A build being prepared: while it lives, the build's state is `Installing` or `Loading`; dropped, by finishing or
-/// by the future being dropped, the build is left to memory and storage again.
-struct Preparing<'a> {
-    states: &'a Mutex<BTreeMap<String, BuildState>>,
-    build: &'a str,
+/// What installing `build` downloads, in bytes: each distinct download once.
+fn download_bytes(build: &BuildEntry) -> u64 {
+    let mut seen = Vec::new();
+    build
+        .files
+        .iter()
+        .filter(|file| {
+            let new = !seen.contains(&&file.url);
+            seen.push(&file.url);
+            new
+        })
+        .map(|file| file.bytes)
+        .sum()
 }
 
-impl<'a> Preparing<'a> {
-    /// Marks `build` as `Installing`, unless it is being prepared already (`already-preparing`).
-    fn start(states: &'a Mutex<BTreeMap<String, BuildState>>, build: &'a str) -> Result<Self> {
-        let mut known = lock(states);
-        if matches!(
-            known.get(build),
-            Some(BuildState::Installing | BuildState::Loading)
-        ) {
-            return Err(Error::new("already-preparing"));
-        }
-        known.insert(build.to_owned(), BuildState::Installing);
-        Ok(Self { states, build })
-    }
-
-    fn set(&self, state: BuildState) {
-        lock(self.states).insert(self.build.to_owned(), state);
-    }
-}
-
-impl Drop for Preparing<'_> {
-    fn drop(&mut self) {
-        lock(self.states).remove(self.build);
+/// A rejection as the reason a person reads: its stable code and numbers.
+fn reason(why: Rejection) -> Reason {
+    match why {
+        Rejection::BackendNotInThisBuild => Reason::new("backend-not-in-this-build"),
+        Rejection::BackendUnavailable(reason) | Rejection::DoesNotFit(reason) => reason,
     }
 }
 

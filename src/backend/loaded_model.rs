@@ -8,11 +8,7 @@ use crate::Result;
 
 /// A model in memory. Speech to text and text to speech (as the catalogue's `Capability` names them) are what the
 /// loaded model can do, not the backend: one backend can load models of both kinds.
-#[allow(
-    dead_code,
-    reason = "the engine does not use a loaded model yet: only the tests do"
-)]
-pub(crate) trait LoadedModel: MaybeSend {
+pub(crate) trait BackendModel: MaybeSend {
     /// The model as speech to text, if it is one.
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         None
@@ -22,16 +18,13 @@ pub(crate) trait LoadedModel: MaybeSend {
         None
     }
     /// The memory it takes, when the backend can tell.
+    #[allow(dead_code, reason = "the engine does not read it yet")]
     fn memory_mb(&self) -> Option<u32>;
 }
 
 /// A speech-to-text model: one whole turn at a time.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-#[allow(
-    dead_code,
-    reason = "the engine does not use a loaded model yet: only the tests do"
-)]
 pub(crate) trait SttModel {
     /// `pcm`: mono 16 kHz samples. `language`: a BCP 47 tag, or `None` to detect it. A backend may not pass it on yet:
     /// sherpa-onnx's detects the language itself (sidevoice-engine#46).
@@ -42,10 +35,6 @@ pub(crate) trait SttModel {
 /// *Speech out* in `backend.rs`).
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
-#[allow(
-    dead_code,
-    reason = "the engine does not use a loaded model yet: only the tests do"
-)]
 pub(crate) trait TtsModel {
     /// The voices it speaks with.
     fn voices(&self) -> Vec<String>;

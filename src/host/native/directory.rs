@@ -105,8 +105,7 @@ impl Storage for Directory {
         let file = File::create(&partial).map_err(|_| failed())?;
         Ok(Box::new(Writer {
             file: Some(file),
-            partial,
-            target,
+            staged: Staged::new(partial, target),
         }))
     }
 
@@ -140,10 +139,8 @@ impl Storage for Directory {
         let partial = self.partial(name);
         fs::create_dir(&partial).map_err(|_| failed())?;
         Ok(Box::new(Tree {
-            partial,
-            target,
             file: None,
-            committed: false,
+            staged: Staged::new(partial, target),
         }))
     }
 
@@ -163,9 +160,7 @@ impl Storage for Directory {
         fs::create_dir(&partial).map_err(|_| failed())?;
         Ok(Box::new(Folder {
             blobs: self.blobs.clone(),
-            partial,
-            target,
-            committed: false,
+            staged: Staged::new(partial, target),
         }))
     }
 
@@ -213,12 +208,63 @@ fn linked(path: &Path) -> bool {
     }
 }
 
-/// A build folder being made in `partial/`.
-struct Folder {
-    blobs: PathBuf,
+/// What a writer stores, staged in `partial/` until it is committed: renamed into place, or, when the same name was
+/// stored first (the same content: blobs are named by digest, folders by build), left as it is. Dropped uncommitted, or
+/// after a failed commit, the partial file or tree is removed. Files, trees and build folders share it.
+struct Staged {
     partial: PathBuf,
     target: PathBuf,
     committed: bool,
+}
+
+impl Staged {
+    fn new(partial: PathBuf, target: PathBuf) -> Self {
+        Self {
+            partial,
+            target,
+            committed: false,
+        }
+    }
+
+    /// Moves what was staged into place, once `synced` (its data flushed) has succeeded, and returns where it is.
+    fn commit(&mut self, synced: std::io::Result<()>) -> Result<String> {
+        let placed = synced.and_then(|()| {
+            if let Some(parent) = self.target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::rename(&self.partial, &self.target)
+        });
+        if placed.is_err() && !self.target.exists() {
+            return Err(failed());
+        }
+        self.committed = true;
+        // Renamed, or another one was stored first: either way what is left in `partial/`, if anything, goes.
+        remove(&self.partial);
+        Ok(text(&self.target))
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        if !self.committed {
+            remove(&self.partial);
+        }
+    }
+}
+
+/// Removes `path`, a file or a tree, if it is there.
+fn remove(path: &Path) {
+    let _ = if path.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
+}
+
+/// A build folder being made in `partial/`.
+struct Folder {
+    blobs: PathBuf,
+    staged: Staged,
 }
 
 #[async_trait]
@@ -228,7 +274,7 @@ impl FolderWriter for Folder {
         if let Some(member) = member {
             source = inside(&source, member)?;
         }
-        let target = inside(&self.partial, path)?;
+        let target = inside(&self.staged.partial, path)?;
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(|_| failed())?;
         }
@@ -236,24 +282,7 @@ impl FolderWriter for Folder {
     }
 
     async fn commit(mut self: Box<Self>) -> Result<String> {
-        if let Some(parent) = self.target.parent() {
-            fs::create_dir_all(parent).map_err(|_| failed())?;
-        }
-        if fs::rename(&self.partial, &self.target).is_err() && !self.target.is_dir() {
-            return Err(failed());
-        }
-        // Renamed, or another one was stored first (same build, same files): either way this one is done.
-        self.committed = true;
-        let _ = fs::remove_dir_all(&self.partial);
-        Ok(text(&self.target))
-    }
-}
-
-impl Drop for Folder {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = fs::remove_dir_all(&self.partial);
-        }
+        self.staged.commit(Ok(()))
     }
 }
 
@@ -278,10 +307,9 @@ fn place(source: &Path, target: &Path) -> Result<()> {
 
 /// A file being written into `partial/`.
 struct Writer {
-    /// `None` once committed.
+    /// `None` once committed. Declared before `staged`, so that it is closed before its partial file is removed.
     file: Option<File>,
-    partial: PathBuf,
-    target: PathBuf,
+    staged: Staged,
 }
 
 #[async_trait]
@@ -295,43 +323,26 @@ impl StorageWriter for Writer {
         let file = self.file.take().ok_or_else(failed)?;
         let synced = file.sync_all();
         drop(file);
-        if synced
-            .and_then(|()| fs::rename(&self.partial, &self.target))
-            .is_err()
-        {
-            let _ = fs::remove_file(&self.partial);
-            return Err(failed());
-        }
-        Ok(text(&self.target))
-    }
-}
-
-impl Drop for Writer {
-    fn drop(&mut self) {
-        if self.file.take().is_some() {
-            let _ = fs::remove_file(&self.partial);
-        }
+        self.staged.commit(synced)
     }
 }
 
 /// A tree being written into `partial/`.
 struct Tree {
-    partial: PathBuf,
-    target: PathBuf,
-    /// The file started last.
+    /// The file started last. Declared before `staged`, so that it is closed before its partial tree is removed.
     file: Option<File>,
-    committed: bool,
+    staged: Staged,
 }
 
 impl TreeWriter for Tree {
     fn directory(&mut self, path: &str) -> Result<()> {
         self.file = None;
-        fs::create_dir_all(inside(&self.partial, path)?).map_err(|_| failed())
+        fs::create_dir_all(inside(&self.staged.partial, path)?).map_err(|_| failed())
     }
 
     fn file(&mut self, path: &str) -> Result<()> {
         self.file = None;
-        let path = inside(&self.partial, path)?;
+        let path = inside(&self.staged.partial, path)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|_| failed())?;
         }
@@ -345,25 +356,8 @@ impl TreeWriter for Tree {
     }
 
     fn commit(mut self: Box<Self>) -> Result<String> {
-        if let Some(file) = self.file.take() {
-            file.sync_all().map_err(|_| failed())?;
-        }
-        if fs::rename(&self.partial, &self.target).is_err() && !self.target.is_dir() {
-            return Err(failed());
-        }
-        // Renamed, or another one was stored first (same name, same content): either way this one is done.
-        self.committed = true;
-        let _ = fs::remove_dir_all(&self.partial);
-        Ok(text(&self.target))
-    }
-}
-
-impl Drop for Tree {
-    fn drop(&mut self) {
-        if !self.committed {
-            self.file = None;
-            let _ = fs::remove_dir_all(&self.partial);
-        }
+        let synced = self.file.take().map_or(Ok(()), |file| file.sync_all());
+        self.staged.commit(synced)
     }
 }
 

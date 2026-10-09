@@ -16,6 +16,9 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 async-trait = "=0.1.92"
+# One model's calls wait for one another (src/engine/loaded.rs), and loads of one build make one model in memory: an
+# async mutex that needs no runtime and builds for wasm32 too.
+async-lock = "3.4.0"
 # Backends register themselves (src/backend/registry.rs). linkme does not compile to wasm32; inventory does.
 inventory = "0.3.24"
 # backends.json (src/backend/runtime.rs), compiled in and read once.

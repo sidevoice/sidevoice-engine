@@ -62,6 +62,15 @@
         "en-US"
       ],
       "license": "MIT",
+      "voices": [
+        {
+          "id": "0",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        }
+      ],
       "builds": [
         {
           "id": "piper-en_US-ljspeech-medium/sherpa-onnx-int8",

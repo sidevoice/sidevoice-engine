@@ -37,7 +37,9 @@
 //! - the host's own: `download-failed` (a file could not be downloaded), `storage-failed` (a file could not be
 //!   stored).
 //!
-//! Inside: `progress` (what the installer reports as it goes), `cancel` (how it is stopped), `digest` (SHA-256) and
+//! Inside, the steps (`plan`: everything checked and placed, and what is wanted, before anything is downloaded;
+//! `download`: one file fetched, verified and committed; `archive`: unpacking, safely, in native builds) and what they
+//! share (`progress`, what the installer reports as it goes; `cancel`, how it is stopped; `digest`, SHA-256).
 //! `archive` (unpacking, safely, in native builds).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -49,12 +51,15 @@ use crate::{Error, Result};
 mod archive;
 mod cancel;
 mod digest;
+mod download;
+mod plan;
 mod progress;
 #[cfg(test)]
 mod tests;
 
 pub use cancel::Cancel;
-use digest::Hasher;
+#[cfg(test)]
+use plan::file_path;
 pub use progress::{Progress, ProgressSink};
 
 /// One file to download, or one member of an archive to download: where from, its digest, and the name `load` finds
@@ -95,14 +100,6 @@ impl Installed {
 #[derive(Debug)]
 pub(crate) struct Installer;
 
-/// One distinct digest the build needs: whole, unpacked, or both.
-struct Wanted<'a> {
-    sha256: &'a str,
-    url: &'a str,
-    whole: bool,
-    unpacked: bool,
-}
-
 impl Installer {
     /// Puts `artifacts` in the build folder `folder` (the build's id), unless it is stored already: downloads, checks
     /// and stores whatever blob is not stored yet, one distinct file at a time, unpacking archives once checked, links
@@ -122,11 +119,11 @@ impl Installer {
         progress: &dyn ProgressSink,
         cancel: &Cancel,
     ) -> Result<Installed> {
-        let members = check(artifacts)?;
-        let paths = paths(artifacts, &members)?;
+        let members = plan::check(artifacts)?;
+        let paths = plan::paths(artifacts, &members)?;
         let storage = host.storage();
         if storage.find_folder(folder).await?.is_none() {
-            let wanted = wanted(artifacts);
+            let wanted = plan::wanted(artifacts);
             let mut report = Progress {
                 files: wanted.len(),
                 done: 0,
@@ -136,11 +133,25 @@ impl Installer {
             for wanted in &wanted {
                 cancel.check()?;
                 if wanted.whole && storage.find(wanted.sha256).await?.is_none() {
-                    download(wanted, host, progress, cancel, report).await?;
+                    download::download(wanted.url, wanted.sha256, host, progress, cancel, report)
+                        .await?;
                 }
-                if wanted.unpacked && storage.find(&unpacked(wanted.sha256)).await?.is_none() {
+                if wanted.unpacked
+                    && storage
+                        .find(&plan::unpacked(wanted.sha256))
+                        .await?
+                        .is_none()
+                {
                     if storage.find(wanted.sha256).await?.is_none() {
-                        download(wanted, host, progress, cancel, report).await?;
+                        download::download(
+                            wanted.url,
+                            wanted.sha256,
+                            host,
+                            progress,
+                            cancel,
+                            report,
+                        )
+                        .await?;
                     }
                     unpack(storage, wanted.sha256, cancel).await?;
                     if !wanted.whole {
@@ -159,7 +170,7 @@ impl Installer {
                 match member {
                     None => writer.link(path, &artifact.sha256, None).await?,
                     Some(member) => {
-                        let tree = unpacked(&artifact.sha256);
+                        let tree = plan::unpacked(&artifact.sha256);
                         if storage.find_member(&tree, member).await?.is_none() {
                             return Err(Error::new("archive-member-missing"));
                         }
@@ -197,7 +208,7 @@ impl Installer {
         storage.remove_folder(folder).await?;
         let digests: BTreeSet<&str> = artifacts.iter().map(|a| a.sha256.as_str()).collect();
         for digest in digests {
-            for blob in [digest.to_owned(), unpacked(digest)] {
+            for blob in [digest.to_owned(), plan::unpacked(digest)] {
                 if !storage.is_linked(&blob).await? {
                     storage.remove(&blob).await?;
                 }
@@ -205,105 +216,6 @@ impl Installer {
         }
         Ok(())
     }
-}
-
-/// Where each artifact sits in the build's folder: a member at its path inside the archive, a file where its URL puts it
-/// ([`file_path`]). Fails with `file-name-invalid` for a URL that gives no usable path, and `file-path-conflict` when
-/// two different files would sit at one place.
-fn paths(artifacts: &[Artifact], members: &[Option<String>]) -> Result<Vec<String>> {
-    let mut placed = BTreeMap::new();
-    let mut paths = Vec::new();
-    for (artifact, member) in artifacts.iter().zip(members) {
-        let path = match member {
-            Some(member) => member.clone(),
-            None => file_path(&artifact.url).ok_or(Error::new("file-name-invalid"))?,
-        };
-        let what = (artifact.sha256.as_str(), member.as_deref());
-        if *placed.entry(path.clone()).or_insert(what) != what {
-            return Err(Error::new("file-path-conflict"));
-        }
-        paths.push(path);
-    }
-    Ok(paths)
-}
-
-/// Where a downloaded file sits in its build's folder, from its URL (without its query or fragment): for a Hugging
-/// Face file (`…/resolve/<revision>/<path>`), its path in the repository, as the hub's own snapshot folders keep it
-/// (`onnx/model_q8.onnx`, which transformers.js and mlx-audio look for); for any other URL, a GitHub release asset
-/// among them, its last segment. `None` unless that is a plain relative path ([`member_path`]).
-fn file_path(url: &str) -> Option<String> {
-    let url = url.split(['?', '#']).next()?;
-    if let Some((_, revision_and_path)) = url.split_once("/resolve/") {
-        let (_, path) = revision_and_path.split_once('/')?;
-        return member_path(path);
-    }
-    let (_, name) = url.rsplit_once('/')?;
-    member_path(name).filter(|name| !name.contains('/'))
-}
-
-/// Every digest well formed, every archive path a plain relative path (and archives only where they can be unpacked),
-/// and no key naming two different things.
-/// Returns each artifact's archive path, normalised.
-fn check(artifacts: &[Artifact]) -> Result<Vec<Option<String>>> {
-    let mut keys = BTreeMap::new();
-    let mut members = Vec::new();
-    for artifact in artifacts {
-        if !digest::is_valid(&artifact.sha256) {
-            return Err(Error::new("digest-invalid"));
-        }
-        let member = match &artifact.archive_path {
-            None => None,
-            Some(path) => {
-                if cfg!(web) {
-                    return Err(Error::new("archive-unsupported"));
-                }
-                Some(member_path(path).ok_or(Error::new("archive-path-invalid"))?)
-            }
-        };
-        let named = (artifact.sha256.as_str(), member.clone());
-        if *keys
-            .entry(artifact.key.as_str())
-            .or_insert_with(|| named.clone())
-            != named
-        {
-            return Err(Error::new("artifact-key-conflict"));
-        }
-        members.push(member);
-    }
-    Ok(members)
-}
-
-/// The distinct digests of `artifacts`, in order, each with the first URL that serves it and how it is wanted.
-fn wanted(artifacts: &[Artifact]) -> Vec<Wanted<'_>> {
-    let mut wanted: Vec<Wanted<'_>> = Vec::new();
-    for artifact in artifacts {
-        let entry = match wanted
-            .iter_mut()
-            .position(|wanted| wanted.sha256 == artifact.sha256)
-        {
-            Some(i) => &mut wanted[i],
-            None => {
-                wanted.push(Wanted {
-                    sha256: &artifact.sha256,
-                    url: &artifact.url,
-                    whole: false,
-                    unpacked: false,
-                });
-                wanted.last_mut().expect("just pushed")
-            }
-        };
-        if artifact.archive_path.is_some() {
-            entry.unpacked = true;
-        } else {
-            entry.whole = true;
-        }
-    }
-    wanted
-}
-
-/// The storage name of the tree the archive `sha256` unpacks to.
-fn unpacked(sha256: &str) -> String {
-    format!("{sha256}-unpacked")
 }
 
 /// Unpacks the stored archive `sha256` into its tree, on one of Tokio's blocking threads: `tar` reads synchronously.
@@ -319,7 +231,7 @@ async fn unpack(storage: &dyn Storage, sha256: &str, cancel: &Cancel) -> Result<
     }
 
     let archive = storage.open(sha256)?;
-    let mut tree = storage.create_tree(&unpacked(sha256))?;
+    let mut tree = storage.create_tree(&plan::unpacked(sha256))?;
     let cancel = cancel.clone();
     let stop = StopOnDrop(Cancel::new());
     let stopped = stop.0.clone();
@@ -342,33 +254,6 @@ async fn unpack(storage: &dyn Storage, sha256: &str, cancel: &Cancel) -> Result<
 #[cfg(web)]
 async fn unpack(_storage: &dyn Storage, _sha256: &str, _cancel: &Cancel) -> Result<()> {
     Err(Error::new("archive-unsupported"))
-}
-
-/// Downloads `wanted` into storage under its digest. `report` is the progress so far, before this file.
-async fn download(
-    wanted: &Wanted<'_>,
-    host: &dyn Host,
-    progress: &dyn ProgressSink,
-    cancel: &Cancel,
-    mut report: Progress,
-) -> Result<()> {
-    let mut download = host.fetcher().fetch(wanted.url).await?;
-    let mut file = host.storage().create(wanted.sha256).await?;
-    let mut sha256 = Hasher::default();
-    report.size = download.size();
-    progress.progress(report);
-    while let Some(bytes) = download.chunk().await? {
-        // Returning drops `file` uncommitted: nothing is stored.
-        cancel.check()?;
-        sha256.update(&bytes);
-        file.write(&bytes).await?;
-        report.received += bytes.len() as u64;
-        progress.progress(report);
-    }
-    if sha256.finish() != wanted.sha256 {
-        return Err(Error::new("digest-mismatch"));
-    }
-    file.commit().await.map(drop)
 }
 
 /// `path` as a path inside a tree, if it is one: relative, `/`-separated, with `.` and empty segments dropped and no

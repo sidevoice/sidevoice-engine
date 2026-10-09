@@ -4,11 +4,12 @@
 use async_trait::async_trait;
 
 use super::Resolver;
+use super::{Offer, Rejection};
 use crate::backend::{Backend, BackendSpec, Library, MinCores};
 use crate::catalog::{Catalog, CatalogFragment, CatalogSource};
 use crate::install::Installed;
 use crate::test_support::{build, family, model};
-use crate::{Accelerator, Capabilities, Capability, Error, Offer, Reason, Rejection, Result, Runs};
+use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;

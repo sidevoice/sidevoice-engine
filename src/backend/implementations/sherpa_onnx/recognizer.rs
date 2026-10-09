@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig};
 
 use crate::backend::loaded_model::SttModel;
-use crate::backend::LoadedModel;
+use crate::backend::BackendModel;
 use crate::{Error, Result};
 
 /// The sample rate [`SttModel::transcribe`] takes (the engine resamples to it).
@@ -28,7 +28,7 @@ impl Recognizer {
     }
 }
 
-impl LoadedModel for Recognizer {
+impl BackendModel for Recognizer {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
     }

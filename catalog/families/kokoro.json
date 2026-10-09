@@ -14,6 +14,85 @@
         "en-GB"
       ],
       "license": "Apache-2.0",
+      "voices": [
+        {
+          "id": "af",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_bella",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_nicole",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_sarah",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_sky",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "am_adam",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_michael",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "bf_emma",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "bf_isabella",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "bm_george",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "bm_lewis",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "male"
+        }
+      ],
       "builds": [
         {
           "id": "kokoro-82m-v0.19/sherpa-onnx-int8",
@@ -293,6 +372,386 @@
         "es"
       ],
       "license": "Apache-2.0",
+      "voices": [
+        {
+          "id": "af_heart",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_alloy",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_aoede",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_bella",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_jessica",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_kore",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_nicole",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_nova",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_river",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_sarah",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "af_sky",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "am_adam",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_echo",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_eric",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_fenrir",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_liam",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_michael",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_onyx",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_puck",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "am_santa",
+          "languages": [
+            "en-US"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "bf_alice",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "bf_emma",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "bf_isabella",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "bf_lily",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "bm_daniel",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "bm_fable",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "bm_george",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "bm_lewis",
+          "languages": [
+            "en-GB"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "jf_alpha",
+          "languages": [
+            "ja"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "jf_gongitsune",
+          "languages": [
+            "ja"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "jf_nezumi",
+          "languages": [
+            "ja"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "jf_tebukuro",
+          "languages": [
+            "ja"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "jm_kumo",
+          "languages": [
+            "ja"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "zf_xiaobei",
+          "languages": [
+            "zh"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "zf_xiaoni",
+          "languages": [
+            "zh"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "zf_xiaoxiao",
+          "languages": [
+            "zh"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "zf_xiaoyi",
+          "languages": [
+            "zh"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "zm_yunjian",
+          "languages": [
+            "zh"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "zm_yunxi",
+          "languages": [
+            "zh"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "zm_yunxia",
+          "languages": [
+            "zh"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "zm_yunyang",
+          "languages": [
+            "zh"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "ef_dora",
+          "languages": [
+            "es"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "em_alex",
+          "languages": [
+            "es"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "em_santa",
+          "languages": [
+            "es"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "ff_siwis",
+          "languages": [
+            "fr"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "hf_alpha",
+          "languages": [
+            "hi"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "hf_beta",
+          "languages": [
+            "hi"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "hm_omega",
+          "languages": [
+            "hi"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "hm_psi",
+          "languages": [
+            "hi"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "if_sara",
+          "languages": [
+            "it"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "im_nicola",
+          "languages": [
+            "it"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "pf_dora",
+          "languages": [
+            "pt-BR"
+          ],
+          "gender": "female"
+        },
+        {
+          "id": "pm_alex",
+          "languages": [
+            "pt-BR"
+          ],
+          "gender": "male"
+        },
+        {
+          "id": "pm_santa",
+          "languages": [
+            "pt-BR"
+          ],
+          "gender": "male"
+        }
+      ],
       "builds": [
         {
           "id": "kokoro-82m-v1.0/sherpa-onnx-int8",

@@ -29,7 +29,7 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
   (`BackendSpec`: accelerators in order of preference, requirements as checks); the engine matches, ranks, selects
   and installs for every backend alike. Which models a backend runs is the catalogue's to say, and what it downloads
   is data too, never code. A backend's code only checks its accelerators for real when the default `probe()` is not
-  enough, and loads a model. Preparing a model installs and loads only the selected build.
+  enough, and loads a model. Loading a model installs and loads only the chosen build.
 - **Everything is closed by default.** Each item gets the narrowest visibility that works: private, then
   `pub(super)` or `pub(crate)`, and `pub` only for what consumers of the crate actually need. The public API is
   deliberate: opening something later is cheap, closing it later is a breaking change. Backends, for instance, are

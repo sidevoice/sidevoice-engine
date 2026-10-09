@@ -16,7 +16,7 @@ use sherpa_onnx::{GenerationConfig, OfflineTts, OfflineTtsConfig};
 
 use super::{model_metadata, text};
 use crate::backend::loaded_model::TtsModel;
-use crate::backend::LoadedModel;
+use crate::backend::BackendModel;
 use crate::install::Installed;
 use crate::{Error, Result};
 
@@ -91,7 +91,7 @@ pub(super) fn espeak_voice(tag: &str, voices: &BTreeSet<String>) -> String {
     lowered.split('-').next().unwrap_or_default().to_owned()
 }
 
-impl LoadedModel for Synthesizer {
+impl BackendModel for Synthesizer {
     fn as_tts(&mut self) -> Option<&mut dyn TtsModel> {
         Some(self)
     }
