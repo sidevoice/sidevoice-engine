@@ -9,8 +9,11 @@ use serde::Deserialize;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Voice {
-    /// What the backend calls it, and what `speak` takes: "af_bella", "ef_dora", "0", ....
+    /// What the backend or the provider calls it, and what `speak` takes: "af_bella", "ef_dora", "0", ....
     pub id: String,
+    /// Its name, as a person reads it, when its source gives one (an ElevenLabs voice's: "Rachel").
+    #[serde(default)]
+    pub name: Option<String>,
     /// The languages it speaks: BCP 47 tags.
     pub languages: Vec<String>,
     /// Its gender, only when the source states it.

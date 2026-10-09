@@ -7,7 +7,7 @@ rust-version = "1.98"
 publish = false
 license = "Apache-2.0"
 repository = "https://github.com/sidevoice/sidevoice-engine"
-description = "Sidevoice engine: the local-model catalogue, resolver, selector and lifecycle, and the backends that run models"
+description = "Sidevoice engine: the local-model catalogue, remote providers, resolver, selector and lifecycle, and the backends that run models"
 
 [lib]
 # cdylib: the wasm32 build that becomes the npm package (src/web.rs, `cargo xtask npm`). Native consumers depend on
@@ -16,7 +16,7 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 async-trait = "=0.1.92"
-# One model's calls wait for one another (src/engine/loaded.rs), and loads of one build make one model in memory: an
+# One model's calls wait for one another (src/capability.rs), and loads of one build make one model in memory: an
 # async mutex that needs no runtime and builds for wasm32 too.
 async-lock = "3.4.0"
 # Backends register themselves (src/backend/registry.rs). linkme does not compile to wasm32; inventory does.
@@ -29,6 +29,9 @@ sha2 = { version = "0.11.0", default-features = false }
 # smart-turn's input, Whisper's log-mel features (src/backend/smart_turn.rs), on every target: an FFT of any size in pure
 # Rust, which compiles to wasm32 too.
 rustfft = "6.4.1"
+# How old a remote provider's listing is (src/provider/listing.rs): `std::time::Instant` on native, and the page's
+# clock on wasm32, where std has none.
+web-time = "1.1.0"
 
 # Which backends a build contains is decided by these tables and one `#![cfg]` per backend file, which must agree: a
 # backend whose dependency is missing here does not compile. The libraries listed here are the ones backends link. Heavy engine libraries are meant to be downloaded

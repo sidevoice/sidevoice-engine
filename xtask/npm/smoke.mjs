@@ -14,4 +14,6 @@ const host = {
   },
 };
 const engine = await WebEngine.create(host);
-console.log(JSON.stringify({ wasm: wasm.pathname, backends: engine.backends() }));
+// No key: listing the providers asks nothing of them.
+const providers = (await engine.providers()).map((provider) => provider.id);
+console.log(JSON.stringify({ wasm: wasm.pathname, backends: engine.backends(), providers }));

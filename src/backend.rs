@@ -124,7 +124,6 @@ mod tests;
 
 pub(crate) use library::Library;
 pub(crate) use loaded_model::{BackendModel, EndOfTurnModel, VadModel, VadStreamModel, Window};
-#[cfg(test)]
 pub(crate) use loaded_model::{SttModel, TtsModel};
 pub(crate) use registry::{built_in, find};
 #[allow(

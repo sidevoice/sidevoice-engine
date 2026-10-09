@@ -5,8 +5,8 @@ use std::ops::Range;
 
 use async_trait::async_trait;
 
+use crate::capability::VadOptions;
 use crate::catalog::Voice;
-use crate::engine::VadOptions;
 use crate::maybe_send::MaybeSend;
 use crate::Result;
 

@@ -4,11 +4,11 @@
 use std::sync::{Arc, Mutex};
 
 use crate::backend::{BackendModel, EndOfTurnModel, Library};
+use crate::capability::Resident;
 use crate::catalog::BuildEntry;
-use crate::engine::loaded::Resident;
 use crate::install::Installed;
 use crate::test_support::block_on;
-use crate::{async_trait, Accelerator, Capability, Error, LoadedModel, Result};
+use crate::{async_trait, Accelerator, Capability, Error, LocalModel, Result};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -57,14 +57,14 @@ impl Library for NoLibrary {
     }
 }
 
-fn loaded(answer: f32) -> (LoadedModel, Arc<Mutex<Vec<usize>>>) {
+fn loaded(answer: f32) -> (LocalModel, Arc<Mutex<Vec<usize>>>) {
     let heard = Arc::new(Mutex::new(Vec::new()));
     let model = Box::new(FakeClassifier {
         answer,
         heard: Arc::clone(&heard),
     });
-    let resident = Resident::new(model, Arc::new(NoLibrary), Vec::new(), Vec::new());
-    (LoadedModel::new("turn", "turn/fake", resident), heard)
+    let resident = Resident::new(model, Some(Arc::new(NoLibrary)), Vec::new(), Vec::new());
+    (LocalModel::new("turn", "turn/fake", resident), heard)
 }
 
 #[test]

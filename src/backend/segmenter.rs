@@ -21,7 +21,7 @@
 use std::ops::Range;
 
 use crate::backend::Window;
-use crate::engine::VadOptions;
+use crate::capability::VadOptions;
 
 #[cfg(test)]
 mod tests;

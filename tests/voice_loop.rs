@@ -37,7 +37,7 @@ use std::{env, fs};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
-    Accelerator, BundledCatalog, Cancel, Engine, Host, LoadedModel, NativeHost, Progress, Vad,
+    Accelerator, BundledCatalog, Cancel, Engine, Host, LocalModel, NativeHost, Progress, Vad,
     VadEvent, VadOptions,
 };
 
@@ -144,7 +144,7 @@ fn run() -> Result<()> {
 
     let mut rows = Vec::new();
     let mut loaded_on = BTreeMap::new();
-    let mut listeners: BTreeMap<String, LoadedModel> = BTreeMap::new();
+    let mut listeners: BTreeMap<String, LocalModel> = BTreeMap::new();
     for build in plan.stt.values().flatten() {
         if !listeners.contains_key(build) {
             listeners.insert(build.clone(), load(&engine, build, &mut loaded_on)?);
@@ -242,7 +242,7 @@ fn run() -> Result<()> {
             let listener = plan.stt.get(language).and_then(|builds| builds.first());
             let cut_says = listener
                 .and_then(|listener| listeners.get(listener))
-                .and_then(LoadedModel::as_stt)
+                .and_then(LocalModel::as_stt)
                 .map(|stt| block_on(stt.transcribe(&cut_audio, *rate, Some(language))))
                 .map_or_else(
                     || "–".to_owned(),
@@ -364,7 +364,7 @@ fn load(
     engine: &Engine,
     build: &str,
     loaded_on: &mut BTreeMap<String, Option<Accelerator>>,
-) -> Result<LoadedModel> {
+) -> Result<LocalModel> {
     let models = block_on(engine.models()).map_err(|e| format!("the models: {e}"))?;
     let (model, entry) = models
         .iter()
@@ -389,7 +389,7 @@ fn load(
 
 /// What `listener` hears in `audio` (its samples and their rate), told the language.
 fn hear(
-    listeners: &BTreeMap<String, LoadedModel>,
+    listeners: &BTreeMap<String, LocalModel>,
     listener: &str,
     speaker: &str,
     language: &str,
@@ -398,7 +398,7 @@ fn hear(
 ) -> Row {
     let heard = listeners
         .get(listener)
-        .and_then(LoadedModel::as_stt)
+        .and_then(LocalModel::as_stt)
         .ok_or(format!("{listener}: not loaded as speech to text"))
         .and_then(|stt| {
             block_on(stt.transcribe(samples, rate, Some(language))).map_err(|e| e.code.to_owned())

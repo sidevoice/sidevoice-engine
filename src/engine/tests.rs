@@ -21,7 +21,7 @@ use crate::test_support::{
 };
 use crate::{
     async_trait, Accelerator, BuildEntry, BundledCatalog, Cancel, Capability, Engine, Error,
-    Gender, LoadedModel, ModelFile, Reason, Result, Voice,
+    Gender, LocalModel, ModelFile, Reason, Result, Voice,
 };
 #[cfg(native)]
 use crate::{VadOptions, VadStream};
@@ -106,14 +106,14 @@ fn a_native_engine_its_futures_and_its_loaded_models_can_cross_threads() {
     sent(engine.models());
     sent(engine.load("whisper-small", None, &|_| {}, &Cancel::new()));
     sent(engine.install("whisper-small", None, &|_| {}, &Cancel::new()));
-    shared_type::<LoadedModel>();
+    shared_type::<LocalModel>();
 }
 
 /// What a loaded model's calls return can cross threads natively: an app awaits them on its own runtime's tasks. Checked
 /// when this compiles; never called.
 #[cfg(native)]
 #[allow(dead_code, reason = "a check at compile time")]
-fn a_loaded_models_futures_are_send(loaded: &LoadedModel, stream: &mut VadStream) {
+fn a_loaded_models_futures_are_send(loaded: &LocalModel, stream: &mut VadStream) {
     fn sent<T: Send>(_: T) {}
     if let Some(stt) = loaded.as_stt() {
         sent(stt.transcribe(&[], 16_000, None));
@@ -276,6 +276,7 @@ impl CatalogSource for FakeModels {
         voice.languages = vec!["es".to_owned(), "en".to_owned()];
         voice.voices = vec![Voice {
             id: "a".to_owned(),
+            name: None,
             languages: vec!["es".to_owned()],
             gender: Some(Gender::Female),
         }];
@@ -469,7 +470,7 @@ impl Fixture {
         Self { engine, counters }
     }
 
-    fn load(&self, model: &str, build: Option<&str>) -> Result<LoadedModel> {
+    fn load(&self, model: &str, build: Option<&str>) -> Result<LocalModel> {
         block_on(self.engine.load(model, build, &|_| {}, &Cancel::new()))
     }
 
@@ -568,7 +569,7 @@ fn load_without_a_build_takes_an_installed_one_that_runs_here_else_the_recommend
 #[test]
 fn what_cannot_be_loaded_says_why_with_a_code() {
     let fixture = Fixture::new();
-    let code = |result: Result<LoadedModel>| result.map(drop).expect_err("refused").code;
+    let code = |result: Result<LocalModel>| result.map(drop).expect_err("refused").code;
     assert_eq!(code(fixture.load("nobody", None)), "model-not-found");
     assert_eq!(
         code(fixture.load("ear", Some("voice-1"))),
@@ -631,12 +632,14 @@ fn a_models_voices_are_described_by_the_catalogue_and_speech_comes_at_its_rate()
         [
             Voice {
                 id: "a".to_owned(),
+                name: None,
                 languages: vec!["es".to_owned()],
                 gender: Some(Gender::Female),
             },
             // Not in the catalogue: the model's languages, and no gender.
             Voice {
                 id: "b".to_owned(),
+                name: None,
                 languages: vec!["es".to_owned(), "en".to_owned()],
                 gender: None,
             },

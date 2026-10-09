@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 use super::{VadEvent, VadFrame, VadOptions};
 use crate::backend::{BackendModel, Library, VadModel, VadStreamModel, Window};
+use crate::capability::Resident;
 use crate::catalog::BuildEntry;
-use crate::engine::loaded::Resident;
 use crate::install::Installed;
 use crate::test_support::block_on;
-use crate::{async_trait, Accelerator, Capability, Error, LoadedModel, Result};
+use crate::{async_trait, Accelerator, Capability, Error, LocalModel, Result};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -118,11 +118,11 @@ impl Library for NoLibrary {
 }
 
 /// The fake detector, loaded, and the count of it alive.
-fn loaded() -> (LoadedModel, Arc<AtomicUsize>) {
+fn loaded() -> (LocalModel, Arc<AtomicUsize>) {
     let alive = Arc::new(AtomicUsize::new(1));
     let model = Box::new(FakeVad(Arc::clone(&alive)));
-    let resident = Resident::new(model, Arc::new(NoLibrary), Vec::new(), Vec::new());
-    (LoadedModel::new("vad", "vad/fake", resident), alive)
+    let resident = Resident::new(model, Some(Arc::new(NoLibrary)), Vec::new(), Vec::new());
+    (LocalModel::new("vad", "vad/fake", resident), alive)
 }
 
 /// `windows` windows at `level`.

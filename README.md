@@ -17,17 +17,18 @@ Reading your coding agent's plans, diffs and summaries all day is tiring. **Side
 already have with your agent into a voice call. The agent keeps its context and keeps writing as usual; it also
 speaks its replies, and you answer by voice and can interrupt it — from the sofa or on a walk, not only at your desk.
 
-**sidevoice-engine** is what runs voice models on the device itself. It knows a catalogue of local models, works out
-which build of each fits on this machine, picks one per stage of the voice pipeline, and takes it from absent to
-ready: installing, loading, and saying why when it cannot. It has no remote providers: to the rest of Sidevoice, the
-device is one more provider.
+**sidevoice-engine** is what runs voice models for Sidevoice: on the device itself, or on a provider's servers. Two
+siblings give it models: a catalogue of local ones, of which it works out which build fits on this machine and takes
+it from absent to ready (installing, loading, and saying why when it cannot), and the remote providers (OpenAI,
+ElevenLabs), which say live which of their models the app's key may use. Either kind is used through the same
+capability interfaces; the app supplies the keys, the engine never stores one.
 
 ## How it fits
 
 | Piece | Role |
 |---|---|
-| **sidevoice-engine** (this repository) | Local models: the catalogue, which build fits here, the choice per stage and its lifecycle. |
-| [sidevoice-core](https://github.com/sidevoice/sidevoice-core) | The conversations and the voice pipeline, next to the agents; it keeps the remote providers. |
+| **sidevoice-engine** (this repository) | Models, local and remote: the catalogue, which build fits here and its lifecycle; the providers' live listings. |
+| [sidevoice-core](https://github.com/sidevoice/sidevoice-core) | The conversations, next to the agents. The voice pipeline is leaving it for sidevoice-voice, built on this engine (sidevoice-core#89). |
 | [sidevoice-connector](https://github.com/sidevoice/sidevoice-connector) | What you install on the machine where your agents run. It gives them their voice tools and runs the core. |
 | [sidevoice-desktop](https://github.com/sidevoice/sidevoice-desktop) | The app you call from. |
 | [sidevoice-web](https://github.com/sidevoice/sidevoice-web) | The call interface the app bundles; it can also be served as a static site. |
@@ -39,11 +40,11 @@ pre-release on GitHub, never on npm ([`RELEASING.md`](RELEASING.md)). To try a p
 merges, its CI keeps the npm package it built for 7 days, as the Actions artifact `engine-npm-<head sha>`
 ([`RELEASING.md`](RELEASING.md#a-pull-requests-package)).
 
-The platform is injected: a `Host` gives the engine the machine's capabilities, its storage and a way to fetch
-files. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
+The platform is injected: a `Host` gives the engine the machine's capabilities, its storage, a way to fetch files,
+its HTTP for API calls, and the keys of remote providers. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
 every native build, and in the web build the page's, built by `WebEngine.create(host)` from what the page reports,
-with the engine's own storage (OPFS, the browser's private file system) and downloads (`fetch`). The `Host` interface stays open, so tests and other
-platforms bring their own. The backends that run models are internal
+with the engine's own storage (OPFS, the browser's private file system), downloads and API calls (`fetch`). The
+`Host` interface stays open, so tests and other platforms bring their own. The backends that run models are internal
 to the engine and optional: which exist in a build is decided when it is compiled, whether they work on this machine
 when it runs. Models are downloaded when they are needed, never bundled. Engine libraries are meant to be too; for
 now, two backends are the exception: native builds link sherpa-onnx statically, through the official crate, and
@@ -109,7 +110,8 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   uninstalling removes each of the model's build folders, keeps any file another build's folder links, and refuses a
   model that is loaded (`model-in-use`).
 - **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
-  recommended one) and returns a `LoadedModel`: `as_stt()`, `as_tts()` and `as_vad()` are what it can do. Speech to
+  recommended one) and returns a `LocalModel`: `as_stt()`, `as_tts()`, `as_vad()` and `as_end_of_turn()` hand out
+  what it can do, the capability interfaces (`Stt`, `Tts`, `Vad`, `EndOfTurn`) a `RemoteModel` hands out too. Speech to
   text takes audio at any rate (the engine resamples it); text to speech returns `Audio` at the model's own rate. A
   model's voices are `Voice { id, languages, gender? }`, as the catalogue declares them where their source does.
 - **Voice activity is a stream.** `Vad::stream(options)` opens a `VadStream` with a state of its own (several can run
@@ -125,8 +127,8 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   pause the voice activity detector found), keeps the last `seconds()` the model hears (8 for smart-turn) and brings
   them to 16 kHz, and returns the probability, from 0 to 1, that the speaker has finished. The model's input (Whisper's
   log-mel features, as smart-turn's own inference makes them) is made by the engine, the same on every backend.
-- **Memory follows the `LoadedModel`s.** Loading a build that is already in memory returns it again; calls on one
-  model wait for one another; the model is unloaded when the last `LoadedModel` of its build is dropped, and a
+- **Memory follows the `LocalModel`s.** Loading a build that is already in memory returns it again; calls on one
+  model wait for one another; the model is unloaded when the last `LocalModel` of its build is dropped, and a
   backend's library is opened with the first of its models and closed after the last one. The engine keeps only weak
   references: no clock, no idle unloading.
 - **`NativeHost`** (`src/host/native.rs`) takes one parameter, the data directory, which it creates. It reports `os`
@@ -162,9 +164,53 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
 
+## Remote providers and their keys
+
+The remote providers (`openai`, `elevenlabs`) are the catalogue's sibling, not part of it: a provider says, live,
+which of its models the app's key may use. A remote model has no builds, no install and no accelerator.
+
+```rust
+let providers = engine.providers().await; // Provider { id, name, status?, stale, models: [ProviderModel] }
+let openai = engine.refresh("openai").await?; // listed again now: the settings' refresh button, or a new key
+let scribe = engine.remote("elevenlabs", "scribe_v2").await?; // a RemoteModel
+let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Some("es")).await?;
+```
+
+- **Listed live, kept in memory only.** `Engine::providers` lists every provider of the build with its models
+  (`ProviderModel { id, capabilities, languages, voices, speed? }`) and a status of its own: `None` when the listing
+  is current, else why not, as a stable code. A listing is asked for when there is none (so the first call after the
+  app starts lists every provider with a key), when its models are a day old or its voices an hour old, and on
+  `Engine::refresh`. Nothing is written anywhere.
+- **No key, no listing.** Without a key (`credential-missing`) nothing is asked. A key the provider refuses
+  (`credential-rejected`), or one it does not let list (`listing-not-permitted`), leaves the provider with no models:
+  there is no fallback, the key must be allowed to list. A provider that could not be asked (`provider-unreachable`,
+  `provider-quota`, `listing-failed`) keeps its last listing, `stale`.
+- **What the API does not say comes from its spec.** OpenAI's `/v1/models` lists ids only, and ElevenLabs' has no
+  speech-to-text flag: which models transcribe and which speak, where the language goes in a request, the speed range
+  and OpenAI's voices are derived from each provider's official OpenAPI spec by `cargo xtask pin-providers` into
+  `src/provider/<provider>/facts.json`, pinned (OpenAI's by commit; ElevenLabs' by digest), and checked for drift on
+  every pull request (`providers.yml`). A model the provider lists and its spec does not describe is not offered.
+- **ElevenLabs' voices are the account's** (`/v1/voices`: the defaults, and those cloned, designed or added), never
+  the shared library: each with its `name`, its languages (its own language label first, then those ElevenLabs
+  verified it in) and its gender where its labels state one.
+- **Keys are the app's.** The engine asks the host for a provider's key each time it needs one (`Host::credentials`,
+  the `Credentials` trait) and keeps it only for that call. A native app passes where its keys are:
+  `NativeHost::new(dir)?.with_credentials(keychain)`, any `Credentials` (the OS keychain on desktop); without, the host
+  has none. A page's host may have `credential(provider)`, returning (or resolving to) the key, or `null`, from the
+  browser's storage.
+- **Calls go through the host's HTTP** (`Host::http`, the `HttpClient` trait): `reqwest` natively, `fetch` on the web.
+  `Engine::remote` makes no call. Speech comes back as 16-bit PCM at 24 kHz; a turn is sent as a 16-bit WAV at 16 kHz.
+  Streaming is not used (sidevoice-engine#35).
+- **What a call fails with** has its codes: `credential-missing`, `credential-rejected`, `provider-quota` (402),
+  `rate-limited` (429), the shared `transcription-failed`, `speech-failed`, `unknown-voice`, and the host's
+  `request-failed` (no answer) and `credentials-failed` (the keys could not be read).
+- **Real calls in CI** are `remote-live.yml`, by hand and before each release, never on a pull request: per provider,
+  the listing, one short speech, one short transcription (the voice loop's LibriSpeech clip, within its word error
+  rate, with the language sent) and an invalid key. A provider whose key secret is absent is skipped.
+
 ## Status
 
-The catalogue, the installer, the lifecycle and the native host work, and so do four real backends:
+The catalogue, the installer, the lifecycle and the native host work, and so do four backends:
 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
@@ -172,6 +218,10 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
+
+And two remote providers, natively and in the browser, through the host's HTTP with the app's key: OpenAI (speech to
+text and text to speech, `/v1/audio/transcriptions` and `/v1/audio/speech`) and ElevenLabs (Scribe, and text to
+speech with the account's voices, `/v1/speech-to-text` and `/v1/text-to-speech`).
 
 In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub.
 
@@ -182,8 +232,9 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   lib.rs          the front door: declares the packages, exports the public API
   host.rs         Host: the platform contract; host/: capabilities (what a host reports, and
                   capabilities/accelerator.rs), storage (Storage, StorageWriter, FolderWriter: blobs and build folders),
-                  fetcher (Fetcher, Download), native (NativeHost, native builds only: native/directory.rs, its
-                  storage, and native/http.rs, its downloads)
+                  fetcher (Fetcher, Download), http (HttpClient: API calls), credentials (Credentials: the keys of
+                  remote providers), native (NativeHost, native builds only: native/directory.rs, its storage, and
+                  native/http.rs, its downloads and API calls)
   catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
                   and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements, the ids a catalogue may name
@@ -192,21 +243,29 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   VadModel and its streams), segmenter (speech from per-window probabilities, by sherpa-onnx's
                   rules), smart_turn (smart-turn's input, Whisper's log-mel features), implementations/ (one file
                   per backend)
+  provider.rs     the remote providers, the catalogue's sibling: Adapter (what each provider implements), Provider and
+                  ProviderModel (what Engine::providers lists); provider/: api (the provider's API through the host,
+                  forms, PCM), facts (what its spec says, from <provider>/facts.json), listing (the cache in memory and
+                  its ages), registry, remote_model (RemoteModel), openai, elevenlabs
+  capability.rs   the capability interfaces both siblings hand out: Stt, Tts, and the model in memory behind them;
+                  capability/: vad (Vad, VadStream and their values), end_of_turn (EndOfTurn), audio (Audio,
+                  resampling)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
   install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
                   download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
                   ProgressSink), cancel (Cancel), digest (SHA-256)
   engine.rs       Engine: models, install, uninstall, load; engine/: model (Model, ModelBuild: what models lists),
-                  loaded (LoadedModel, Stt, Tts; loaded/vad.rs: Vad, VadStream and their values; loaded/end_of_turn.rs:
-                  EndOfTurn), audio (Audio,
-                  resampling), memory (weak references: one library per backend, one model per build), error
-                  (ConfigError)
-  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LoadedModel, Stt,
+                  local (LocalModel), providers (providers, refresh, remote), memory (weak references: one library per
+                  backend, one model per build), error (ConfigError)
+  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LocalModel, RemoteModel, Stt,
                   Tts, Vad, VadStream, EndOfTurn; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
                   file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
-                  capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`)
+                  capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`, for
+                  downloads and API calls)
   maybe_send.rs   Send/Sync in native builds only
 catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
+tests/          the voice loop (voice_loop.rs) and the remote providers' real calls (remote_live.rs), both ignored
+                unless CI asks
 build.rs        the three cfg aliases: web, native, apple_silicon
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own

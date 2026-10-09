@@ -1,4 +1,5 @@
-//! The native host's downloads, over HTTP(S), with `reqwest`: the HTTP client sidevoice-core and the desktop app use.
+//! The native host's downloads and API calls, over HTTP(S), with `reqwest`: the HTTP client sidevoice-core and the
+//! desktop app use.
 //! The body is streamed as it arrives, so a slow disk or consumer slows the download instead of filling memory, and
 //! dropping the download closes the connection. `reqwest` needs a Tokio runtime: so do these futures.
 
@@ -8,9 +9,10 @@ use std::time::Duration;
 
 use futures_core::Stream;
 
-use crate::{async_trait, Download, Error, Fetcher, Result};
+use crate::{async_trait, Download, Error, Fetcher, HttpClient, HttpRequest, HttpResponse, Result};
 
-/// Downloads over HTTP(S), following redirects; an HTTP error status fails.
+/// Downloads over HTTP(S), following redirects, where an HTTP error status fails; and API calls, whose status is the
+/// caller's to read.
 pub(super) struct Http {
     client: reqwest::Client,
 }
@@ -80,4 +82,31 @@ where
 
 fn failed() -> Error {
     Error::new("download-failed")
+}
+
+#[async_trait]
+impl HttpClient for Http {
+    /// The whole body is read before it resolves: API answers are small (a transcript, an utterance's audio).
+    async fn send(&self, request: HttpRequest) -> Result<HttpResponse> {
+        let method = reqwest::Method::from_bytes(request.method.as_bytes())
+            .map_err(|_| Error::new("request-failed"))?;
+        let mut builder = self.client.request(method, &request.url);
+        for (name, value) in &request.headers {
+            builder = builder.header(name, value);
+        }
+        let response = builder
+            .body(request.body)
+            .send()
+            .await
+            .map_err(|_| Error::new("request-failed"))?;
+        let status = response.status().as_u16();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|_| Error::new("request-failed"))?;
+        Ok(HttpResponse {
+            status,
+            body: body.to_vec(),
+        })
+    }
 }

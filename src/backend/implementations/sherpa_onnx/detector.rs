@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use sherpa_onnx::{VadModelConfig, VoiceActivityDetector};
 
 use crate::backend::{BackendModel, VadModel, VadStreamModel, Window};
-use crate::engine::VadOptions;
+use crate::capability::VadOptions;
 use crate::{Error, Result};
 
 /// How long a segment may run before sherpa-onnx cuts it: an hour, which no turn reaches.
