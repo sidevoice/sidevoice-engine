@@ -4,7 +4,9 @@
 //! match per root names every path that takes a file (`config/fields.rs`, generated from the pinned crate's source by
 //! `cargo xtask sherpa-libs --pin`), so a field sherpa-onnx renames breaks the build, and a key it does not have
 //! fails the catalogue's tests (`tests.rs`), not a load. Everything else is sherpa-onnx's default; the engine adds
-//! the provider and the threads.
+//! the provider and the threads, and, per call, what a build's `call_params` maps its arguments to (`set_call`).
+
+use std::collections::BTreeMap;
 
 use sherpa_onnx::{OfflineRecognizerConfig, OfflineTtsConfig};
 
@@ -14,7 +16,7 @@ use crate::{Error, Result};
 
 mod fields;
 
-pub(super) use fields::{stt_field, tts_field};
+pub(super) use fields::{stt_field, stt_option, tts_field};
 
 /// The recognizer's config: every file of `files` in the field its key names, on `provider`; `unsupported-model` for a
 /// key no field has.
@@ -28,6 +30,23 @@ pub(super) fn recognizer(files: &Installed, provider: &str) -> Result<OfflineRec
     config.model_config.provider = Some(provider.to_owned());
     config.model_config.num_threads = num_threads();
     Ok(config)
+}
+
+/// Sets every config path `call_params` maps `argument` to (a build's `call_params`: `whisper.language`, ...) to `value`,
+/// or back to sherpa-onnx's default with `None` (for Whisper's language, detecting it). An argument the build does not
+/// map sets nothing; `unsupported-model` for a path no field a call may set has.
+pub(super) fn set_call(
+    config: &mut OfflineRecognizerConfig,
+    call_params: &BTreeMap<String, Vec<String>>,
+    argument: &str,
+    value: Option<&str>,
+) -> Result<()> {
+    for path in call_params.get(argument).into_iter().flatten() {
+        let field =
+            stt_option(&mut config.model_config, path).ok_or(Error::new("unsupported-model"))?;
+        *field = value.map(text).transpose()?;
+    }
+    Ok(())
 }
 
 /// The TTS's config: every file of `files` in the field its key names, on `provider`; `unsupported-model` for a key no

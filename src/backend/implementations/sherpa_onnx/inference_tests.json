@@ -54,6 +54,9 @@
       "clips": [
         "en",
         "es"
+      ],
+      "detect": [
+        "es"
       ]
     },
     {
@@ -61,14 +64,17 @@
       "clips": [
         "en",
         "es"
+      ],
+      "detect": [
+        "es"
       ]
     },
     {
       "build": "canary-180m-flash/sherpa-onnx-int8",
       "clips": [
-        "en"
-      ],
-      "note": "Spanish needs canary.src_lang, a per-call parameter the engine does not pass yet (sidevoice-engine#46): with none, Canary reads every clip as English."
+        "en",
+        "es"
+      ]
     },
     {
       "build": "qwen3-asr-0.6b/sherpa-onnx-int8",
