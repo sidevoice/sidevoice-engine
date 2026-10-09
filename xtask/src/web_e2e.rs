@@ -2,8 +2,8 @@
 //! it: the package built and installed into `DIR/site` as a consumer installs it (with transformers.js and eSpeak NG,
 //! its dependencies), and a page (`xtask/web-e2e/page.mjs`) that installs, cancels, loads and uninstalls through
 //! `WebEngine`, so the files go through the engine's own OPFS storage and `fetch` downloads, then transcribes the native
-//! loop's recorded clips (`tests/voice_loop.json`) with the plan's speech-to-text build and what each text-to-speech build says
-//! in its language's sentence. `xtask/web-e2e/run.mjs` serves the page and drives Chrome.
+//! loop's recorded clips (`tests/voice_loop.json`) with the plan's speech-to-text build, each once told its language and
+//! once with none (the model detects it), and what each text-to-speech build says in its language's sentence. `xtask/web-e2e/run.mjs` serves the page and drives Chrome.
 //!
 //! What it runs is data, `xtask/web-e2e.json`: the accelerators the page reports, the speech-to-text build, and each
 //! text-to-speech build with its voice and language. Every check the page makes must pass, and every transcript must

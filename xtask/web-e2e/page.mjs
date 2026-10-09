@@ -133,16 +133,17 @@ try {
   const inUse = await rejection(engine.uninstall(plan.stt.model));
   await check("a loaded model cannot be uninstalled", inUse === "model-in-use", inUse);
 
-  for (const clip of plan.clips) {
+  // Each clip twice: told its language, and with none, so the model detects it (Spanish must not come back in English).
+  for (const clip of plan.clips.flatMap((clip) => [clip, { ...clip, detect: true }])) {
     const row = {
-      pair: `${plan.stt.model} ← clip ${clip.name}`,
+      pair: `${plan.stt.model} ← clip ${clip.name}${clip.detect ? ", language detected" : ""}`,
       language: clip.language,
       said: clip.text,
     };
     try {
       const { samples, rate } = wav(await (await fetch(clip.file)).arrayBuffer());
       start = performance.now();
-      row.heard = await stt.transcribe(samples, rate, clip.language);
+      row.heard = await stt.transcribe(samples, rate, clip.detect ? undefined : clip.language);
       await log(`${row.pair}: ${since(start)}: ${row.heard}`);
     } catch (error) {
       row.error = error?.code ?? String(error);
