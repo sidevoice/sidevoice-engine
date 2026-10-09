@@ -594,7 +594,7 @@ fn uninstalling_waits_for_the_model_to_be_dropped_and_keeps_what_another_model_u
     let ear = fixture.load("ear", None).expect("loaded");
     fixture.install("ear", Some("ear-2")).expect("installed");
     fixture.install("other", None).expect("installed");
-    let uninstall = |model| block_on(fixture.engine.uninstall(model));
+    let uninstall = |model| block_on(fixture.engine.uninstall(model, None));
     assert_eq!(uninstall("ear"), Err(Error::new("model-in-use")));
     drop(ear);
     uninstall("ear").expect("uninstalled");
@@ -607,6 +607,68 @@ fn uninstalling_waits_for_the_model_to_be_dropped_and_keeps_what_another_model_u
     assert_eq!(fixture.installed("other"), [pair("other-1", true)]);
     fixture.load("other", None).expect("still whole");
     assert_eq!(uninstall("nobody"), Err(Error::new("model-not-found")));
+}
+
+#[test]
+fn one_build_is_uninstalled_alone_and_a_file_another_build_links_stays() {
+    let fixture = Fixture::new();
+    fixture.install("ear", Some("ear-1")).expect("installed");
+    fixture.install("ear", Some("ear-2")).expect("installed");
+    fixture.install("other", None).expect("installed");
+    let uninstall = |model, build| block_on(fixture.engine.uninstall(model, Some(build)));
+    uninstall("ear", "ear-2").expect("uninstalled");
+    assert_eq!(
+        fixture.installed("ear"),
+        [pair("ear-1", true), pair("ear-2", false)],
+        "ear-1 stays"
+    );
+    uninstall("ear", "ear-1").expect("uninstalled");
+    // ear-1's only file is one `other`'s folder links too: it stays, and `other` still loads.
+    assert_eq!(fixture.installed("other"), [pair("other-1", true)]);
+    fixture.load("other", None).expect("still whole");
+    uninstall("ear", "ear-1").expect("not installed: nothing to do");
+    assert_eq!(
+        uninstall("ear", "other-1"),
+        Err(Error::new("build-not-found"))
+    );
+    assert_eq!(
+        uninstall("nobody", "ear-1"),
+        Err(Error::new("model-not-found"))
+    );
+}
+
+#[test]
+fn a_build_loaded_or_being_installed_is_not_uninstalled() {
+    let fixture = Fixture::new();
+    let ear = fixture.load("ear", Some("ear-1")).expect("loaded");
+    fixture.install("ear", Some("ear-2")).expect("installed");
+    let uninstall = |build| block_on(fixture.engine.uninstall("ear", Some(build)));
+    assert_eq!(uninstall("ear-1"), Err(Error::new("model-in-use")));
+    uninstall("ear-2").expect("not loaded: uninstalled");
+    drop(ear);
+
+    let installing = super::Installing::new(&fixture.engine.installing, "ear-1");
+    let again = super::Installing::new(&fixture.engine.installing, "ear-1");
+    assert_eq!(uninstall("ear-1"), Err(Error::new("install-in-progress")));
+    drop(installing);
+    assert_eq!(
+        uninstall("ear-1"),
+        Err(Error::new("install-in-progress")),
+        "one still runs"
+    );
+    drop(again);
+    uninstall("ear-1").expect("uninstalled");
+    assert_eq!(
+        fixture.installed("ear"),
+        [pair("ear-1", false), pair("ear-2", false)]
+    );
+    fixture
+        .install("ear", Some("ear-1"))
+        .expect("installed again");
+    assert!(
+        fixture.engine.installing.lock().unwrap().is_empty(),
+        "a finished install is no longer counted"
+    );
 }
 
 #[test]

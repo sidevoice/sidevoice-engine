@@ -6,6 +6,7 @@
 //! [`Tts`], [`Vad`] and its [`VadStream`]), `audio` ([`Audio`], and resampling), `memory` (weak references: one
 //! library per backend, one model per build) and `error` (why an engine cannot be built).
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -47,6 +48,8 @@ pub struct Engine {
     memory: Mutex<Memory>,
     /// Held while a model is loaded, so that two loads of one build make one model in memory.
     loading: async_lock::Mutex<()>,
+    /// The builds being installed now, each with how many installs of it are running: none of them is uninstalled.
+    installing: Mutex<BTreeMap<String, usize>>,
 }
 
 impl fmt::Debug for Engine {
@@ -94,6 +97,7 @@ impl Engine {
             installer: Installer,
             memory: Mutex::default(),
             loading: async_lock::Mutex::new(()),
+            installing: Mutex::default(),
         })
     }
 
@@ -173,31 +177,50 @@ impl Engine {
     ) -> Result<()> {
         let (_, build, _) = self.choose(model, build).await?;
         let (_, artifacts) = self.artifacts(build)?;
+        let _installing = Installing::new(&self.installing, &build.id);
         self.installer
             .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
             .await
             .map(drop)
     }
 
-    /// Removes every build of the model `model` from storage: each build's folder, then each of its files no other
-    /// build's folder links, so a file another model also uses stays.
+    /// Removes `build` of the model `model` from storage, or, with `None`, every build of it: each build's folder, then
+    /// each of its files no other build's folder links, so a file another build (of this model or another) uses stays.
+    /// A build that is not installed is left as it is. As [`Engine::install`] takes a model and one of its builds, so
+    /// does this; removing one build is what undoes an install that finished before it could be cancelled.
     ///
     /// # Errors
     ///
-    /// `model-not-found`, `model-in-use` while a [`LoadedModel`] of it lives, and what the host's storage fails with.
-    pub async fn uninstall(&self, model: &str) -> Result<()> {
+    /// `model-not-found`, `build-not-found` (not a build of that model), `model-in-use` while a [`LoadedModel`] of a
+    /// build it would remove lives, `install-in-progress` while one of those builds is being installed (or loaded, and
+    /// installed first), and what the host's storage fails with. Nothing is removed when it fails before storage.
+    pub async fn uninstall(&self, model: &str, build: Option<&str>) -> Result<()> {
         let entry = self.entry(model)?;
-        let in_use = {
-            let memory = lock(&self.memory);
-            entry
+        let builds: Vec<&BuildEntry> = match build {
+            None => entry.builds.iter().collect(),
+            Some(wanted) => vec![entry
                 .builds
                 .iter()
-                .any(|build| memory.model(&build.id).is_some())
+                .find(|build| build.id == wanted)
+                .ok_or(Error::new("build-not-found"))?],
+        };
+        let in_use = {
+            let memory = lock(&self.memory);
+            builds.iter().any(|build| memory.model(&build.id).is_some())
         };
         if in_use {
             return Err(Error::new("model-in-use"));
         }
-        for build in &entry.builds {
+        let installing = {
+            let installing = lock(&self.installing);
+            builds
+                .iter()
+                .any(|build| installing.contains_key(&build.id))
+        };
+        if installing {
+            return Err(Error::new("install-in-progress"));
+        }
+        for build in builds {
             let artifacts = match self.artifacts(build) {
                 Ok((_, artifacts)) => artifacts,
                 Err(_) => build.files.iter().map(ModelFile::artifact).collect(),
@@ -235,10 +258,12 @@ impl Engine {
             return Ok(LoadedModel::new(&entry.id, &build.id, resident));
         }
         let (backend, artifacts) = self.artifacts(build)?;
+        let installing = Installing::new(&self.installing, &build.id);
         let files = self
             .installer
             .install(&build.id, &artifacts, self.host.as_ref(), progress, cancel)
             .await?;
+        drop(installing);
         cancel.check()?;
         let _loading = self.loading.lock().await;
         // Another load of this build may have finished while this one waited.
@@ -312,6 +337,34 @@ impl Engine {
             .ok_or(Error::new("backend-not-in-this-build"))?;
         let artifacts = build.files.iter().map(ModelFile::artifact).collect();
         Ok((backend, artifacts))
+    }
+}
+
+/// One install of a build in progress, counted in the engine's `installing` while it lives.
+struct Installing<'a> {
+    installing: &'a Mutex<BTreeMap<String, usize>>,
+    build: String,
+}
+
+impl<'a> Installing<'a> {
+    fn new(installing: &'a Mutex<BTreeMap<String, usize>>, build: &str) -> Self {
+        *lock(installing).entry(build.to_owned()).or_default() += 1;
+        Self {
+            installing,
+            build: build.to_owned(),
+        }
+    }
+}
+
+impl Drop for Installing<'_> {
+    fn drop(&mut self) {
+        let mut installing = lock(self.installing);
+        if let Some(count) = installing.get_mut(&self.build) {
+            *count -= 1;
+            if *count == 0 {
+                installing.remove(&self.build);
+            }
+        }
     }
 }
 

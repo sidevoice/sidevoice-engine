@@ -105,9 +105,10 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 - **`Engine::models`** lists every model of the catalogue with its catalogue data, whether it is installed, every
   build ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
-  recommends. `Engine::install` and `Engine::uninstall` take a model id (and, to install, a build id or `None`);
-  uninstalling removes each of the model's build folders, keeps any file another build's folder links, and refuses a
-  model that is loaded (`model-in-use`).
+  recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
+  removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
+  refuses a build that is loaded (`model-in-use`) or being installed (`install-in-progress`). Removing one build is
+  what undoes an install that finished before its cancel landed.
 - **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
   recommended one) and returns a `LoadedModel`: `as_stt()`, `as_tts()` and `as_vad()` are what it can do. Speech to
   text takes audio at any rate (the engine resamples it); text to speech returns `Audio` at the model's own rate. A

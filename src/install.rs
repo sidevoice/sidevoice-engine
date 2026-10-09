@@ -194,10 +194,6 @@ impl Installer {
     /// # Errors
     ///
     /// What the host's storage fails with.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "the engine does not remove builds yet")
-    )]
     pub(crate) async fn uninstall(
         &self,
         folder: &str,
