@@ -26,6 +26,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 # Each downloaded file is checked against its digest as it arrives (src/install.rs), on every target.
 sha2 = { version = "0.11.0", default-features = false }
+# smart-turn's input, Whisper's log-mel features (src/backend/smart_turn.rs), on every target: an FFT of any size in pure
+# Rust, which compiles to wasm32 too.
+rustfft = "6.4.1"
 
 # Which backends a build contains is decided by these tables and one `#![cfg]` per backend file, which must agree: a
 # backend whose dependency is missing here does not compile. The libraries listed here are the ones backends link. Heavy engine libraries are meant to be downloaded
@@ -70,6 +73,15 @@ whisper-rs = { version = "=0.16.0", features = ["metal"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bzip2 = "=0.6.1"
 futures-core = "0.3.31"
+# The ONNX Runtime backend (src/backend/implementations/onnx_runtime.rs): `ort`'s safe API over the ONNX Runtime
+# sherpa-onnx already links (below), never a runtime of its own. `ort-sys` is named only to switch its linking off
+# (`disable-linking`): it then links and downloads nothing, and `OrtGetApiBase` resolves to the runtime inside sherpa-onnx's
+# libraries. `ort` keeps its ordinary lazy initialization (no `alternative-backend`): the engine installs no process-wide
+# API, so an app's own use of `ort` works the same before and after the engine's. Cargo unifies features, so such an app's
+# `ort` also runs on that linked runtime (1.28) rather than link or download one: two static ONNX Runtimes could not be
+# linked into one binary anyway. API 17 is what it asks of a runtime (1.17 or later).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17"] }
+ort-sys = { version = "=2.0.0-rc.13", default-features = false, features = ["disable-linking"] }
 reqwest = { version = "=0.13.0", default-features = false, features = ["rustls", "stream"] }
 sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
 tar = { version = "0.4.46", default-features = false }

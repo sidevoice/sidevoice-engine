@@ -98,6 +98,8 @@ let audio = tts.speak("Hola", "ef_dora", Some("es"), None).await?; // Audio { sa
 let silero = engine.load("silero-vad", None, &|_| {}, &cancel).await?;
 let mut mic = silero.as_vad().expect("voice activity").stream(VadOptions::default()).await?;
 let heard = mic.accept(&pcm_at_16_khz).await?; // VadOutput { frames, events: [SpeechStart { at }, SpeechEnd { start, end }] }
+let smart_turn = engine.load("smart-turn-v3.2", None, &|_| {}, &cancel).await?;
+let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_far, 48_000).await?; // P(complete)
 ```
 
 - **`Engine::models`** lists every model of the catalogue with its catalogue data, whether it is installed, every
@@ -119,6 +121,10 @@ let heard = mic.accept(&pcm_at_16_khz).await?; // VadOutput { frames, events: [S
   holds the threshold, `min_silence_ms` and `min_speech_ms` (sherpa-onnx's defaults: 0.5, 500, 250); every backend
   segments by sherpa-onnx's rules, so the events mean the same on each. `finish()` ends the speech in progress and
   starts over; `reset()` forgets it. A stream keeps its model in memory while it lives.
+- **End of turn is a probability.** `EndOfTurn::probability(audio, sample_rate)` takes the turn so far (typically at a
+  pause the voice activity detector found), keeps the last `seconds()` the model hears (8 for smart-turn) and brings
+  them to 16 kHz, and returns the probability, from 0 to 1, that the speaker has finished. The model's input (Whisper's
+  log-mel features, as smart-turn's own inference makes them) is made by the engine, the same on every backend.
 - **Memory follows the `LoadedModel`s.** Loading a build that is already in memory returns it again; calls on one
   model wait for one another; the model is unloaded when the last `LoadedModel` of its build is dropped, and a
   backend's library is opened with the first of its models and closed after the last one. The engine keeps only weak
@@ -158,13 +164,14 @@ let heard = mic.accept(&pcm_at_16_khz).await?; // VadOutput { frames, events: [S
 
 ## Status
 
-The catalogue, the installer, the lifecycle and the native host work, and so do three real backends:
+The catalogue, the installer, the lifecycle and the native host work, and so do four real backends:
 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
 | `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
-| `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window) | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
+| `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links |
+| `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
 In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub.
 
@@ -183,17 +190,19 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   (KNOWN) and BackendInfo (what Engine::backends lists); backend/: requirement, registry, library
                   (what open returns, which loads models), loaded_model (what load returns: SttModel, TtsModel,
                   VadModel and its streams), segmenter (speech from per-window probabilities, by sherpa-onnx's
-                  rules), implementations/ (one file per backend)
+                  rules), smart_turn (smart-turn's input, Whisper's log-mel features), implementations/ (one file
+                  per backend)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
   install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
                   download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
                   ProgressSink), cancel (Cancel), digest (SHA-256)
   engine.rs       Engine: models, install, uninstall, load; engine/: model (Model, ModelBuild: what models lists),
-                  loaded (LoadedModel, Stt, Tts; loaded/vad.rs: Vad, VadStream and their values), audio (Audio,
+                  loaded (LoadedModel, Stt, Tts; loaded/vad.rs: Vad, VadStream and their values; loaded/end_of_turn.rs:
+                  EndOfTurn), audio (Audio,
                   resampling), memory (weak references: one library per backend, one model per build), error
                   (ConfigError)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LoadedModel, Stt,
-                  Tts, Vad, VadStream; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
+                  Tts, Vad, VadStream, EndOfTurn; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
                   file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
                   capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`)
   maybe_send.rs   Send/Sync in native builds only
@@ -206,7 +215,8 @@ xtask/          build tooling (`cargo xtask`), a package of its own
 ## Build and test
 
 You need Rust 1.98.1 (the version `.github/actions/setup` installs), and a C compiler for the native build (rustls'
-crypto, `ring`). A native build links two backends' engines statically; there is no build without them.
+crypto, `ring`). A native build links two backends' engines statically; there is no build without them. A third, `onnxruntime`,
+links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through `ort` built with no runtime of its own.
 
 - **whisper.cpp** is compiled, with ggml, from the sources `whisper-rs-sys` bundles, so the build needs CMake, a C++
   compiler and libclang (for `bindgen`, which writes the bindings). whisper.cpp tunes ggml for the building machine's
@@ -262,7 +272,10 @@ and every transcript must stay within the plan's one word error rate, a loose 50
 works and catches a wrong configuration, it does not measure quality. Each voice activity detector of the plan (Silero
 on sherpa-onnx) then hears each recorded clip set between two seconds of silence, fed 20 ms at a time: every segment it
 reports must lie in the clip, give or take 0.3 s, be ended by the silence after it, and together cover half the clip
-(`tests/voice_loop/vad.rs`). It downloads about 1.5 GB the first time (kept by
+(`tests/voice_loop/vad.rs`). Each end-of-turn model (smart-turn) hears each clip whole and cut mid-phrase (the middle of its longest stretch of speech without a pause), each followed by a
+0.2 s pause, the moment silence alone would end the turn: it must call the whole clip complete (P ≥ 0.5) and the
+cut one not, which each build is required to do in English; the Spanish clip, read speech the model calls complete
+wherever it is cut, is reported, until conversational clips come (sidevoice-engine#74; `tests/voice_loop/end_of_turn.rs`). It downloads about 1.5 GB the first time (kept by
 digest in `$SIDEVOICE_VOICE_LOOP`), so it is ignored unless asked for; the `e2e` workflow runs it on Linux x86_64 and
 arm64 and on macOS arm64 through `cargo xtask e2e`, which puts its table, and the accelerator each build was loaded
 on, in the job's summary:
@@ -287,8 +300,8 @@ cargo test --locked --manifest-path xtask/Cargo.toml   # the build tooling's own
 The tests that need a page (OPFS, an HTTP server) are ignored in Node and run in a headless Chrome, through
 ChromeDriver (`CHROMEDRIVER`, or `chromedriver` on the `PATH`, and `CHROME` for the Chrome it starts, of the same
 version). The voice loop runs in Chrome too, through the npm package as a page uses it: Whisper base transcribes the
-loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, and Silero finds the speech of each clip by the
-native loop's rule, on WebAssembly (`xtask/web-e2e.json`; a few
+loop's recorded clips and hears Kokoro (Spanish) and Supertonic 2 back, and Silero finds the speech of each clip, and smart-turn tells each whole clip from a cut mid-phrase, by the
+native loop's rules, on WebAssembly (`xtask/web-e2e.json`; a few
 hundred MB downloaded on every run, into a profile that is thrown away; `CHROME`, else `google-chrome`):
 
 ```sh
@@ -298,7 +311,7 @@ cargo xtask web-e2e [DIR]
 
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
 (`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
-model, its `id`, `capabilities` (`stt`, `tts`, `vad`), `parameters_m`, `languages` (none for a model that hears no
+model, its `id`, `capabilities` (`stt`, `tts`, `vad`, `end-of-turn`), `parameters_m`, `languages` (none for a model that hears no
 language in particular, as a voice activity detector) and `license`; a build, its `id`, the
 `backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
 `requires` (hard constraints only, and optional: the only `accelerators` it

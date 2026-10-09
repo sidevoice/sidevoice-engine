@@ -118,11 +118,12 @@ mod loaded_model;
 mod registry;
 mod requirement;
 mod segmenter;
+pub(crate) mod smart_turn;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use library::Library;
-pub(crate) use loaded_model::{BackendModel, VadModel, VadStreamModel, Window};
+pub(crate) use loaded_model::{BackendModel, EndOfTurnModel, VadModel, VadStreamModel, Window};
 #[cfg(test)]
 pub(crate) use loaded_model::{SttModel, TtsModel};
 pub(crate) use registry::{built_in, find};
@@ -192,7 +193,13 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
 /// Every backend id a catalogue may name: the [`BackendSpec::id`] of each backend, in whichever build of the engine it
 /// is compiled, and the ids of backends whose code is still to come, which the catalogue may already name. A build
 /// naming any other is a catalogue problem (`UnknownBackend`).
-pub(crate) const KNOWN: &[BackendId] = &["sherpa-onnx", "mlx", "transformers-js", "whisper-cpp"];
+pub(crate) const KNOWN: &[BackendId] = &[
+    "sherpa-onnx",
+    "mlx",
+    "transformers-js",
+    "whisper-cpp",
+    "onnxruntime",
+];
 
 /// Whether `backend` is one of [`KNOWN`].
 pub(crate) fn is_known(backend: &str) -> bool {

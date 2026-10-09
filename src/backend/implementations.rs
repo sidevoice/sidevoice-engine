@@ -5,6 +5,7 @@
 //! `BackendFactory` itself (`crate::backend::registry`), so nothing outside it changes when a backend comes or goes.
 
 mod mlx;
+mod onnx_runtime;
 mod sherpa_onnx;
 mod transformers_js;
 mod whisper_cpp;

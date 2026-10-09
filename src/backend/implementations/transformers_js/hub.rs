@@ -144,13 +144,17 @@ impl Drop for Hub {
 
 impl Models {
     /// Where the file at `path` (`m3/onnx/model.onnx`, or `m3/resolve/<revision>/onnx/model.onnx`) is stored.
+    /// A path transformers.js joins with an empty subfolder (a file at the repository's root) has a doubled `/`.
     fn location(&self, path: &str) -> Option<String> {
         let (name, path) = path.split_once('/')?;
         let path = match path.strip_prefix("resolve/") {
             Some(rest) => rest.split_once('/')?.1,
             None => path,
         };
-        self.files.get(name)?.get(path).cloned()
+        self.files
+            .get(name)?
+            .get(path.trim_start_matches('/'))
+            .cloned()
     }
 }
 
@@ -174,7 +178,7 @@ impl Drop for Served {
 }
 
 /// The path of a file in its Hugging Face repository, from its pinned URL: what follows `/resolve/<revision>/`.
-fn repository_path(url: &str) -> Option<&str> {
+pub(super) fn repository_path(url: &str) -> Option<&str> {
     let (_, rest) = url.split_once("/resolve/")?;
     let (_, path) = rest.split_once('/')?;
     (!path.is_empty()).then_some(path)
