@@ -481,6 +481,7 @@ fn catalogue_builds_transcribe_the_clips_they_name() {
 fn voice(id: &str) -> Voice {
     Voice {
         id: id.to_owned(),
+        name: None,
         languages: Vec::new(),
         gender: None,
     }

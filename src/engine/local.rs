@@ -48,6 +48,13 @@ impl LocalModel {
     }
 
     /// The model in memory behind it.
+    #[cfg_attr(
+        not(web),
+        allow(
+            dead_code,
+            reason = "the web bridge's: it hands the model to JavaScript's handles"
+        )
+    )]
     pub(crate) fn resident(&self) -> &Arc<Resident> {
         &self.resident
     }
