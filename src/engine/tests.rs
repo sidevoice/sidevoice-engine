@@ -306,6 +306,8 @@ struct Counters {
     opened: Arc<AtomicUsize>,
     open: Arc<AtomicUsize>,
     loaded: Arc<AtomicUsize>,
+    /// Loads that reached the library, finished or not.
+    loading: Arc<AtomicUsize>,
     running: Arc<AtomicUsize>,
     most_running: Arc<AtomicUsize>,
 }
@@ -356,6 +358,15 @@ impl Library for FakeLibrary {
             return Err(Error::new("model-load-failed"));
         }
         assert!(files.file("model.onnx").is_some());
+        self.0.loading.fetch_add(1, Ordering::Relaxed);
+        // Natively, loading waits once, so that something else can run while a load is past its install and its model
+        // is not yet in memory (the web's test executor cannot wait).
+        #[cfg(native)]
+        YieldOnce(false).await;
+        assert!(
+            files.file("model.onnx").is_some(),
+            "its files outlive the load"
+        );
         self.0.loaded.fetch_add(1, Ordering::Relaxed);
         Ok(Box::new(FakeModel(self.0.clone())))
     }
@@ -638,6 +649,42 @@ fn one_build_is_uninstalled_alone_and_a_file_another_build_links_stays() {
     );
 }
 
+/// The other side of the race: once an uninstall has reserved a build, an install or a load of it is refused until the
+/// uninstall is over, and so is a second uninstall of it.
+#[test]
+fn a_build_reserved_for_an_uninstall_is_not_installed_loaded_or_uninstalled_twice() {
+    let fixture = Fixture::new();
+    fixture.install("ear", Some("ear-1")).expect("installed");
+    let entry = fixture.engine.entry("ear").expect("ear");
+    let ear_1: Vec<_> = entry
+        .builds
+        .iter()
+        .filter(|build| build.id == "ear-1")
+        .collect();
+    let reserved = super::Uninstalling::new(&fixture.engine.builds, &fixture.engine.memory, &ear_1)
+        .map_err(|e| e.code)
+        .expect("reserved");
+    let busy = Err(Error::new("uninstall-in-progress"));
+    assert_eq!(fixture.install("ear", Some("ear-1")), busy);
+    assert_eq!(fixture.load("ear", Some("ear-1")).map(drop), busy);
+    assert_eq!(
+        block_on(fixture.engine.uninstall("ear", Some("ear-1"))),
+        busy
+    );
+    assert_eq!(
+        block_on(fixture.engine.uninstall("ear", None)),
+        busy,
+        "a whole model holding it"
+    );
+    fixture
+        .install("ear", Some("ear-2"))
+        .expect("another build is not reserved");
+    drop(reserved);
+    fixture
+        .load("ear", Some("ear-1"))
+        .expect("loaded once the uninstall is over");
+}
+
 #[test]
 fn a_build_loaded_or_being_installed_is_not_uninstalled() {
     let fixture = Fixture::new();
@@ -648,8 +695,8 @@ fn a_build_loaded_or_being_installed_is_not_uninstalled() {
     uninstall("ear-2").expect("not loaded: uninstalled");
     drop(ear);
 
-    let installing = super::Installing::new(&fixture.engine.installing, "ear-1");
-    let again = super::Installing::new(&fixture.engine.installing, "ear-1");
+    let installing = super::Installing::new(&fixture.engine.builds, "ear-1").expect("counted");
+    let again = super::Installing::new(&fixture.engine.builds, "ear-1").expect("counted");
     assert_eq!(uninstall("ear-1"), Err(Error::new("install-in-progress")));
     drop(installing);
     assert_eq!(
@@ -667,7 +714,7 @@ fn a_build_loaded_or_being_installed_is_not_uninstalled() {
         .install("ear", Some("ear-1"))
         .expect("installed again");
     assert!(
-        fixture.engine.installing.lock().unwrap().is_empty(),
+        fixture.engine.builds.lock().unwrap().installing.is_empty(),
         "a finished install is no longer counted"
     );
 }
@@ -735,6 +782,38 @@ fn both<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
         }
     }
     (done_a.expect("done"), done_b.expect("done"))
+}
+
+/// The race an uninstall could lose: a load past its install, whose model is not yet in memory. The load counts until
+/// its model is in memory, so the uninstall that comes in between is refused and the load's files stay.
+#[cfg(native)]
+#[test]
+fn an_uninstall_that_lands_inside_a_load_is_refused_and_the_load_keeps_its_files() {
+    let fixture = Fixture::new();
+    let load = fixture
+        .engine
+        .load("ear", Some("ear-1"), &|_| {}, &Cancel::new());
+    let mut load = pin!(load);
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    while fixture.counters.loading.load(Ordering::Relaxed) == 0 {
+        assert!(
+            load.as_mut().poll(&mut context).is_pending(),
+            "it waits once inside the library"
+        );
+    }
+    let uninstalled = block_on(fixture.engine.uninstall("ear", Some("ear-1")));
+    assert_eq!(uninstalled, Err(Error::new("install-in-progress")));
+    let loaded = loop {
+        if let Poll::Ready(loaded) = load.as_mut().poll(&mut context) {
+            break loaded;
+        }
+    };
+    let ear = loaded.expect("loaded, its files still there");
+    assert_eq!(fixture.installed("ear")[0], pair("ear-1", true));
+    let in_use = block_on(fixture.engine.uninstall("ear", Some("ear-1")));
+    assert_eq!(in_use, Err(Error::new("model-in-use")), "in memory now");
+    drop(ear);
+    block_on(fixture.engine.uninstall("ear", Some("ear-1"))).expect("uninstalled");
 }
 
 #[cfg(native)]
