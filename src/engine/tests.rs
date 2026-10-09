@@ -790,9 +790,8 @@ fn both<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
 #[test]
 fn an_uninstall_that_lands_inside_a_load_is_refused_and_the_load_keeps_its_files() {
     let fixture = Fixture::new();
-    let load = fixture
-        .engine
-        .load("ear", Some("ear-1"), &|_| {}, &Cancel::new());
+    let cancel = Cancel::new();
+    let load = fixture.engine.load("ear", Some("ear-1"), &|_| {}, &cancel);
     let mut load = pin!(load);
     let mut context = Context::from_waker(std::task::Waker::noop());
     while fixture.counters.loading.load(Ordering::Relaxed) == 0 {
