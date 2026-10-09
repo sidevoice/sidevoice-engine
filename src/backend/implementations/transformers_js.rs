@@ -235,6 +235,18 @@ fn dispose(object: JsValue) {
     });
 }
 
+/// `samples` as spoken, or `speech-failed` if any is not a finite number: a model run in a precision its device
+/// cannot hold (Kokoro in fp16 on WebGPU) gives NaN, which a WAV writer turns into silence.
+fn finite(samples: Vec<f32>) -> Result<Vec<f32>> {
+    match samples.iter().position(|sample| !sample.is_finite()) {
+        None => Ok(samples),
+        Some(at) => Err(failed(
+            "speech-failed",
+            &format!("sample {at} of {} is not a finite number", samples.len()).into(),
+        )),
+    }
+}
+
 /// The stable `code`, with the cause in the console.
 fn failed(code: &'static str, cause: &JsValue) -> Error {
     web_sys::console::warn_3(

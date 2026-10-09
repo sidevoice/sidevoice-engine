@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use super::phonemes::Espeak;
-use super::{call, call_method, dispose, failed, object, voices, Model, VOICES};
+use super::{call, call_method, dispose, failed, finite, object, voices, Model, VOICES};
 use crate::backend::loaded_model::TtsModel;
 use crate::backend::BackendModel;
 use crate::install::Installed;
@@ -152,7 +152,7 @@ impl Kokoro {
             Ok::<_, JsValue>(data.to_vec())
         }
         .await;
-        spoken.map_err(|error| failed("speech-failed", &error))
+        finite(spoken.map_err(|error| failed("speech-failed", &error))?)
     }
 }
 

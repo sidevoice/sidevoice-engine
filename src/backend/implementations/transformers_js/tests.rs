@@ -1,5 +1,5 @@
 use super::kokoro::stretches;
-use super::{device, voices, Kind};
+use super::{device, finite, voices, Kind};
 use crate::install::Installed;
 use crate::Accelerator;
 use wasm_bindgen_test::wasm_bindgen_test;
@@ -61,4 +61,17 @@ fn long_phonemes_are_cut_after_punctuation_then_between_words() {
     for stretch in stretches(&"ˈa ".repeat(400), 509) {
         assert!(stretch.chars().count() <= 509);
     }
+}
+
+#[wasm_bindgen_test]
+fn speech_with_a_sample_that_is_not_a_number_fails_instead_of_sounding_silent() {
+    assert_eq!(finite(vec![0.0, -0.5, 1.0]), Ok(vec![0.0, -0.5, 1.0]));
+    assert_eq!(
+        finite(vec![0.1, f32::NAN]).unwrap_err().code,
+        "speech-failed"
+    );
+    assert_eq!(
+        finite(vec![f32::INFINITY]).unwrap_err().code,
+        "speech-failed"
+    );
 }

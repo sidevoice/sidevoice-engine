@@ -144,23 +144,20 @@
           ]
         },
         {
-          "id": "kokoro-82m-v0.19/transformers-js-fp16",
+          "id": "kokoro-82m-v0.19/transformers-js-fp32",
           "backend": "transformers-js",
-          "precision": "fp16",
+          "precision": "fp32",
           "requires": {
             "accelerators": [
               "webgpu"
-            ],
-            "webgpu_features": [
-              "shader-f16"
             ]
           },
           "files": [
             {
               "key": "model",
-              "url": "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/f46687f7e41512228ae953af24a11b2640ea0f22/onnx/model_fp16.onnx",
-              "sha256": "fe5c2134605431ee1b2585aee3e59069ddde2aa1111d6213c1ed3fc7da2bb368",
-              "bytes": 163227585
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/f46687f7e41512228ae953af24a11b2640ea0f22/onnx/model.onnx",
+              "sha256": "53a71ac22a70778d57162e4f92eafc62852d9e04a4460b20638d2424796e6037",
+              "bytes": 325525037
             },
             {
               "key": "config",
@@ -248,7 +245,7 @@
             }
           ],
           "memory": {
-            "mb": 210,
+            "mb": 420,
             "source": "estimated",
             "basis": "weights size + 30%"
           }
@@ -258,6 +255,9 @@
           "backend": "transformers-js",
           "precision": "q8",
           "requires": {
+            "accelerators": [
+              "wasm"
+            ],
             "wasm_max_mb": 2048
           },
           "files": [
@@ -811,23 +811,20 @@
           }
         },
         {
-          "id": "kokoro-82m-v1.0/transformers-js-fp16",
+          "id": "kokoro-82m-v1.0/transformers-js-fp32",
           "backend": "transformers-js",
-          "precision": "fp16",
+          "precision": "fp32",
           "requires": {
             "accelerators": [
               "webgpu"
-            ],
-            "webgpu_features": [
-              "shader-f16"
             ]
           },
           "files": [
             {
               "key": "model",
-              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/onnx/model_fp16.onnx",
-              "sha256": "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a",
-              "bytes": 163234740
+              "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/onnx/model.onnx",
+              "sha256": "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb",
+              "bytes": 325532232
             },
             {
               "key": "config",
@@ -1095,7 +1092,7 @@
             }
           ],
           "memory": {
-            "mb": 230,
+            "mb": 440,
             "source": "estimated",
             "basis": "weights size + 30%"
           }
@@ -1105,6 +1102,9 @@
           "backend": "transformers-js",
           "precision": "q8",
           "requires": {
+            "accelerators": [
+              "wasm"
+            ],
             "wasm_max_mb": 2048
           },
           "files": [

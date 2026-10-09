@@ -7,7 +7,7 @@ use js_sys::{Float32Array, Reflect};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use super::{call, dispose, failed, object, voices, Model, VOICES};
+use super::{call, dispose, failed, finite, object, voices, Model, VOICES};
 use crate::backend::loaded_model::TtsModel;
 use crate::backend::BackendModel;
 use crate::install::Installed;
@@ -139,7 +139,7 @@ impl TtsModel for Supertonic {
             Ok::<_, JsValue>(audio.to_vec())
         }
         .await;
-        spoken.map_err(|error| failed("speech-failed", &error))
+        finite(spoken.map_err(|error| failed("speech-failed", &error))?)
     }
 }
 
