@@ -1,12 +1,11 @@
 //! Backends: what runs models (sherpa-onnx, whisper.cpp, MLX, transformers.js, ...). This file is the contract every
 //! backend implements ([`Backend`], with its data in [`BackendSpec`]); the engine does the matching, ranking,
 //! selection and installing for every backend alike (`crate::resolver`, `crate::install`). Backends belong to the
-//! engine: none of this is public, except a backend's id.
+//! engine: none of this is public, except a backend's id and what [`BackendInfo`] says of it.
 //!
-//! Inside: `runtime` (the library files each backend needs per platform, from `backends.json`), `requirement` (what
-//! the machine must meet, and the common requirements), `registry` (how the backends of this build are found),
-//! `library` (what `open` returns, which loads models), `loaded_model` (what `load` returns) and `implementations`
-//! (one file per backend).
+//! Inside: `requirement` (what the machine must meet, and the common requirements), `registry` (how the backends of
+//! this build are found), `library` (what `open` returns, which loads models), `loaded_model` (what `load` returns)
+//! and `implementations` (one file per backend).
 //!
 //! # The contract
 //!
@@ -14,20 +13,21 @@
 //! else's:
 //!
 //! - which models it runs: each catalogue build names its backend ([`BuildEntry::backend`](crate::BuildEntry::backend));
-//! - what it downloads: its entry in `backends.json`, read by `runtime`, with its files per platform, which the
-//!   installer fetches next to the model's files; where the entry says it does not run (`null`), the resolver rejects
-//!   its builds with `no-runtime-for-platform` before asking the backend anything;
+//! - what it downloads: the build's files, from the catalogue; a backend's own library comes with the engine for now
+//!   (see *Binding the library*), so it downloads nothing of its own;
 //! - whether a build fits here, which build and accelerator win, and installing them: the resolver and the installer;
 //! - when its library is opened and closed, and when a model leaves memory: the engine (see *`open` and `load`*).
 //!
 //! ## `spec`: the record
 //!
 //! A `const` [`BackendSpec`], returned by reference. It must be plain data: no I/O, no allocation, the same answer
-//! every time, callable before anything is installed. Its `id` is stable (catalogue builds and `backends.json` name
-//! the backend by it) and its `accelerators` and `requirements` hold whatever the model: a build's own needs, such as
-//! its memory, are the catalogue's. A requirement fails with a stable [`Reason`](crate::Reason) code and its numbers,
-//! never with a sentence (AGENTS.md); the engine ships [`MinMemoryMb`] and [`MinCores`], and a backend that needs
-//! another check writes its own [`Requirement`] next to its file without changing the contract.
+//! every time, callable before anything is installed. Its `id` is stable (catalogue builds name the backend by it,
+//! and it is one of [`KNOWN`]); its `name`, `description` and `upstream` say what it is, as
+//! [`Engine::backends`](crate::Engine::backends) lists it; and its `accelerators` and `requirements` hold whatever
+//! the model: a build's own needs, such as its memory, are the catalogue's. A requirement fails with a stable
+//! [`Reason`](crate::Reason) code and its numbers, never with a sentence (AGENTS.md); the engine ships
+//! [`MinMemoryMb`] and [`MinCores`], and a backend that needs another check writes its own [`Requirement`] next to
+//! its file without changing the contract.
 //!
 //! ## `probe`: which accelerators work here
 //!
@@ -44,13 +44,12 @@
 //!
 //! ## `open` and `load`: from installed files to a running model
 //!
-//! Called only for the selected build, after the installer has put the build's files and this backend's
-//! `backends.json` files for this platform in storage. `open` opens the backend's library (see *Binding the library*)
-//! from its files, each found in `files` by its `name` in `backends.json`, and returns it as a [`Library`]; the
-//! library's `load` loads one model. The engine keeps one open library per backend, counted by the models loaded from
-//! it: it opens the library for the first of them and drops it once the last one has left memory (a model unused for a
-//! while is unloaded; its files stay installed). So a library outlives every model it loaded, and a model may rely on
-//! it. `load`:
+//! Called only for the chosen build, after the installer has put the build's files in storage. `open` opens the
+//! backend's library (see *Binding the library*) and returns it as a [`Library`]; it is handed the build's `files`,
+//! which a library that comes with the engine does not need. The library's `load` loads one model. The engine keeps
+//! one open library per backend, held by the models loaded from it: it opens the library for the first of them and
+//! drops it once the last one has left memory (dropped by the app; its files stay installed). So a library outlives
+//! every model it loaded, and a model may rely on it. `load`:
 //!
 //! - finds each file it needs in `files` by its key in the catalogue;
 //! - loads the model's files on the `accelerator` it is given, one that `probe` returned; it does not fall back to
@@ -83,13 +82,12 @@
 //!
 //! - native: the backend opens the downloaded library at run time and calls its C API through a table of function
 //!   pointers resolved then. **Phase 1 exception:** sherpa-onnx is linked, through the official `sherpa-onnx` crate
-//!   (static, pinned exactly in Cargo.toml, native builds only, behind the default `sherpa-onnx` feature), so its
-//!   `backends.json` entry downloads nothing (`[]`). Loading it on demand again is sidevoice-engine#33. Any other
-//!   native backend follows the design;
+//!   (static, pinned exactly in Cargo.toml, native builds only, behind the default `sherpa-onnx` feature), so it
+//!   downloads nothing. Loading it on demand again is sidevoice-engine#33, which also decides where a downloaded
+//!   library's files are declared. Any other native backend follows the design;
 //! - web: the backend's engine is a JavaScript module, and the backend imports it at run time (a dynamic `import()`
-//!   through `wasm-bindgen`), so a page that never loads a model never fetches it. Where the module comes from is
-//!   the backend's `backends.json` entry's to say: files the host stored, or `[]` when it comes with the npm
-//!   package; either way it is never compiled into the engine's WebAssembly.
+//!   through `wasm-bindgen`), so a page that never loads a model never fetches it. The module comes with the npm
+//!   package; it is never compiled into the engine's WebAssembly.
 //!
 //! ## Speech out: a whole buffer
 //!
@@ -109,7 +107,6 @@ mod library;
 mod loaded_model;
 mod registry;
 mod requirement;
-mod runtime;
 #[cfg(test)]
 mod tests;
 
@@ -132,7 +129,6 @@ pub(crate) use registry::{built_in, find};
 )]
 pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
-pub(crate) use runtime::{is_known, runtime_files};
 
 /// A backend's stable id, as catalogue builds name it ([`BuildEntry::backend`](crate::BuildEntry::backend)): "sherpa-onnx",
 /// "whisper-cpp", "mlx", ...
@@ -141,8 +137,14 @@ pub type BackendId = &'static str;
 /// What a backend is and needs, as data: a `const`, no I/O (see *`spec`: the record* above). Adding a backend is
 /// mostly filling this in.
 pub(crate) struct BackendSpec {
-    /// What catalogue builds and `backends.json` call it. Stable: renaming it orphans their entries.
+    /// What catalogue builds call it. Stable: renaming it orphans them. It must be one of [`KNOWN`].
     pub(crate) id: BackendId,
+    /// Its name, as a person reads it: "sherpa-onnx", "MLX", "Transformers.js".
+    pub(crate) name: &'static str,
+    /// What it is, in one sentence, in English (it is not UI: the app has its own text for each id).
+    pub(crate) description: &'static str,
+    /// Where it comes from: its upstream repository.
+    pub(crate) upstream: &'static str,
     /// The accelerators it can run on, best first: the default is the first one that works here.
     pub(crate) accelerators: &'static [Accelerator],
     /// What the machine must meet, whatever the model: each one a check on the capabilities.
@@ -170,8 +172,43 @@ pub(crate) trait Backend: MaybeSend + MaybeSync {
             .collect()
     }
 
-    /// Opens this backend's library from its installed files, each by name in `files`, for the engine to load models
-    /// with. It downloads nothing, reads nothing outside `files`, keeps nothing, and fails with a stable code (see
+    /// Opens this backend's library, for the engine to load models with; `files` are the build's installed files. It
+    /// downloads nothing, reads nothing outside `files`, keeps nothing, and fails with a stable code (see
     /// *`open` and `load`* above).
     async fn open(&self, files: &Installed) -> Result<Box<dyn Library>>;
+}
+
+/// Every backend id a catalogue may name: the [`BackendSpec::id`] of each backend, in whichever build of the engine it
+/// is compiled, and the ids of backends whose code is still to come (`whisper-cpp`, sidevoice-engine#20), which the
+/// catalogue already names. A build naming any other is a catalogue problem (`UnknownBackend`).
+pub(crate) const KNOWN: &[BackendId] = &["sherpa-onnx", "mlx", "transformers-js", "whisper-cpp"];
+
+/// Whether `backend` is one of [`KNOWN`].
+pub(crate) fn is_known(backend: &str) -> bool {
+    KNOWN.contains(&backend)
+}
+
+/// A backend compiled into this build, as [`Engine::backends`](crate::Engine::backends) lists it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BackendInfo {
+    /// Its stable id: what catalogue builds call it.
+    pub id: BackendId,
+    /// Its name, as a person reads it.
+    pub name: &'static str,
+    /// What it is, in one sentence, in English: a developer's description, not UI.
+    pub description: &'static str,
+    /// Its upstream repository.
+    pub upstream: &'static str,
+}
+
+impl BackendInfo {
+    /// What `spec` says of its backend.
+    pub(crate) fn of(spec: &BackendSpec) -> Self {
+        Self {
+            id: spec.id,
+            name: spec.name,
+            description: spec.description,
+            upstream: spec.upstream,
+        }
+    }
 }

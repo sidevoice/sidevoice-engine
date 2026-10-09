@@ -8,5 +8,6 @@ fn main() {
     let dir = std::env::temp_dir().join("sidevoice-link-size-probe");
     let host = NativeHost::new(dir).expect("a host");
     let engine = Engine::new(Box::new(host), Vec::new()).expect("an engine");
-    println!("{}", engine.backends().join(","));
+    let ids: Vec<_> = engine.backends().iter().map(|backend| backend.id).collect();
+    println!("{}", ids.join(","));
 }

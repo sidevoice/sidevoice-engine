@@ -14,7 +14,7 @@ pub struct BuildEntry {
     /// Its stable id, unique in the catalogue: "whisper-small/sherpa-onnx-int8", ... Editorial data and benchmarks
     /// are keyed by it, outside the catalogue.
     pub id: String,
-    /// The id of the backend that runs it ([`Engine::backends`](crate::Engine::backends), `backends.json`).
+    /// The id of the backend that runs it ([`Engine::backends`](crate::Engine::backends)).
     pub backend: String,
     /// The format's own name for its precision, as its backend uses it: "int8", "q8", "fp16", "q5_1", "4bit", ....
     /// Informational only, to tell builds apart (the transformers.js loader may pass it on as its `dtype`): nothing

@@ -28,7 +28,7 @@ mod test_support;
 #[cfg(web)]
 mod web;
 
-pub use backend::BackendId;
+pub use backend::{BackendId, BackendInfo};
 pub use catalog::{
     BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Gender, Memory,
     MemorySource, ModelEntry, ModelFile, Problem, Requires, Voice,

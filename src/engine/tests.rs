@@ -15,15 +15,13 @@ use std::task::{Context, Poll};
 
 use crate::backend::{Backend, BackendModel, BackendSpec, Library, SttModel, TtsModel};
 use crate::catalog::{CatalogFragment, CatalogSource};
-use crate::host::Platform;
 use crate::install::Installed;
 use crate::test_support::{
-    artifact, block_on, build, family, model, sha256, FakeCatalog, FakeHost, MemoryHost,
+    block_on, build, family, model, sha256, FakeCatalog, FakeHost, MemoryHost,
 };
 use crate::{
-    async_trait, Accelerator, Artifact, BuildEntry, BundledCatalog, Cancel, Capabilities,
-    Capability, Engine, Error, Fetcher, Gender, Host, LoadedModel, ModelFile, Reason, Result, Runs,
-    Storage, Voice,
+    async_trait, Accelerator, BuildEntry, BundledCatalog, Cancel, Capability, Engine, Error,
+    Gender, LoadedModel, ModelFile, Reason, Result, Voice,
 };
 
 #[cfg(web)]
@@ -103,45 +101,6 @@ fn a_native_engine_its_futures_and_its_loaded_models_can_cross_threads() {
     sent(engine.load("whisper-small", None, &|_| {}, &Cancel::new()));
     sent(engine.install("whisper-small", None, &|_| {}, &Cancel::new()));
     shared_type::<LoadedModel>();
-}
-
-/// A native host on a platform backends.json has no entry for.
-struct Elsewhere;
-
-impl Host for Elsewhere {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            runs: Runs::Native,
-            os: "plan9".to_owned(),
-            ..FakeHost.capabilities()
-        }
-    }
-
-    fn storage(&self) -> &dyn Storage {
-        &FakeHost
-    }
-
-    fn fetcher(&self) -> &dyn Fetcher {
-        &FakeHost
-    }
-}
-
-#[test]
-fn on_a_platform_with_no_runtime_no_build_of_this_engine_is_available() {
-    let engine = Engine::new(Box::new(Elsewhere), vec![Box::new(FakeCatalog)]).expect("engine");
-    for model in block_on(engine.models()).expect("models") {
-        assert_eq!(model.recommended_build, None, "{}", model.id);
-        for build in model.builds {
-            let why = if engine.backends().contains(&build.backend.as_str()) {
-                "no-runtime-for-platform"
-            } else {
-                "backend-not-in-this-build"
-            };
-            assert_eq!(build.reasons, [Reason::new(why)], "{}", build.id);
-        }
-    }
-    let load = block_on(engine.load("whisper-small", None, &|_| {}, &Cancel::new()));
-    assert_eq!(load.map(drop), Err(Error::new("no-build-available")));
 }
 
 /// What each CI platform offers with the catalogue this repository ships: every bundled model of a capability, each
@@ -232,8 +191,6 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     }
 }
 
-const LIBRARY: &[u8] = b"the fake backend's library";
-
 /// A file of a fake build: `https://models/<id>`, holding `<id>`'s bytes.
 fn file(id: &str) -> ModelFile {
     ModelFile {
@@ -301,6 +258,9 @@ struct FakeBackend(Counters);
 
 const FAKE: BackendSpec = BackendSpec {
     id: "fake",
+    name: "Fake",
+    description: "A test double that counts what it opens and loads.",
+    upstream: "https://example.com",
     accelerators: &[Accelerator::Cpu],
     requirements: &[],
 };
@@ -312,13 +272,7 @@ impl Backend for FakeBackend {
         &FAKE
     }
 
-    async fn open(&self, files: &Installed) -> Result<Box<dyn Library>> {
-        // In the build's folder, under the name its URL gives it.
-        let library = files.file("library").expect("the library");
-        assert!(
-            library.starts_with("memory:models/") && library.ends_with("/library"),
-            "{library}"
-        );
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
         self.0.opened.fetch_add(1, Ordering::Relaxed);
         self.0.open.fetch_add(1, Ordering::Relaxed);
         Ok(Box::new(FakeLibrary(self.0.clone())))
@@ -428,27 +382,17 @@ impl Future for YieldOnce {
     }
 }
 
-/// The fake backend's library, on any platform.
-fn fake_runtime(_backend: &str, _platform: Platform) -> Option<Vec<Artifact>> {
-    Some(vec![artifact(
-        "library",
-        "https://backends/library",
-        LIBRARY,
-    )])
-}
-
 fn served() -> MemoryHost {
     let ids = ["ear-1", "ear-2", "voice-1", "broken-1", "other-1"];
     let urls: Vec<_> = ids
         .iter()
         .map(|id| format!("https://models/{id}"))
         .collect();
-    let mut files: Vec<(&str, &[u8])> = urls
+    let files: Vec<(&str, &[u8])> = urls
         .iter()
         .zip(ids)
         .map(|(url, id)| (url.as_str(), id.as_bytes()))
         .collect();
-    files.push(("https://backends/library", LIBRARY));
     MemoryHost::serving(&files)
 }
 
@@ -465,7 +409,6 @@ impl Fixture {
             Box::new(served()),
             vec![Box::new(FakeModels)],
             vec![Box::new(backend)],
-            fake_runtime,
         )
         .expect("engine");
         Self { engine, counters }

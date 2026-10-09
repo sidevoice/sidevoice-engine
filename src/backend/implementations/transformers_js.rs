@@ -62,6 +62,9 @@ struct TransformersJs;
 
 const SPEC: BackendSpec = BackendSpec {
     id: "transformers-js",
+    name: "Transformers.js",
+    description: "Models in the browser on ONNX Runtime Web: Whisper, Kokoro and Supertonic.",
+    upstream: "https://github.com/huggingface/transformers.js",
     accelerators: &[Accelerator::WebGpu, Accelerator::Wasm],
     requirements: &[],
 };

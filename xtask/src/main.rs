@@ -8,8 +8,6 @@
 //!   the nightly) and `SHA256SUMS` written over DIR (xtask/src/release.rs).
 //! - `publish DIR TAG`: DIR attached to the GitHub Release TAG, read back, verified, and the Release published.
 //! - `npm-publish TAG`: the tarball of the Release TAG (a `vX.Y.Z`), verified, published to npm.
-//! - `pin-backends [--check]`: every file in `backends.json` downloaded at its pinned version and its `sha256` written
-//!   (or, with `--check`, checked) (xtask/src/backends.rs).
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
 //! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
@@ -23,7 +21,6 @@
 //! - `web-e2e [DIR]`: the voice loop for real in a headless Chrome, through the npm package: Whisper transcribes the
 //!   recorded clips, and hears Kokoro and Supertonic back (xtask/src/web_e2e.rs, plan in xtask/web-e2e.json).
 
-mod backends;
 mod catalog;
 mod e2e;
 mod link_size;
@@ -46,8 +43,8 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-backends [--check] | pin-catalog [--check] | e2e [DIR] | link-size | test-browser \
-     | web-e2e [DIR] | sherpa-libs [DIR | --linked | --pin | --check]";
+     | pin-catalog [--check] | e2e [DIR] | link-size | test-browser | web-e2e [DIR] \
+     | sherpa-libs [DIR | --linked | --pin | --check]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -59,8 +56,6 @@ fn main() -> ExitCode {
         ["manifest", dir, "--tag", tag] => release::manifest(Path::new(dir), Some(tag)),
         ["publish", dir, tag] => release::publish(Path::new(dir), tag),
         ["npm-publish", tag] => npm::publish(tag),
-        ["pin-backends"] => backends::pin(false),
-        ["pin-backends", "--check"] => backends::pin(true),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
         ["e2e"] => e2e::run(None),
