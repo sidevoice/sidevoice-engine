@@ -10,6 +10,13 @@
 //!   the one before), and ends `min_silence` before the window that ended it.
 //!
 //! Positions are in samples, counted from the start; a segment is its first sample and the one after its last.
+#![cfg_attr(
+    native,
+    allow(
+        dead_code,
+        reason = "only the web build's backend segments speech itself; its tests run in every build"
+    )
+)]
 
 use std::ops::Range;
 
