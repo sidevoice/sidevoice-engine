@@ -7,6 +7,7 @@ use crate::backend::registry::BackendFactory;
 use crate::backend::{Backend, BackendSpec, Library, MinMemoryMb};
 use crate::host::Accelerator;
 use crate::install::Installed;
+use crate::resolver::Reason;
 use crate::{Error, Result};
 
 struct Mlx;
@@ -27,6 +28,11 @@ inventory::submit! { BackendFactory(|| Box::new(Mlx)) }
 impl Backend for Mlx {
     fn spec(&self) -> &BackendSpec {
         &SPEC
+    }
+
+    /// A stub: it loads no model yet, so none of its builds is offered, and none is downloaded.
+    fn unavailable(&self) -> Option<Reason> {
+        Some(Reason::new("not-implemented"))
     }
 
     async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {

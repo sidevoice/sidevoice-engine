@@ -1,34 +1,4 @@
-//! What the resolver returns: per model, an offer with its best build, or a build rejected with the step and the
-//! reason.
-
-use crate::catalog::{BuildEntry, ModelEntry};
-use crate::host::Accelerator;
-
-/// What the resolver says about one model: offered with its best build and accelerator, or one build rejected and why.
-/// Every rejection is kept, so a client can show why a model is not offered here.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Offer {
-    /// The model can run here.
-    Offered {
-        /// The model.
-        model: ModelEntry,
-        /// Its best build that fits here.
-        build: BuildEntry,
-        /// The best accelerator for that build here.
-        accelerator: Accelerator,
-        /// Its other builds that fit here, best first.
-        alternatives: Vec<BuildEntry>,
-    },
-    /// One build of the model cannot run here.
-    Rejected {
-        /// The model.
-        model: ModelEntry,
-        /// The build that cannot run here.
-        build: BuildEntry,
-        /// Why not.
-        why: Rejection,
-    },
-}
+//! Why a build does not run here: the step of the funnel that rejected it, and the reason a person reads.
 
 /// The step of the funnel that rejected a build.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -36,7 +6,8 @@ pub enum Offer {
 pub enum Rejection {
     /// 1. The build's backend is not compiled into this build of the engine.
     BackendNotInThisBuild,
-    /// 2. The backend cannot run here: none of its accelerators works here (`no-accelerator`).
+    /// 2. The backend cannot run here: none of its accelerators works here (`no-accelerator`), or it runs nothing yet
+    ///    (`not-implemented`, a stub).
     BackendUnavailable(Reason),
     /// 3. The build does not fit here: none of the accelerators that work here is one its `requires` allows
     ///    (`build-accelerator`), in a page it needs more memory than WebAssembly hands it (`wasm-memory`, with the

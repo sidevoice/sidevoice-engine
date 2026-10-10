@@ -148,8 +148,8 @@ impl WebEngine {
     }
 
     /// Removes `build` of `model` (every build of it when left out), except files another build uses; rejects with
-    /// `build-not-found`, `model-in-use` while one of those builds is loaded, `install-in-progress` while one is being
-    /// installed.
+    /// `build-not-found`, or `model-in-use` while one of those builds is loaded; it waits for installs and loads in
+    /// progress.
     #[wasm_bindgen(unchecked_return_type = "Promise<void>")]
     pub fn uninstall(&self, model: String, build: Option<String>) -> Promise {
         let engine = Rc::clone(&self.engine);

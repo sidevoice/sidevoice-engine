@@ -134,27 +134,6 @@ fn a_build_needs_a_known_backend_and_files_with_digests_and_distinct_keys() {
 }
 
 #[test]
-fn models_are_found_by_any_of_their_capabilities() {
-    let mut both = model(
-        "both",
-        Capability::Stt,
-        vec![build("both/b", "sherpa-onnx", 1)],
-    );
-    both.capabilities.push(Capability::Tts);
-    let catalog = MergedCatalog::merge(&[
-        Box::new(Families(vec![family("f", vec![both])])) as Box<dyn CatalogSource>
-    ])
-    .expect("catalogue");
-    for capability in [Capability::Stt, Capability::Tts] {
-        let ids: Vec<_> = catalog
-            .models(capability)
-            .map(|model| model.id.as_str())
-            .collect();
-        assert_eq!(ids, ["both"]);
-    }
-}
-
-#[test]
 fn keys_inside_one_archive_repeat_what_it_is() {
     let mut archive = build("m/archive", "sherpa-onnx", 1);
     let model_file = crate::ModelFile {

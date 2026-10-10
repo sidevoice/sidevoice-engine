@@ -166,14 +166,6 @@ impl MergedCatalog {
         self.families.iter().flat_map(|family| &family.models)
     }
 
-    /// The models that can do `capability`, in catalogue order.
-    pub(crate) fn models(&self, capability: Capability) -> impl Iterator<Item = &ModelEntry> {
-        self.families
-            .iter()
-            .flat_map(|family| &family.models)
-            .filter(move |model| model.capabilities.contains(&capability))
-    }
-
     /// What is wrong with the merged catalogue, given which backend ids are `known`; empty if nothing is.
     #[must_use]
     pub(crate) fn check(&self, known: &dyn Fn(&str) -> bool) -> Vec<Problem> {

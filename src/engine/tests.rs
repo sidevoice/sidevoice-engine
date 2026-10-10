@@ -39,10 +39,9 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .expect("small");
     assert_eq!(small.family, "whisper", "its family, from the catalogue");
 
+    // Not MLX on Apple silicon: the stub runs nothing yet (ENG-08).
     let recommended = if cfg!(target_arch = "wasm32") {
         "whisper-small-web"
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        "whisper-small-mlx"
     } else {
         "whisper-small-onnx"
     };
@@ -50,6 +49,15 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     assert_eq!(small.builds[0].id, recommended);
     assert!(small.builds[0].available && small.builds[0].accelerator.is_some());
     assert!(small.builds[0].reasons.is_empty());
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        let mlx = small
+            .builds
+            .iter()
+            .find(|b| b.id == "whisper-small-mlx")
+            .expect("mlx");
+        assert!(!mlx.available && mlx.accelerator.is_none());
+        assert_eq!(mlx.reasons, [Reason::new("not-implemented")]);
+    }
     let gguf = small
         .builds
         .iter()
@@ -649,44 +657,8 @@ fn one_build_is_uninstalled_alone_and_a_file_another_build_links_stays() {
     );
 }
 
-/// The other side of the race: once an uninstall has reserved a build, an install or a load of it is refused until the
-/// uninstall is over, and so is a second uninstall of it.
 #[test]
-fn a_build_reserved_for_an_uninstall_is_not_installed_loaded_or_uninstalled_twice() {
-    let fixture = Fixture::new();
-    fixture.install("ear", Some("ear-1")).expect("installed");
-    let entry = fixture.engine.entry("ear").expect("ear");
-    let ear_1: Vec<_> = entry
-        .builds
-        .iter()
-        .filter(|build| build.id == "ear-1")
-        .collect();
-    let reserved = super::Uninstalling::new(&fixture.engine.builds, &fixture.engine.memory, &ear_1)
-        .map_err(|e| e.code)
-        .expect("reserved");
-    let busy = Err(Error::new("uninstall-in-progress"));
-    assert_eq!(fixture.install("ear", Some("ear-1")), busy);
-    assert_eq!(fixture.load("ear", Some("ear-1")).map(drop), busy);
-    assert_eq!(
-        block_on(fixture.engine.uninstall("ear", Some("ear-1"))),
-        busy
-    );
-    assert_eq!(
-        block_on(fixture.engine.uninstall("ear", None)),
-        busy,
-        "a whole model holding it"
-    );
-    fixture
-        .install("ear", Some("ear-2"))
-        .expect("another build is not reserved");
-    drop(reserved);
-    fixture
-        .load("ear", Some("ear-1"))
-        .expect("loaded once the uninstall is over");
-}
-
-#[test]
-fn a_build_loaded_or_being_installed_is_not_uninstalled() {
+fn a_loaded_build_is_not_uninstalled_until_dropped() {
     let fixture = Fixture::new();
     let ear = fixture.load("ear", Some("ear-1")).expect("loaded");
     fixture.install("ear", Some("ear-2")).expect("installed");
@@ -694,18 +666,7 @@ fn a_build_loaded_or_being_installed_is_not_uninstalled() {
     assert_eq!(uninstall("ear-1"), Err(Error::new("model-in-use")));
     uninstall("ear-2").expect("not loaded: uninstalled");
     drop(ear);
-
-    let installing = super::Installing::new(&fixture.engine.builds, "ear-1").expect("counted");
-    let again = super::Installing::new(&fixture.engine.builds, "ear-1").expect("counted");
-    assert_eq!(uninstall("ear-1"), Err(Error::new("install-in-progress")));
-    drop(installing);
-    assert_eq!(
-        uninstall("ear-1"),
-        Err(Error::new("install-in-progress")),
-        "one still runs"
-    );
-    drop(again);
-    uninstall("ear-1").expect("uninstalled");
+    uninstall("ear-1").expect("dropped: uninstalled");
     assert_eq!(
         fixture.installed("ear"),
         [pair("ear-1", false), pair("ear-2", false)]
@@ -713,10 +674,6 @@ fn a_build_loaded_or_being_installed_is_not_uninstalled() {
     fixture
         .install("ear", Some("ear-1"))
         .expect("installed again");
-    assert!(
-        fixture.engine.builds.lock().unwrap().installing.is_empty(),
-        "a finished install is no longer counted"
-    );
 }
 
 #[test]
@@ -784,15 +741,18 @@ fn both<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
     (done_a.expect("done"), done_b.expect("done"))
 }
 
-/// The race an uninstall could lose: a load past its install, whose model is not yet in memory. The load counts until
-/// its model is in memory, so the uninstall that comes in between is refused and the load's files stay.
+/// #81's race: an uninstall that comes while a load of the same build is past its install, its model not yet in memory.
+/// The load holds the engine's files shared until its model is in memory, so the uninstall waits for it, then finds
+/// the model in memory and removes nothing: the load keeps its files.
 #[cfg(native)]
 #[test]
-fn an_uninstall_that_lands_inside_a_load_is_refused_and_the_load_keeps_its_files() {
+fn an_uninstall_that_lands_inside_a_load_waits_for_it_and_removes_nothing() {
     let fixture = Fixture::new();
     let cancel = Cancel::new();
     let load = fixture.engine.load("ear", Some("ear-1"), &|_| {}, &cancel);
     let mut load = pin!(load);
+    let uninstall = fixture.engine.uninstall("ear", Some("ear-1"));
+    let mut uninstall = pin!(uninstall);
     let mut context = Context::from_waker(std::task::Waker::noop());
     while fixture.counters.loading.load(Ordering::Relaxed) == 0 {
         assert!(
@@ -800,17 +760,27 @@ fn an_uninstall_that_lands_inside_a_load_is_refused_and_the_load_keeps_its_files
             "it waits once inside the library"
         );
     }
-    let uninstalled = block_on(fixture.engine.uninstall("ear", Some("ear-1")));
-    assert_eq!(uninstalled, Err(Error::new("install-in-progress")));
+    assert!(
+        uninstall.as_mut().poll(&mut context).is_pending(),
+        "the uninstall waits for the load"
+    );
     let loaded = loop {
         if let Poll::Ready(loaded) = load.as_mut().poll(&mut context) {
             break loaded;
         }
     };
     let ear = loaded.expect("loaded, its files still there");
+    let uninstalled = loop {
+        if let Poll::Ready(uninstalled) = uninstall.as_mut().poll(&mut context) {
+            break uninstalled;
+        }
+    };
+    assert_eq!(
+        uninstalled,
+        Err(Error::new("model-in-use")),
+        "in memory by then"
+    );
     assert_eq!(fixture.installed("ear")[0], pair("ear-1", true));
-    let in_use = block_on(fixture.engine.uninstall("ear", Some("ear-1")));
-    assert_eq!(in_use, Err(Error::new("model-in-use")), "in memory now");
     drop(ear);
     block_on(fixture.engine.uninstall("ear", Some("ear-1"))).expect("uninstalled");
 }
@@ -832,4 +802,65 @@ fn two_calls_on_one_model_run_one_after_the_other() {
         1,
         "one at a time"
     );
+}
+
+/// ENG-02's race: build `other`'s install has found the blob it shares with `ear-1` and links it later, while `ear-1`
+/// is uninstalled. The install holds the engine's files shared, so the uninstall waits, removing nothing; once the
+/// install has linked the blob, the uninstall removes `ear-1` and keeps the blob `other` links.
+#[test]
+fn an_uninstall_waits_for_an_install_that_found_a_shared_blob_and_keeps_it() {
+    use std::future::Future;
+    use std::pin::pin;
+    use std::task::{Context, Poll};
+
+    let fixture = Fixture::new();
+    fixture.install("ear", Some("ear-1")).expect("installed");
+    let shared = sha256(b"ear-1");
+    // `other`'s install, after finding `ear-1`'s file stored.
+    let installing = block_on(fixture.engine.files.read());
+
+    let uninstall = fixture.engine.uninstall("ear", Some("ear-1"));
+    let mut uninstall = pin!(uninstall);
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    assert!(
+        uninstall.as_mut().poll(&mut context).is_pending(),
+        "it waits for the install"
+    );
+    assert_eq!(
+        fixture.installed("ear")[0],
+        pair("ear-1", true),
+        "nothing removed yet"
+    );
+
+    // The install links the shared blob into its folder, and is done.
+    let storage = fixture.engine.host.storage();
+    let mut folder = block_on(storage.create_folder("other-1")).expect("folder");
+    block_on(folder.link("ear-1", &shared, None)).expect("linked");
+    block_on(folder.commit()).expect("committed");
+    drop(installing);
+
+    let uninstalled = loop {
+        if let Poll::Ready(uninstalled) = uninstall.as_mut().poll(&mut context) {
+            break uninstalled;
+        }
+    };
+    uninstalled.expect("uninstalled");
+    assert_eq!(fixture.installed("ear")[0], pair("ear-1", false));
+    assert!(
+        block_on(storage.find(&shared)).expect("found").is_some(),
+        "the blob `other` links stays"
+    );
+}
+
+/// Installs and loads hold the engine's files shared: one in progress does not hold up another.
+#[test]
+fn installs_and_loads_run_side_by_side() {
+    let fixture = Fixture::new();
+    // An install or a load in progress.
+    let installing = block_on(fixture.engine.files.read());
+    fixture
+        .install("ear", Some("ear-2"))
+        .expect("installed alongside");
+    fixture.load("other", None).expect("loaded alongside");
+    drop(installing);
 }

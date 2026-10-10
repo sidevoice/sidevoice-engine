@@ -108,8 +108,10 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
   recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
   removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
-  refuses a build that is loaded (`model-in-use`) or being installed (`install-in-progress`). Removing one build is
-  what undoes an install that finished before its cancel landed.
+  refuses a build that is loaded (`model-in-use`). Removing one build is what undoes an install that finished before
+  its cancel landed. One engine-wide lock keeps uninstalls apart from installs and loads: these hold it shared, so they
+  run side by side (a first voice call loads its four models at once), and an uninstall alone, waiting for them; so no
+  install or load loses a file it found, its own or one another build shares.
 - **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
   recommended one) and returns a `LocalModel`: `as_stt()`, `as_tts()`, `as_vad()` and `as_end_of_turn()` hand out
   what it can do, the capability interfaces (`Stt`, `Tts`, `Vad`, `EndOfTurn`) a `RemoteModel` hands out too. Speech to
@@ -250,7 +252,8 @@ And two remote providers, natively and in the browser, through the host's HTTP w
 text and text to speech, `/v1/audio/transcriptions` and `/v1/audio/speech`) and ElevenLabs (Scribe, and text to
 speech with the account's voices, `/v1/speech-to-text` and `/v1/text-to-speech`).
 
-In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub.
+In the browser the page's host stores files in OPFS and downloads them with `fetch`. MLX is a stub: its builds are listed
+as not running here (`not-implemented`), so none is recommended or downloaded.
 
 ## Layout
 
@@ -277,7 +280,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   capability.rs   the capability interfaces every catalogue's models hand out: Stt, Tts, and the model in memory behind them;
                   capability/: vad (Vad, VadStream and their values), end_of_turn (EndOfTurn), audio (Audio,
                   resampling)
-  resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
+  resolver.rs     the funnel, every build of a model ranked; resolver/rejection.rs, why one does not run (Rejection, Reason)
   install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
                   download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
                   ProgressSink), cancel (Cancel), digest (SHA-256)

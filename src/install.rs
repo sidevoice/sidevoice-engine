@@ -10,7 +10,9 @@
 //! engine expects a model directory, or looks at file names and extensions, finds what it expects. [`Installed`] is
 //! where each key's file is in that folder, and a build is installed when its folder is stored, which happens only
 //! once every file is in it. Files stay on disk when their models leave memory; [`Installer::uninstall`] removes a
-//! build's folder, and each of its blobs no other folder links.
+//! build's folder, and each of its blobs no other folder links. An install may find a blob it needs already stored and
+//! link it later: the engine never runs an uninstall alongside an install (its own lock), so one build's uninstall never
+//! takes a shared file from under another's install.
 //!
 //! An artifact with an `archive_path` is a member of an archive: several keys may share one archive (the same `url`
 //! and `sha256`), each naming its own member. Each distinct archive is downloaded once, checked against its digest,
@@ -189,7 +191,7 @@ impl Installer {
     }
 
     /// Removes the build folder `folder`, then each blob of `artifacts` that no other build folder links: a file
-    /// shared by two builds stays as long as either is installed.
+    /// shared by two builds stays as long as either is installed. The engine never runs it alongside an install.
     ///
     /// # Errors
     ///

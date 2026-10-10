@@ -110,6 +110,7 @@ use async_trait::async_trait;
 use crate::host::{Accelerator, Capabilities};
 use crate::install::Installed;
 use crate::maybe_send::{MaybeSend, MaybeSync};
+use crate::resolver::Reason;
 use crate::Result;
 
 mod implementations;
@@ -168,6 +169,13 @@ pub(crate) struct BackendSpec {
 pub(crate) trait Backend: MaybeSend + MaybeSync {
     /// What it is and needs: its `const` record, the same every time.
     fn spec(&self) -> &BackendSpec;
+
+    /// Why none of its builds can run anywhere, whatever the machine: `None`, the default, for a backend that runs
+    /// models. A stub says `not-implemented`, so that its builds are listed as not running here, with that reason,
+    /// and nothing is downloaded for a build that would fail to open.
+    fn unavailable(&self) -> Option<Reason> {
+        None
+    }
 
     /// Which of the declared accelerators work here, best first. By default, the ones the host reports. A backend
     /// overrides it only when trying is the only way to know (a CUDA driver, a WebGPU adapter, Core ML): quickly,
