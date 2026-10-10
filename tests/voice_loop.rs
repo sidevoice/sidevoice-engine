@@ -38,7 +38,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
     Accelerator, BundledCatalog, Cancel, Engine, Host, LocalModel, NativeHost, Progress, Vad,
-    VadEvent, VadOptions, LOCAL_CATALOG,
+    VadEvent, VadOptions,
 };
 
 #[path = "voice_loop/audio.rs"]
@@ -365,13 +365,10 @@ fn load(
     build: &str,
     loaded_on: &mut BTreeMap<String, Option<Accelerator>>,
 ) -> Result<LocalModel> {
-    let local = engine
-        .catalog(LOCAL_CATALOG)
-        .map_err(|e| format!("the local catalogue: {e}"))?;
+    let local = engine.local_catalog();
     let models = block_on(local.models(None)).map_err(|e| format!("the models: {e}"))?;
     let (model, entry) = models
         .iter()
-        .filter_map(|model| model.as_local())
         .find_map(|model| {
             let entry = model.builds.iter().find(|entry| entry.id == build)?;
             Some((model, entry))

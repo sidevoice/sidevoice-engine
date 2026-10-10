@@ -136,7 +136,7 @@ try {
       return { os: "web", arch: "wasm32", accelerators: plan.accelerators, cores: navigator.hardwareConcurrency ?? null };
     },
   });
-  const model = async (id) => (await engine.catalog("local").models()).find((model) => model.id === id);
+  const model = async (id) => (await engine.localCatalog().models()).find((model) => model.id === id);
 
   for (const wanted of [plan.stt, ...plan.tts]) {
     const build = (await model(wanted.model))?.builds.find((build) => build.id === wanted.build);

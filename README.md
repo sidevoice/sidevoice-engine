@@ -103,8 +103,7 @@ let smart_turn = engine.load("smart-turn-v3.2", None, &|_| {}, &cancel).await?;
 let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_far, 48_000).await?; // P(complete)
 ```
 
-- **The local catalogue's `models`** (`Catalog::models`; each a `ModelInfo` whose `as_local()` is its
-  `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, every build
+- **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, every build
   ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
   recommends. `Engine::install` and `Engine::uninstall` take a model id (and, to install, a build id or `None`);
@@ -178,7 +177,8 @@ for catalog in engine.catalogs() { // "local", "elevenlabs", "openai"
 }
 let elevenlabs = engine.catalog("elevenlabs")?;
 elevenlabs.refresh().await; // read again now: the settings' refresh button, or a new key
-let scribe = elevenlabs.load("scribe_v2", &|_| {}, &cancel).await?; // Box<dyn Model>; as_remote() is the RemoteModel
+let scribe = elevenlabs.load("scribe_v2", &|_| {}, &cancel).await?; // Box<dyn Model>
+let own = engine.remote_catalog("elevenlabs")?.load("scribe_v2", &cancel).await?; // RemoteModel, as itself
 let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Some("es")).await?;
 ```
 
@@ -186,7 +186,9 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
   status, its models (all, or those of one capability), `refresh` and `load`. A listed model is a `ModelInfo` (id,
   capabilities, languages, voices, speed), implemented by `LocalModelInfo` (builds, install state) and
   `RemoteModelInfo`; a loaded one is a `Model` (id, capabilities, `as_stt`, `as_tts`, `as_vad`, `as_end_of_turn`),
-  implemented by `LocalModel` and `RemoteModel`. Each reaches its own specifics through `as_local()` and `as_remote()`.
+  implemented by `LocalModel` and `RemoteModel`. The traits hold only what is common and know none of their types:
+  code that needs a type's specifics asks its concrete catalogue (`Engine::local_catalog()`,
+  `Engine::remote_catalog(id)`), whose `models` and `load` hand out its own types.
 - **Speed means one thing.** A model's `speed` is a `SpeedRange` (a bound only where its source states one, and that
   source); `None` means only that it takes no speed. A remote model's comes from its provider's spec; a local one's
   from its family in the catalogue: Kokoro's 0.5 to 2 and Supertonic's 0.9 to 1.5 from their publishers, Piper's with

@@ -6,8 +6,7 @@ use wasm_bindgen::JsValue;
 
 use crate::{
     Accelerator, Audio, Capability, CatalogStatus, Error, Gender, LocalModelInfo, ModelBuild,
-    ModelInfo, Progress, Reason, RemoteModelInfo, SpeedRange, VadEvent, VadOptions, VadOutput,
-    Voice,
+    Progress, Reason, RemoteModelInfo, SpeedRange, VadEvent, VadOptions, VadOutput, Voice,
 };
 
 #[cfg(test)]
@@ -76,19 +75,8 @@ pub(super) fn catalog_status(status: &CatalogStatus) -> JsValue {
     ])
 }
 
-/// A local model (`model`) or a remote one (`provider_model`), with its `kind`, `"local"` or `"remote"`.
-pub(super) fn catalog_model(model: &dyn ModelInfo) -> JsValue {
-    let (value, kind) = match (model.as_local(), model.as_remote()) {
-        (Some(local), _) => (self::model(local), "local"),
-        (None, Some(remote)) => (provider_model(remote), "remote"),
-        (None, None) => (JsValue::from(Object::new()), "other"),
-    };
-    let _ = js_sys::Reflect::set(&value, &"kind".into(), &kind.into());
-    value
-}
-
 /// `{ id, capabilities, languages, voices, speed? }`.
-fn provider_model(model: &RemoteModelInfo) -> JsValue {
+pub(super) fn provider_model(model: &RemoteModelInfo) -> JsValue {
     let capabilities: Array = model
         .capabilities
         .iter()

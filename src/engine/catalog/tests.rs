@@ -28,7 +28,14 @@ fn the_local_catalogue_comes_first_then_each_provider_and_any_other_id_is_not_fo
     assert_eq!((status.reason, status.stale), (None, false));
     let all = block_on(local.models(None)).expect("models");
     let speakers = block_on(local.models(Some(Capability::Tts))).expect("models");
-    assert!(all.iter().all(|model| model.as_local().is_some()));
+    // The concrete catalogue hands out the same models with their local specifics.
+    let local_models = block_on(engine.local_catalog().models(None)).expect("models");
+    let ids = |ids: Vec<&str>| ids.into_iter().map(str::to_owned).collect::<Vec<_>>();
+    assert_eq!(
+        ids(all.iter().map(|model| model.id()).collect()),
+        ids(local_models.iter().map(|model| model.id.as_str()).collect())
+    );
+    assert!(local_models.iter().all(|model| !model.builds.is_empty()));
     assert!(!speakers.is_empty() && speakers.len() < all.len());
     assert!(speakers
         .iter()
@@ -78,8 +85,20 @@ fn a_provider_is_a_catalogue_whose_model_transcribes_like_a_local_one() {
 
     let model =
         block_on(openai.load("gpt-4o-transcribe", &|_| {}, &Cancel::new())).expect("loaded");
-    let remote_model = model.as_remote().expect("a remote model");
+    // The concrete catalogue loads the provider's own type.
+    let remote_catalog = engine.remote_catalog("openai").expect("openai");
+    let remote_model =
+        block_on(remote_catalog.load("gpt-4o-transcribe", &Cancel::new())).expect("loaded");
     assert_eq!(remote_model.provider(), "openai");
+    let missing = engine
+        .remote_catalog(LOCAL_CATALOG)
+        .map(drop)
+        .map_err(|e| e.code);
+    assert_eq!(
+        missing,
+        Err("catalog-not-found"),
+        "the local catalogue is no provider"
+    );
     assert!(model.as_tts().is_none() && model.as_vad().is_none());
     let stt = model.as_stt().expect("speech to text");
     assert_eq!(
@@ -171,7 +190,14 @@ fn local_models_carry_their_familys_speeds_and_a_model_without_takes_none() {
         .iter()
         .find(|model| model.id() == "kokoro-82m-v1.0")
         .expect("kokoro");
-    let local_info = kokoro.as_local().expect("a local model");
-    assert_eq!(local_info.family, "kokoro");
-    assert!(kokoro.as_remote().is_none());
+    assert!(kokoro.capabilities().contains(&Capability::Tts));
+    let local_models = block_on(local.models(None)).expect("models");
+    let kokoro = local_models
+        .iter()
+        .find(|model| model.id == "kokoro-82m-v1.0")
+        .expect("kokoro");
+    assert_eq!(
+        kokoro.family, "kokoro",
+        "its local specifics, from the local catalogue"
+    );
 }

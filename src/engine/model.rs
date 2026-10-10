@@ -1,7 +1,9 @@
 //! What a catalogue hands out, as interfaces: [`ModelInfo`], a model as a catalogue lists it, and [`Model`], a model
 //! ready to use, which hands out the capability interfaces. The local catalogue's and each provider's own types
-//! implement them ([`LocalModelInfo`] and [`RemoteModelInfo`]; [`LocalModel`] and [`RemoteModel`]), and keep their
-//! specifics, reachable through `as_local` and `as_remote`.
+//! implement them ([`LocalModelInfo`] and [`RemoteModelInfo`]; [`LocalModel`] and [`RemoteModel`]). The traits hold
+//! only what is common, and know none of them: code that needs a type's specifics (a local model's builds, say) gets
+//! it from its concrete catalogue ([`LocalCatalog`](crate::LocalCatalog), [`RemoteCatalog`](crate::RemoteCatalog)),
+//! which hands out its own types.
 
 use std::fmt;
 
@@ -27,16 +29,6 @@ pub trait ModelInfo: fmt::Debug + MaybeSend + MaybeSync {
 
     /// The speeds it takes, with their source; `None` means only that it takes no speed.
     fn speed(&self) -> Option<&SpeedRange>;
-
-    /// A model of the local catalogue: its family, builds and install state.
-    fn as_local(&self) -> Option<&LocalModelInfo> {
-        None
-    }
-
-    /// A model of a remote provider, as the provider lists it.
-    fn as_remote(&self) -> Option<&RemoteModelInfo> {
-        None
-    }
 }
 
 /// A model ready to use, which a catalogue loaded: it hands out the capability interfaces, the same whatever runs it.
@@ -58,16 +50,6 @@ pub trait Model: fmt::Debug + MaybeSend + MaybeSync {
 
     /// The model as an end-of-turn classifier, if it is one.
     fn as_end_of_turn(&self) -> Option<EndOfTurn<'_>>;
-
-    /// A local model's build in memory.
-    fn as_local(&self) -> Option<&LocalModel> {
-        None
-    }
-
-    /// A remote provider's model.
-    fn as_remote(&self) -> Option<&RemoteModel> {
-        None
-    }
 }
 
 impl ModelInfo for LocalModelInfo {
@@ -90,10 +72,6 @@ impl ModelInfo for LocalModelInfo {
     fn speed(&self) -> Option<&SpeedRange> {
         self.speed.as_ref()
     }
-
-    fn as_local(&self) -> Option<&LocalModelInfo> {
-        Some(self)
-    }
 }
 
 impl ModelInfo for RemoteModelInfo {
@@ -115,10 +93,6 @@ impl ModelInfo for RemoteModelInfo {
 
     fn speed(&self) -> Option<&SpeedRange> {
         self.speed.as_ref()
-    }
-
-    fn as_remote(&self) -> Option<&RemoteModelInfo> {
-        Some(self)
     }
 }
 
@@ -146,10 +120,6 @@ impl Model for LocalModel {
     fn as_end_of_turn(&self) -> Option<EndOfTurn<'_>> {
         LocalModel::as_end_of_turn(self)
     }
-
-    fn as_local(&self) -> Option<&LocalModel> {
-        Some(self)
-    }
 }
 
 impl Model for RemoteModel {
@@ -175,9 +145,5 @@ impl Model for RemoteModel {
 
     fn as_end_of_turn(&self) -> Option<EndOfTurn<'_>> {
         RemoteModel::as_end_of_turn(self)
-    }
-
-    fn as_remote(&self) -> Option<&RemoteModel> {
-        Some(self)
     }
 }

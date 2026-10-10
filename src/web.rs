@@ -55,18 +55,22 @@ export interface ModelBuild {
 export interface SpeedRange { min?: number; max?: number; source: string; }
 /** A model as a catalogue lists it, whichever: what every model has. */
 export interface ModelInfo {
-  kind: "local" | "remote"; id: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; languages: string[];
+  id: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; languages: string[];
   voices: Voice[]; speed?: SpeedRange;
 }
 /** A model of the local catalogue: its family, size, licence, builds ranked and what is installed. */
 export interface LocalModelInfo extends ModelInfo {
-  kind: "local"; family: string; parametersM: number; license: string; installed: boolean; builds: ModelBuild[];
+  family: string; parametersM: number; license: string; installed: boolean; builds: ModelBuild[];
   recommendedBuild?: string;
 }
 /** A model of a remote provider, as listed. */
-export interface RemoteModelInfo extends ModelInfo { kind: "remote"; }
+export interface RemoteModelInfo extends ModelInfo {}
 /** A model ready to use, from a catalogue's `load`: either hands out the same capabilities. */
 export type Model = LocalModel | RemoteModel;
+/** A place models come from: what the local catalogue and each provider's have in common (`id`, `name`, `status()`,
+ * `models(capability?)`, `refresh()`, `load(model)`). Each lists and loads its own types; nothing tells them apart but
+ * which catalogue was asked. */
+export type Catalog = LocalCatalog | RemoteCatalog;
 /** How a catalogue stands: why it is not current (absent when it is), whether its models are the last kept, and what
  * the provider said when it last refused, for a developer to read. */
 export interface CatalogStatus { reason?: Reason; stale: boolean; detail?: string; }
@@ -177,63 +181,170 @@ impl WebEngine {
         })
     }
 
-    /// Every catalogue of this engine: the local one (`"local"`) first, then each remote provider, by id.
-    pub fn catalogs(&self) -> Vec<WebCatalog> {
-        self.engine
-            .catalogs()
-            .iter()
-            .map(|catalog| WebCatalog {
+    /// Every catalogue of this engine: the `LocalCatalog` first, then each provider's `RemoteCatalog`, by id. Both have
+    /// `id`, `name`, `status()`, `models(capability?)`, `refresh()` and `load(model)`; each lists and loads its own
+    /// types.
+    #[wasm_bindgen(unchecked_return_type = "(LocalCatalog | RemoteCatalog)[]")]
+    pub fn catalogs(&self) -> Array {
+        let local = JsValue::from(self.local_catalog());
+        let providers = self.engine.catalogs().into_iter().skip(1).map(|catalog| {
+            JsValue::from(WebRemoteCatalog {
                 engine: Rc::clone(&self.engine),
                 id: catalog.id().to_owned(),
             })
-            .collect()
+        });
+        std::iter::once(local).chain(providers).collect()
     }
 
     /// The catalogue `id` (`"local"`, `"openai"`, `"elevenlabs"`); throws `catalog-not-found` for any other.
-    pub fn catalog(&self, id: String) -> Result<WebCatalog, JsValue> {
-        self.engine.catalog(&id).map_err(coded)?;
-        Ok(WebCatalog {
+    #[wasm_bindgen(unchecked_return_type = "LocalCatalog | RemoteCatalog")]
+    pub fn catalog(&self, id: String) -> Result<JsValue, JsValue> {
+        if id == crate::LOCAL_CATALOG {
+            return Ok(self.local_catalog().into());
+        }
+        self.remote_catalog(id).map(JsValue::from)
+    }
+
+    /// The local catalogue: its models are `LocalModelInfo`s (builds, install state) and it loads `LocalModel`s.
+    #[wasm_bindgen(js_name = localCatalog)]
+    pub fn local_catalog(&self) -> WebLocalCatalog {
+        WebLocalCatalog {
+            engine: Rc::clone(&self.engine),
+        }
+    }
+
+    /// The remote provider `id`: its models are `RemoteModelInfo`s and it loads `RemoteModel`s; throws
+    /// `catalog-not-found` for an id that is no provider.
+    #[wasm_bindgen(js_name = remoteCatalog)]
+    pub fn remote_catalog(&self, id: String) -> Result<WebRemoteCatalog, JsValue> {
+        self.engine.remote_catalog(&id).map_err(coded)?;
+        Ok(WebRemoteCatalog {
             engine: Rc::clone(&self.engine),
             id,
         })
     }
 }
 
-/// One of the engine's catalogues, for JavaScript: the local one or a remote provider's.
-#[wasm_bindgen(js_name = Catalog)]
-pub struct WebCatalog {
+/// The capability JavaScript names, `None` when left out; `invalid-capability` for any other.
+fn capability_of(capability: Option<String>) -> Result<Option<crate::Capability>, Error> {
+    capability
+        .as_deref()
+        .map(values::capability_named)
+        .transpose()
+}
+
+/// The local catalogue, for JavaScript.
+#[wasm_bindgen(js_name = LocalCatalog)]
+pub struct WebLocalCatalog {
+    engine: Rc<Engine>,
+}
+
+#[wasm_bindgen(js_class = LocalCatalog)]
+impl WebLocalCatalog {
+    /// Its id: `"local"`.
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        crate::LOCAL_CATALOG.to_owned()
+    }
+
+    /// Absent: the app names the local catalogue.
+    #[wasm_bindgen(getter)]
+    pub fn name(&self) -> Option<String> {
+        None
+    }
+
+    /// How it stands: always current.
+    #[wasm_bindgen(unchecked_return_type = "Promise<CatalogStatus>")]
+    pub fn status(&self) -> Promise {
+        let engine = Rc::clone(&self.engine);
+        promise(async move {
+            let local = engine.local_catalog();
+            Ok(values::catalog_status(
+                &crate::Catalog::status(&local).await,
+            ))
+        })
+    }
+
+    /// Its models, those of `capability` alone when given (`"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`), each with its
+    /// builds ranked and what is installed; rejects with `invalid-capability` for any other.
+    #[wasm_bindgen(unchecked_return_type = "Promise<LocalModelInfo[]>")]
+    pub fn models(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "\"stt\" | \"tts\" | \"vad\" | \"end-of-turn\"")]
+        capability: Option<String>,
+    ) -> Promise {
+        let engine = Rc::clone(&self.engine);
+        promise(async move {
+            let capability = capability_of(capability)?;
+            let models = engine.local_catalog().models(capability).await?;
+            Ok(models.iter().map(values::model).collect::<Array>().into())
+        })
+    }
+
+    /// Nothing to read again: compiled in. Its status.
+    #[wasm_bindgen(unchecked_return_type = "Promise<CatalogStatus>")]
+    pub fn refresh(&self) -> Promise {
+        self.status()
+    }
+
+    /// The model `model`, loaded as `WebEngine.load` does with no build (installing it first and telling
+    /// `onProgress`; `signal` aborts it).
+    #[wasm_bindgen(unchecked_return_type = "Promise<LocalModel>")]
+    pub fn load(
+        &self,
+        model: String,
+        #[wasm_bindgen(js_name = onProgress, unchecked_param_type = "(progress: Progress) => void")]
+        on_progress: Option<Function>,
+        signal: Option<AbortSignal>,
+    ) -> Promise {
+        let engine = Rc::clone(&self.engine);
+        promise(async move {
+            let cancel = Cancel::new();
+            let progress = reporter(on_progress);
+            let local = engine.local_catalog();
+            let loading = local.load(&model, &progress, &cancel);
+            let loaded = until_aborted(signal.as_ref(), &cancel, loading).await?;
+            Ok(WebLocalModel { loaded }.into())
+        })
+    }
+}
+
+/// A remote provider's catalogue, for JavaScript.
+#[wasm_bindgen(js_name = RemoteCatalog)]
+pub struct WebRemoteCatalog {
     engine: Rc<Engine>,
     id: String,
 }
 
-#[wasm_bindgen(js_class = Catalog)]
-impl WebCatalog {
-    /// Its id: `"local"`, or the provider's.
+#[wasm_bindgen(js_class = RemoteCatalog)]
+impl WebRemoteCatalog {
+    /// Its id: the provider's.
     #[wasm_bindgen(getter)]
     pub fn id(&self) -> String {
         self.id.clone()
     }
 
-    /// A remote provider's name ("OpenAI"); absent for the local catalogue.
+    /// The provider's name ("OpenAI").
     #[wasm_bindgen(getter)]
     pub fn name(&self) -> Option<String> {
-        let catalog = self.engine.catalog(&self.id).ok()?;
-        catalog.name().map(str::to_owned)
+        let catalog = self.engine.remote_catalog(&self.id).ok()?;
+        crate::Catalog::name(&catalog).map(str::to_owned)
     }
 
-    /// How it stands: `{ reason?, stale, detail? }`, listing a provider first if its listing is missing or old.
+    /// How it stands: `{ reason?, stale, detail? }`, listing the provider first if its listing is missing or old.
     #[wasm_bindgen(unchecked_return_type = "Promise<CatalogStatus>")]
     pub fn status(&self) -> Promise {
         let (engine, id) = (Rc::clone(&self.engine), self.id.clone());
         promise(async move {
-            let status = engine.catalog(&id)?.status().await;
-            Ok(values::catalog_status(&status))
+            let catalog = engine.remote_catalog(&id)?;
+            Ok(values::catalog_status(
+                &crate::Catalog::status(&catalog).await,
+            ))
         })
     }
 
-    /// Its models, those of `capability` alone when given (`"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`); rejects with
-    /// `invalid-capability` for any other.
-    #[wasm_bindgen(unchecked_return_type = "Promise<(LocalModelInfo | RemoteModelInfo)[]>")]
+    /// Its models as listed, those of `capability` alone when given; rejects with `invalid-capability` for any other.
+    #[wasm_bindgen(unchecked_return_type = "Promise<RemoteModelInfo[]>")]
     pub fn models(
         &self,
         #[wasm_bindgen(unchecked_param_type = "\"stt\" | \"tts\" | \"vad\" | \"end-of-turn\"")]
@@ -241,14 +352,11 @@ impl WebCatalog {
     ) -> Promise {
         let (engine, id) = (Rc::clone(&self.engine), self.id.clone());
         promise(async move {
-            let capability = capability
-                .as_deref()
-                .map(values::capability_named)
-                .transpose()?;
-            let models = engine.catalog(&id)?.models(capability).await?;
+            let capability = capability_of(capability)?;
+            let models = engine.remote_catalog(&id)?.models(capability).await;
             Ok(models
                 .iter()
-                .map(|model| values::catalog_model(model.as_ref()))
+                .map(values::provider_model)
                 .collect::<Array>()
                 .into())
         })
@@ -259,39 +367,30 @@ impl WebCatalog {
     pub fn refresh(&self) -> Promise {
         let (engine, id) = (Rc::clone(&self.engine), self.id.clone());
         promise(async move {
-            let status = engine.catalog(&id)?.refresh().await;
-            Ok(values::catalog_status(&status))
+            let catalog = engine.remote_catalog(&id)?;
+            Ok(values::catalog_status(
+                &crate::Catalog::refresh(&catalog).await,
+            ))
         })
     }
 
-    /// The model `model`, ready to use: a `LocalModel` (loaded as `WebEngine.load` does with no build, installing it
-    /// first and telling `onProgress`; `signal` aborts it) or a `RemoteModel`.
-    #[wasm_bindgen(unchecked_return_type = "Promise<Model>")]
+    /// The model `model`, as listed: it calls the provider each time it is used. `onProgress` is never called (nothing
+    /// is installed); `signal` aborts it.
+    #[wasm_bindgen(unchecked_return_type = "Promise<RemoteModel>")]
     pub fn load(
         &self,
         model: String,
         #[wasm_bindgen(js_name = onProgress, unchecked_param_type = "(progress: Progress) => void")]
-        on_progress: Option<Function>,
+        _on_progress: Option<Function>,
         signal: Option<AbortSignal>,
     ) -> Promise {
         let (engine, id) = (Rc::clone(&self.engine), self.id.clone());
         promise(async move {
             let cancel = Cancel::new();
-            let progress = reporter(on_progress);
-            let catalog = engine.catalog(&id)?;
-            let loading = catalog.load(&model, &progress, &cancel);
-            let model = until_aborted(signal.as_ref(), &cancel, loading).await?;
-            if let Some(loaded) = model.as_local() {
-                return Ok(WebLocalModel {
-                    loaded: loaded.clone(),
-                }
-                .into());
-            }
-            let remote = model.as_remote().ok_or(Error::new("not-implemented"))?;
-            Ok(WebRemoteModel {
-                remote: remote.clone(),
-            }
-            .into())
+            let catalog = engine.remote_catalog(&id)?;
+            let loading = catalog.load(&model, &cancel);
+            let remote = until_aborted(signal.as_ref(), &cancel, loading).await?;
+            Ok(WebRemoteModel { remote }.into())
         })
     }
 }

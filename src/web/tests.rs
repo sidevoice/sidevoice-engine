@@ -37,12 +37,12 @@ async fn the_local_catalogue_lists_every_model_with_its_web_builds_first() {
     // Whether a model is installed is asked of storage: without OPFS (Node), there is no answer.
     if crate::web::opfs::root().await.is_err() {
         assert_eq!(
-            rejection(engine.catalog("local".into()).expect("local").models(None)).await,
+            rejection(engine.local_catalog().models(None)).await,
             "storage-failed"
         );
         return;
     }
-    let models: Array = JsFuture::from(engine.catalog("local".into()).expect("local").models(None))
+    let models: Array = JsFuture::from(engine.local_catalog().models(None))
         .await
         .unwrap()
         .into();

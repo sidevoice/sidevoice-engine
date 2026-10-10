@@ -2,16 +2,18 @@
 //! ([`LocalCatalog`]: files, families, builds, backends, accelerators, install) and one per remote provider
 //! ([`RemoteCatalog`]: a live listing with its own cache and status). Each has an id, a status, its models (by
 //! capability), `refresh` and `load`, which hands back a [`Model`] with the shared capability interfaces. An engine on
-//! the host would be one more.
+//! the host would be one more. The trait holds what every catalogue has; each concrete catalogue also hands out its own
+//! types, with their specifics (a local model's builds and install state; a provider's listing), for code that knows
+//! which catalogue it asks.
 
 use async_trait::async_trait;
 
 use crate::catalog::Capability;
-use crate::engine::{Model, ModelInfo};
+use crate::engine::{LocalModel, LocalModelInfo, Model, ModelInfo};
 use crate::install::{Cancel, ProgressSink};
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::provider::listing::Listed;
-use crate::provider::Adapter;
+use crate::provider::{Adapter, RemoteModel, RemoteModelInfo};
 use crate::resolver::Reason;
 use crate::{Engine, Error, Result};
 
@@ -150,22 +152,87 @@ impl Engine {
             .ok_or(Error::new("catalog-not-found"))
     }
 
-    /// The local catalogue, as itself.
+    /// The local catalogue, as itself: its models are [`LocalModelInfo`]s and it loads [`LocalModel`]s.
     #[must_use]
     pub fn local_catalog(&self) -> LocalCatalog<'_> {
         LocalCatalog { engine: self }
     }
+
+    /// The remote provider `id` (`"openai"`, `"elevenlabs"`), as itself: its models are [`RemoteModelInfo`]s and it
+    /// loads [`RemoteModel`]s.
+    ///
+    /// # Errors
+    ///
+    /// `catalog-not-found` for an id that is no provider of this build.
+    pub fn remote_catalog(&self, id: &str) -> Result<RemoteCatalog<'_>> {
+        self.providers
+            .iter()
+            .find(|adapter| adapter.spec().id == id)
+            .map(|adapter| RemoteCatalog {
+                engine: self,
+                adapter: adapter.as_ref(),
+            })
+            .ok_or(Error::new("catalog-not-found"))
+    }
 }
 
 /// `models`, those of `capability` alone when given.
-fn of_capability(
-    models: Vec<Box<dyn ModelInfo>>,
-    capability: Option<Capability>,
-) -> Vec<Box<dyn ModelInfo>> {
+fn of_capability<M: ModelInfo>(models: Vec<M>, capability: Option<Capability>) -> Vec<M> {
     models
         .into_iter()
         .filter(|model| capability.is_none_or(|wanted| model.capabilities().contains(&wanted)))
         .collect()
+}
+
+/// `models`, as the trait hands them out.
+fn boxed<M: ModelInfo + 'static>(models: Vec<M>) -> Vec<Box<dyn ModelInfo>> {
+    models
+        .into_iter()
+        .map(|model| Box::new(model) as Box<dyn ModelInfo>)
+        .collect()
+}
+
+impl LocalCatalog<'_> {
+    /// Its models, as [`Catalog::models`] lists them, with their local specifics: each one's family, size, licence,
+    /// builds ranked and what is installed.
+    ///
+    /// # Errors
+    ///
+    /// What the host's storage fails with, asked what is installed.
+    pub async fn models(&self, capability: Option<Capability>) -> Result<Vec<LocalModelInfo>> {
+        Ok(of_capability(self.engine.models().await?, capability))
+    }
+
+    /// The model `model`, loaded as [`Catalog::load`] does: as [`Engine::load`] with no build named.
+    ///
+    /// # Errors
+    ///
+    /// What [`Engine::load`] fails with.
+    pub async fn load(
+        &self,
+        model: &str,
+        progress: &dyn ProgressSink,
+        cancel: &Cancel,
+    ) -> Result<LocalModel> {
+        self.engine.load(model, None, progress, cancel).await
+    }
+}
+
+impl RemoteCatalog<'_> {
+    /// Its models, as [`Catalog::models`] lists them: the provider's listing.
+    pub async fn models(&self, capability: Option<Capability>) -> Vec<RemoteModelInfo> {
+        let listed = self.engine.listed(self.adapter, false).await;
+        of_capability(listed.models, capability)
+    }
+
+    /// The model `model`, as [`Catalog::load`] makes it.
+    ///
+    /// # Errors
+    ///
+    /// `model-not-found`, the provider's status when it has no listing (`credential-missing`, ...), and `cancelled`.
+    pub async fn load(&self, model: &str, cancel: &Cancel) -> Result<RemoteModel> {
+        self.engine.remote(self.adapter, model, cancel).await
+    }
 }
 
 #[cfg_attr(native, async_trait)]
@@ -184,12 +251,7 @@ impl Catalog for LocalCatalog<'_> {
     }
 
     async fn models(&self, capability: Option<Capability>) -> Result<Vec<Box<dyn ModelInfo>>> {
-        let models = self.engine.models().await?;
-        let models = models
-            .into_iter()
-            .map(|model| Box::new(model) as Box<dyn ModelInfo>)
-            .collect();
-        Ok(of_capability(models, capability))
+        Ok(boxed(LocalCatalog::models(self, capability).await?))
     }
 
     async fn refresh(&self) -> CatalogStatus {
@@ -202,8 +264,9 @@ impl Catalog for LocalCatalog<'_> {
         progress: &dyn ProgressSink,
         cancel: &Cancel,
     ) -> Result<Box<dyn Model>> {
-        let loaded = self.engine.load(model, None, progress, cancel).await?;
-        Ok(Box::new(loaded))
+        Ok(Box::new(
+            LocalCatalog::load(self, model, progress, cancel).await?,
+        ))
     }
 }
 
@@ -223,13 +286,7 @@ impl Catalog for RemoteCatalog<'_> {
     }
 
     async fn models(&self, capability: Option<Capability>) -> Result<Vec<Box<dyn ModelInfo>>> {
-        let listed = self.engine.listed(self.adapter, false).await;
-        let models = listed
-            .models
-            .into_iter()
-            .map(|model| Box::new(model) as Box<dyn ModelInfo>)
-            .collect();
-        Ok(of_capability(models, capability))
+        Ok(boxed(RemoteCatalog::models(self, capability).await))
     }
 
     async fn refresh(&self) -> CatalogStatus {
@@ -242,7 +299,6 @@ impl Catalog for RemoteCatalog<'_> {
         _progress: &dyn ProgressSink,
         cancel: &Cancel,
     ) -> Result<Box<dyn Model>> {
-        let remote = self.engine.remote(self.adapter, model, cancel).await?;
-        Ok(Box::new(remote))
+        Ok(Box::new(RemoteCatalog::load(self, model, cancel).await?))
     }
 }
