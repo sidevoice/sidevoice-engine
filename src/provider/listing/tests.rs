@@ -258,3 +258,35 @@ fn a_listing_refused_keeps_what_the_provider_said() {
         Some("missing_permissions: The API key you used is missing the permission models_read.")
     );
 }
+
+/// ENG82-01: a spec that could not be read on the first call is read again by an ordinary call once `SPEC_RETRY` has
+/// passed, not only a day later or when forced; within it, it is not read on every call.
+#[test]
+fn a_spec_not_read_at_first_is_read_again_by_an_ordinary_call_after_a_while() {
+    let (api, keys) = remote_api("fake");
+    keys.key("fake", "k");
+    keys.answer(SPEC_URL, 503, b"");
+    let (fake, listings) = (Fake::default(), Listings::default());
+    let provider = block_on(listings.provider(&fake, &api, false));
+    assert_eq!(provider.status, Some("provider-spec-unreadable"));
+
+    keys.answer(SPEC_URL, 200, br#"{"ok": true}"#);
+    let provider = block_on(listings.provider(&fake, &api, false));
+    assert!(provider.models.is_empty(), "not read again at once");
+    assert_eq!(reads(&keys), 1);
+
+    // As if `SPEC_RETRY` had passed since the failure.
+    block_on(async {
+        let mut listings = listings.0.lock().await;
+        let listing = listings.get_mut("fake").expect("listed");
+        let failed = listing.spec_failed_at.expect("a failure");
+        listing.spec_failed_at = failed.checked_sub(super::SPEC_RETRY);
+    });
+    let provider = block_on(listings.provider(&fake, &api, false));
+    assert_eq!(
+        (provider.status, provider.models.len()),
+        (None, 2),
+        "recovered"
+    );
+    assert_eq!(reads(&keys), 2);
+}

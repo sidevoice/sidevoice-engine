@@ -7,7 +7,8 @@
 //! A key that is missing, refused or not allowed to list drops the listing: the provider then has no models, and there
 //! is no fallback to models it might have. A provider that could not be asked keeps the last listing, marked stale. A
 //! spec that cannot be read keeps the last facts, and says so (`provider-spec-unreadable`); with no facts yet, the
-//! provider has no models.
+//! provider has no models. Either way it is tried again a minute later, on the next call after that (`SPEC_RETRY`), not
+//! only a day later.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -26,6 +27,9 @@ mod tests;
 pub(crate) const MODELS_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 /// How long a listing of voices stands.
 pub(crate) const VOICES_AGE: Duration = Duration::from_secs(60 * 60);
+/// How long after a spec could not be read it is tried again: soon, so that facts never read, or old, recover once the
+/// provider answers, without reading the spec on every call while it does not.
+pub(crate) const SPEC_RETRY: Duration = Duration::from_secs(60);
 
 /// Every provider's listing, by id.
 #[derive(Default)]
@@ -35,7 +39,10 @@ pub(crate) struct Listings(async_lock::Mutex<BTreeMap<&'static str, Listing>>);
 #[derive(Default, Clone)]
 struct Listing {
     facts: Option<Arc<Facts>>,
+    /// When the spec was last read.
     facts_at: Option<Instant>,
+    /// When the spec last could not be read, until it is.
+    spec_failed_at: Option<Instant>,
     /// Why the spec was last not read, until it is.
     spec_status: Option<&'static str>,
     models: Vec<ProviderModel>,
@@ -74,18 +81,24 @@ impl Listings {
         if listing.status.is_some_and(unusable) {
             listing.status = None;
         }
-        if force || due(listing.facts_at, now, MODELS_AGE) {
+        let spec_due =
+            due(listing.facts_at, now, MODELS_AGE) && due(listing.spec_failed_at, now, SPEC_RETRY);
+        if force || spec_due {
             let read = match api.spec(adapter.spec().spec).await {
                 Ok(spec) => adapter.facts(&spec),
                 Err(error) => Err(error),
             };
-            listing.facts_at = Some(now);
             match read {
                 Ok(facts) => {
                     listing.facts = Some(Arc::new(facts));
+                    listing.facts_at = Some(now);
+                    listing.spec_failed_at = None;
                     listing.spec_status = None;
                 }
-                Err(error) => listing.spec_status = Some(error.code),
+                Err(error) => {
+                    listing.spec_failed_at = Some(now);
+                    listing.spec_status = Some(error.code);
+                }
             }
         }
         let Some(facts) = listing.facts.clone() else {
@@ -136,6 +149,7 @@ impl Listing {
         *self = Self {
             facts: self.facts.take(),
             facts_at: self.facts_at,
+            spec_failed_at: self.spec_failed_at,
             spec_status: self.spec_status,
             status: Some(code),
             detail,
