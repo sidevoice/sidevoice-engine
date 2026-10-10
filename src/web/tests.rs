@@ -90,7 +90,7 @@ async fn what_the_engine_refuses_rejects_with_its_code() {
     );
     assert_eq!(rejection(unknown).await, "build-not-found");
     assert_eq!(
-        rejection(engine.uninstall("no-such-model".into())).await,
+        rejection(engine.uninstall("no-such-model".into(), None)).await,
         "model-not-found"
     );
 }
