@@ -2,9 +2,10 @@
 //! a model is the provider's, called through the host's HTTP with the key the host hands over for each call (the
 //! `xi-api-key` header).
 //!
-//! - Its models: what `GET /v1/models` lists decides. Every model it says speaks (`can_do_text_to_speech`) is offered
-//!   as text to speech, and every one it lists that the spec names as speech to text (the listing has no flag for it)
-//!   as speech to text; each with the languages the listing gives it.
+//! - Its models: the listing decides for what it reports, and the spec for what it never does. `GET /v1/models` says
+//!   which models speak (`can_do_text_to_speech`): each is offered as text to speech, and no other. It says nothing of
+//!   speech to text, and does not list Scribe: the speech-to-text models are the spec's, each offered once the key
+//!   lists, with the languages the listing gives it if it lists it.
 //! - Its facts, from ElevenLabs' OpenAPI spec (`api.elevenlabs.io/openapi.json`), read at run time, only enrich them. A
 //!   text-to-speech model with a generation request of its own in the spec (a schema with `text`, `voice` and a `const`
 //!   `model_id`: `ElevenFlashV2_5Request`, ...) takes the `language_code` field if that request has one, and the speed
@@ -159,9 +160,9 @@ impl Adapter for ElevenLabs {
         })
     }
 
-    /// `GET /v1/models`, in its order: every model it says speaks (`can_do_text_to_speech`), and every one it lists
-    /// that the spec names as speech to text (the listing has no flag for it); each with the languages it lists, and
-    /// the speed range its facts, or the general request's, give.
+    /// `GET /v1/models`, in its order, for text to speech: every model it says speaks (`can_do_text_to_speech`). Then,
+    /// for speech to text, which the listing never reports, the spec's models. Each with the languages the listing gives
+    /// it, and the speed range its facts, or the general request's, give.
     async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<RemoteModelInfo>> {
         let key = api.key().await?;
         let answer = api
@@ -169,27 +170,30 @@ impl Adapter for ElevenLabs {
             .await?;
         let listed = api::listed(&answer)?;
         let listed = array(&listed, None)?;
-        let transcribes = |id: &str| facts.speech_to_text.iter().any(|facts| facts.model == id);
-        Ok(listed
+        let languages = |id: &str| {
+            listed
+                .iter()
+                .find(|model| model["model_id"] == id)
+                .map(|model| strings(&model["languages"], "language_id"))
+                .unwrap_or_default()
+        };
+        let model = |capability, id: &str| RemoteModelInfo {
+            id: id.to_owned(),
+            capabilities: vec![capability],
+            languages: languages(id),
+            voices: Vec::new(),
+            speed: facts.of(capability, id).range(),
+        };
+        let speakers = listed
             .iter()
-            .filter_map(|model| {
-                let id = model["model_id"].as_str()?;
-                let capability = if model["can_do_text_to_speech"] == true {
-                    Capability::Tts
-                } else if transcribes(id) {
-                    Capability::Stt
-                } else {
-                    return None;
-                };
-                Some(RemoteModelInfo {
-                    id: id.to_owned(),
-                    capabilities: vec![capability],
-                    languages: strings(&model["languages"], "language_id"),
-                    voices: Vec::new(),
-                    speed: facts.of(capability, id).range(),
-                })
-            })
-            .collect())
+            .filter(|listed| listed["can_do_text_to_speech"] == true)
+            .filter_map(|listed| listed["model_id"].as_str())
+            .map(|id| model(Capability::Tts, id));
+        let scribes = facts
+            .speech_to_text
+            .iter()
+            .map(|facts| model(Capability::Stt, &facts.model));
+        Ok(speakers.chain(scribes).collect())
     }
 
     /// `GET /v1/voices`: the account's voices.
