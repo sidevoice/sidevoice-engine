@@ -64,7 +64,7 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
 - **One package per concept.** `x.rs` is the module and holds its main type or trait, the interface at the module root
   (never `x/x.rs`: Clippy's `module_inception`); `x/` holds its parts, one small file per piece.
 - **A file is one concept**, and it keeps that concept's closely related types together, even when other modules use
-  them: as `std::io::Error` lives with `ErrorKind`, `Offer` lives with `Rejection` and `Reason`, and `Backend` with
+  them: as `std::io::Error` lives with `ErrorKind`, `Rejection` lives with `Reason`, and `Backend` with
   `BackendSpec`. A type gets its own file only when it is a concept of its own, not a part or a detail of another
   (`Accelerator`, `BuildEntry`, `Voice`). Split by cohesion and size, never one type per file: the module is the unit.
 - **Names say what a thing is**: `requirement.rs` (what the machine must meet), not `checks.rs`;

@@ -3,10 +3,10 @@
 
 use async_trait::async_trait;
 
+use super::Rejection;
 use super::Resolver;
-use super::{Offer, Rejection};
 use crate::backend::{Backend, BackendSpec, Library, MinCores};
-use crate::catalog::{Catalog, CatalogFragment, CatalogSource};
+use crate::catalog::{BuildEntry, Catalog, CatalogFragment, CatalogSource};
 use crate::install::Installed;
 use crate::test_support::{build, family, model};
 use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
@@ -81,6 +81,39 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
     }
 }
 
+/// Every build of every model of `capability` in `catalog`, with its model's id and where it runs here or why not: what
+/// the engine lists, through `Resolver::builds`.
+fn ranked(
+    catalog: &Catalog,
+    backends: &[Box<dyn Backend>],
+    caps: &Capabilities,
+    capability: Capability,
+) -> Vec<(String, BuildEntry, Result<Accelerator, Rejection>)> {
+    let resolver = Resolver::default();
+    catalog
+        .entries()
+        .filter(|model| model.capabilities.contains(&capability))
+        .flat_map(|model| {
+            resolver
+                .builds(model, backends, caps)
+                .into_iter()
+                .map(|(build, fit)| (model.id.clone(), build.clone(), fit))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The one build `catalog` has: where it runs here, or why not.
+fn only(
+    catalog: &Catalog,
+    backends: &[Box<dyn Backend>],
+    caps: &Capabilities,
+) -> Result<Accelerator, Rejection> {
+    let builds = ranked(catalog, backends, caps, Capability::Stt);
+    let [(_, _, fit)] = <[_; 1]>::try_from(builds).expect("one build");
+    fit
+}
+
 /// The accelerator the one build, requiring none, is offered on, or why it is rejected.
 fn fit(probe: &'static [Accelerator], caps: &Capabilities) -> Result<Accelerator, Rejection> {
     fit_requiring(&[], probe, caps)
@@ -94,16 +127,7 @@ fn fit_requiring(
 ) -> Result<Accelerator, Rejection> {
     let source = OneBuildCatalog(accelerators);
     let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
-    let offers = Resolver::default().offers(
-        &catalog,
-        &[FixedProbeBackend::probing(probe)],
-        caps,
-        Capability::Stt,
-    );
-    match <[Offer; 1]>::try_from(offers).expect("one offer") {
-        [Offer::Offered { accelerator, .. }] => Ok(accelerator),
-        [Offer::Rejected { why, .. }] => Err(why),
-    }
+    only(&catalog, &[FixedProbeBackend::probing(probe)], caps)
 }
 
 const COREML_AND_CPU: &[Accelerator] = &[Accelerator::CoreMl, Accelerator::Cpu];
@@ -184,25 +208,16 @@ fn a_build_runs_only_on_accelerators_it_requires_in_the_backends_order() {
 fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
     let source = crate::BundledCatalog;
     let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
-    let offers = Resolver::default().offers(
+    let builds = ranked(
         &catalog,
         &[FixedProbeBackend::probing(COREML_AND_CPU)],
         &caps(COREML_AND_CPU, Some(16_384), Some(8)),
         Capability::Tts,
     );
-    let kokoro: Vec<_> = offers
+    let kokoro: Vec<_> = builds
         .iter()
-        .filter_map(|offer| match offer {
-            Offer::Offered {
-                model,
-                build,
-                accelerator,
-                ..
-            } if model.id.starts_with("kokoro") && build.backend == "sherpa-onnx" => {
-                Some(*accelerator)
-            }
-            _ => None,
-        })
+        .filter(|(model, build, _)| model.starts_with("kokoro") && build.backend == "sherpa-onnx")
+        .filter_map(|(_, _, fit)| fit.as_ref().ok().copied())
         .collect();
     assert!(!kokoro.is_empty(), "a Kokoro build on sherpa-onnx");
     assert!(kokoro
@@ -237,15 +252,9 @@ fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
         };
         [Capability::Stt, Capability::Tts]
             .into_iter()
-            .flat_map(|capability| {
-                Resolver::default().offers(&catalog, &[backend()], &caps, capability)
-            })
-            .filter_map(|offer| match offer {
-                Offer::Offered {
-                    build, accelerator, ..
-                } if build.precision == "fp16" => Some(accelerator),
-                _ => None,
-            })
+            .flat_map(|capability| ranked(&catalog, &[backend()], &caps, capability))
+            .filter(|(_, build, _)| build.precision == "fp16")
+            .filter_map(|(_, _, fit)| fit.ok())
             .collect()
     };
     assert_eq!(fp16_accelerators(&[Accelerator::Wasm]), []);
@@ -311,11 +320,7 @@ fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
         memory_mb: Some(16_384),
         cores: Some(8),
     };
-    let offers = Resolver::default().offers(&catalog, &[Box::new(backend)], &caps, Capability::Stt);
-    match <[Offer; 1]>::try_from(offers).expect("one offer") {
-        [Offer::Offered { accelerator, .. }] => Ok(accelerator),
-        [Offer::Rejected { why, .. }] => Err(why),
-    }
+    only(&catalog, &[Box::new(backend)], &caps)
 }
 
 #[test]
@@ -332,5 +337,40 @@ fn in_a_page_a_build_over_its_webassembly_cap_does_not_fit_whatever_the_machine_
         fit_wasm(2_048, Runs::Page),
         Ok(Accelerator::Wasm),
         "at the cap"
+    );
+}
+
+/// A backend that runs nothing yet, as the MLX stub: everything else about it fits.
+struct StubBackend(Box<dyn Backend>);
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl Backend for StubBackend {
+    fn spec(&self) -> &BackendSpec {
+        self.0.spec()
+    }
+
+    fn unavailable(&self) -> Option<Reason> {
+        Some(Reason::new("not-implemented"))
+    }
+
+    async fn open(&self, _files: &Installed) -> Result<Box<dyn Library>> {
+        Err(Error::new("not-implemented"))
+    }
+}
+
+/// ENG-08: a stub's builds do not run here, with its reason, before anything about the machine is asked; so the engine
+/// neither recommends nor downloads one.
+#[test]
+fn a_stub_backends_builds_do_not_run_here_and_say_why() {
+    let source = OneBuildCatalog(&[]);
+    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let stub = StubBackend(FixedProbeBackend::probing(COREML_AND_CPU));
+    let fits = caps(COREML_AND_CPU, Some(16_384), Some(8));
+    assert_eq!(
+        only(&catalog, &[Box::new(stub)], &fits),
+        Err(Rejection::BackendUnavailable(Reason::new(
+            "not-implemented"
+        )))
     );
 }

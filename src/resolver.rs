@@ -2,23 +2,23 @@
 //! backends a build of the engine has is decided when it is compiled), which of its accelerators work here (what the
 //! host reports, narrowed by `probe`, cached), is one of them an accelerator the build can take (its `requires`), in a
 //! page does the build fit in what WebAssembly hands it (`requires.wasm_max_mb`), does the machine meet the build's and
-//! the backend's requirements (a value the host cannot tell passes). Then, per model, a build: the
-//! catalogue's builds carry no order, and ranking them is still to come (sidevoice-engine#4); until then it is the
-//! first that fits, on its backend's preferred accelerator. Every rejected build is kept with its reason.
+//! the backend's requirements (a value the host cannot tell passes). The builds of a model are listed with those that
+//! run first, each on its backend's preferred accelerator, and every one that does not with its reason (`rejection`);
+//! ranking the builds that run is still to come (sidevoice-engine#4).
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
 use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
-use crate::catalog::{BuildEntry, Capability, Catalog, ModelEntry};
+use crate::catalog::{BuildEntry, ModelEntry};
 use crate::host::{Accelerator, Capabilities, Runs};
 
-mod offer;
+mod rejection;
 #[cfg(test)]
 mod tests;
 
-pub use offer::Reason;
-pub(crate) use offer::{Offer, Rejection};
+pub use rejection::Reason;
+pub(crate) use rejection::Rejection;
 
 /// The funnel, remembering each backend's probe.
 #[derive(Debug, Default)]
@@ -50,44 +50,6 @@ impl Resolver {
         fitting.into_iter().chain(rejected).collect()
     }
 
-    /// Every model that can do `capability`, offered with a build that fits, and every build that cannot run here,
-    /// with why. The engine lists [`Model`](crate::Model)s now, with every build ranked; only the tests read offers.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the engine lists models instead; its tests still read offers"
-        )
-    )]
-    pub(crate) fn offers(
-        &self,
-        catalog: &Catalog,
-        backends: &[Box<dyn Backend>],
-        caps: &Capabilities,
-        capability: Capability,
-    ) -> Vec<Offer> {
-        let mut out = Vec::new();
-        for model in catalog.models(capability) {
-            let mut fitting = Vec::new();
-            for (build, fit) in self.builds(model, backends, caps) {
-                match fit {
-                    Err(why) => out.push(rejected(model, build, why)),
-                    Ok(accelerator) => fitting.push((build.clone(), accelerator)),
-                }
-            }
-            let mut fitting = fitting.into_iter();
-            if let Some((build, accelerator)) = fitting.next() {
-                out.push(Offer::Offered {
-                    model: model.clone(),
-                    build,
-                    accelerator,
-                    alternatives: fitting.map(|(build, _)| build).collect(),
-                });
-            }
-        }
-        out
-    }
-
     /// The best accelerator this build can run on here, or why it cannot: the backend's preference order, kept to
     /// what its probe confirms of what the host reports, then to what the build requires.
     fn fit(
@@ -97,6 +59,9 @@ impl Resolver {
         caps: &Capabilities,
     ) -> Result<Accelerator, Rejection> {
         let spec = backend.spec();
+        if let Some(reason) = backend.unavailable() {
+            return Err(Rejection::BackendUnavailable(reason));
+        }
         let probed = self.probe(backend, caps);
         // A probe narrows what the host reports, never widens it.
         let mut working = spec
@@ -144,13 +109,5 @@ impl Resolver {
             .entry(backend.spec().id)
             .or_insert_with(|| backend.probe(caps))
             .clone()
-    }
-}
-
-fn rejected(model: &ModelEntry, build: &BuildEntry, why: Rejection) -> Offer {
-    Offer::Rejected {
-        model: model.clone(),
-        build: build.clone(),
-        why,
     }
 }
