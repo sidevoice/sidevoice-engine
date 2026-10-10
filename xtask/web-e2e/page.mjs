@@ -303,11 +303,15 @@ try {
     turn.free();
   }
 
+  const loaded = whisper.build;
   stt.free();
   whisper.free();
-  const uninstalled = await rejection(engine.uninstall(plan.stt.model));
-  await check("once freed, a model uninstalls", uninstalled === null, uninstalled);
-  await check("an uninstalled model says so", !(await model(plan.stt.model)).installed);
+  const unknown = await rejection(engine.uninstall(plan.stt.model, "no-such-build"));
+  await check("an unknown build is not uninstalled", unknown === "build-not-found", unknown);
+  const uninstalled = await rejection(engine.uninstall(plan.stt.model, loaded));
+  await check("once freed, its build uninstalls", uninstalled === null, uninstalled);
+  const build = (await model(plan.stt.model)).builds.find((build) => build.id === loaded);
+  await check("an uninstalled build says so", !build.installed);
 } catch (error) {
   report.error = { code: error?.code ?? null, message: String(error?.message ?? error), stack: String(error?.stack ?? "") };
   await log("error:", report.error);

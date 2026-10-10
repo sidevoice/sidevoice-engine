@@ -106,9 +106,10 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 - **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, every build
   ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
-  recommends. `Engine::install` and `Engine::uninstall` take a model id (and, to install, a build id or `None`);
-  uninstalling removes each of the model's build folders, keeps any file another build's folder links, and refuses a
-  model that is loaded (`model-in-use`).
+  recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
+  removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
+  refuses a build that is loaded (`model-in-use`) or being installed (`install-in-progress`). Removing one build is
+  what undoes an install that finished before its cancel landed.
 - **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
   recommended one) and returns a `LocalModel`: `as_stt()`, `as_tts()`, `as_vad()` and `as_end_of_turn()` hand out
   what it can do, the capability interfaces (`Stt`, `Tts`, `Vad`, `EndOfTurn`) a `RemoteModel` hands out too. Speech to

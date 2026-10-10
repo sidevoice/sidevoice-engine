@@ -147,12 +147,14 @@ impl WebEngine {
         })
     }
 
-    /// Removes `model`'s files, except those another model uses; rejects with `model-in-use` while it is loaded.
+    /// Removes `build` of `model` (every build of it when left out), except files another build uses; rejects with
+    /// `build-not-found`, `model-in-use` while one of those builds is loaded, `install-in-progress` while one is being
+    /// installed.
     #[wasm_bindgen(unchecked_return_type = "Promise<void>")]
-    pub fn uninstall(&self, model: String) -> Promise {
+    pub fn uninstall(&self, model: String, build: Option<String>) -> Promise {
         let engine = Rc::clone(&self.engine);
         promise(async move {
-            engine.uninstall(&model).await?;
+            engine.uninstall(&model, build.as_deref()).await?;
             Ok(JsValue::UNDEFINED)
         })
     }
