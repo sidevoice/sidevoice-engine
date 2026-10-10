@@ -1,6 +1,6 @@
 //! A provider's API as its adapter calls it: through the host's HTTP, with the key the host hands over for each call
 //! ([`Api`]); the statuses every provider answers alike; and the request and answer bodies they share (multipart forms,
-//! JSON, a WAV file of a turn, 16-bit PCM back).
+//! JSON, a WAV file of a turn, 16-bit PCM back); and the provider's OpenAPI spec, read as any page is.
 
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use Kind::{Call, Listing};
 #[cfg(test)]
 mod tests;
 
-/// One provider's API, through the host: its HTTP and its key.
+/// One provider's API, through the host: its HTTP and its key; and what the provider said when it last refused.
 #[derive(Clone)]
 pub(crate) struct Api {
     host: Arc<dyn Host>,
@@ -26,6 +26,28 @@ impl Api {
             host: Arc::clone(host),
             id,
         }
+    }
+
+    /// The provider's OpenAPI spec at `url`, read without the key: `provider-spec-unreadable` when it cannot be
+    /// fetched or is not JSON.
+    pub(crate) async fn spec(&self, url: &str) -> Result<serde_json::Value> {
+        let request = HttpRequest {
+            method: "GET",
+            url: url.to_owned(),
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        let unreadable = || Error::new("provider-spec-unreadable");
+        let response = self
+            .host
+            .http()
+            .send(request)
+            .await
+            .map_err(|_| unreadable())?;
+        if !(200..=299).contains(&response.status) {
+            return Err(unreadable());
+        }
+        serde_json::from_slice(&response.body).map_err(|_| unreadable())
     }
 
     /// The provider's key, asked of the host for this call alone: `credential-missing` when it has none.
@@ -49,7 +71,8 @@ impl Api {
     }
 
     /// Sends `request`, a listing, and returns the body of a success: as [`Api::call`], but a key the provider
-    /// knows and does not let list (403) is `listing-not-permitted`, an account out of credit or asking to slow down
+    /// knows and does not let list (403, or a 401 that says a permission is missing: ElevenLabs answers a scoped key
+    /// that lacks one so) is `listing-not-permitted`, an account out of credit or asking to slow down
     /// (402, 429) `provider-quota`, a server failing (5xx) or no answer at all `provider-unreachable`, and any other
     /// failure `listing-failed`.
     pub(crate) async fn list(&self, request: HttpRequest) -> Result<Vec<u8>> {
@@ -63,7 +86,10 @@ impl Api {
         let response = self.host.http().send(request).await?;
         match response.status {
             200..=299 => Ok(response.body),
-            status => Err(failed(self.id, status, &response.body, kind)),
+            status => {
+                let said = said(&response.body);
+                Err(failed(self.id, status, &response.body, said.as_ref(), kind))
+            }
         }
     }
 }
@@ -75,8 +101,49 @@ enum Kind {
     Listing,
 }
 
-/// The code for an answer of `status` to a request of `kind`, with what the provider said in the console on the web.
-fn failed(provider: &str, status: u16, body: &[u8], kind: Kind) -> Error {
+/// What a provider says when it refuses: its own status or code, and its message. ElevenLabs answers
+/// `{"detail": {"status" or "code", "message"}}`, OpenAI `{"error": {"code" or "type", "message"}}`.
+struct Said {
+    status: Option<String>,
+    message: Option<String>,
+}
+
+impl Said {
+    fn text(&self) -> String {
+        match (&self.status, &self.message) {
+            (Some(status), Some(message)) => format!("{status}: {message}"),
+            (Some(said), None) | (None, Some(said)) => said.clone(),
+            (None, None) => String::new(),
+        }
+    }
+
+    /// Whether it says the key lacks a permission.
+    fn lacks_permission(&self) -> bool {
+        matches!(
+            self.status.as_deref(),
+            Some("missing_permissions" | "insufficient_permissions")
+        )
+    }
+}
+
+fn said(body: &[u8]) -> Option<Said> {
+    let body: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let detail = [&body["detail"], &body["error"]]
+        .into_iter()
+        .find(|detail| detail.is_object())?;
+    let text = |field: &str| detail[field].as_str().map(str::to_owned);
+    let said = Said {
+        status: text("status")
+            .or_else(|| text("code"))
+            .or_else(|| text("type")),
+        message: text("message"),
+    };
+    (said.status.is_some() || said.message.is_some()).then_some(said)
+}
+
+/// The code for an answer of `status` to a request of `kind`, carrying what the provider said (its own code and
+/// message, or the start of a body that is not its JSON error), also in the console on the web.
+fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: Kind) -> Error {
     #[cfg(web)]
     web_sys::console::warn_4(
         &"sidevoice-engine: the provider answered".into(),
@@ -87,8 +154,18 @@ fn failed(provider: &str, status: u16, body: &[u8], kind: Kind) -> Error {
             .into(),
     );
     #[cfg(not(web))]
-    let _ = (provider, body);
-    Error::new(match (status, kind) {
+    let _ = provider;
+    let lacks_permission = said.is_some_and(Said::lacks_permission);
+    let detail = match said {
+        Some(said) => Some(said.text()),
+        None => {
+            let text = String::from_utf8_lossy(&body[..body.len().min(300)]);
+            let text = text.trim();
+            (!text.is_empty()).then(|| text.to_owned())
+        }
+    };
+    let code = match (status, kind) {
+        (401 | 403, Listing) if lacks_permission => "listing-not-permitted",
         (401, _) => "credential-rejected",
         (402, _) | (429, Listing) => "provider-quota",
         (403, Call(_)) => "credential-rejected",
@@ -97,7 +174,8 @@ fn failed(provider: &str, status: u16, body: &[u8], kind: Kind) -> Error {
         (500..=599, Listing) => "provider-unreachable",
         (_, Listing) => "listing-failed",
         (_, Call(failure)) => failure,
-    })
+    };
+    Error::with_detail(code, detail)
 }
 
 /// The JSON of a listing's answer, `listing-failed` when it is not JSON.

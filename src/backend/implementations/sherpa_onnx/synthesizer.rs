@@ -37,9 +37,9 @@ impl Synthesizer {
     /// `speaker_names` metadata of the file of a `*.model` key, when it names as many as the model has speakers;
     /// otherwise by speaker id, `"0"`, `"1"`, .... Fails with `model-load-failed`.
     pub(super) fn load(config: &OfflineTtsConfig, files: &Installed) -> Result<Self> {
-        let failed = Error::new("model-load-failed");
-        let tts = OfflineTts::create(config).ok_or(failed)?;
-        let sample_rate = u32::try_from(tts.sample_rate()).map_err(|_| failed)?;
+        let failed = || Error::new("model-load-failed");
+        let tts = OfflineTts::create(config).ok_or_else(failed)?;
+        let sample_rate = u32::try_from(tts.sample_rate()).map_err(|_| failed())?;
         let speakers = usize::try_from(tts.num_speakers()).unwrap_or_default();
         let named = key_ending(files, ".model")
             .and_then(|model| model_metadata::read(Path::new(model), "speaker_names"))
@@ -135,7 +135,7 @@ impl TtsModel for Synthesizer {
         language: Option<&str>,
         speed: f32,
     ) -> Result<Vec<f32>> {
-        let failed = Error::new("speech-failed");
+        let failed = || Error::new("speech-failed");
         let sid = self
             .voices
             .iter()
@@ -145,7 +145,7 @@ impl TtsModel for Synthesizer {
         let extra =
             lang.map(|lang| HashMap::from([("lang".to_owned(), serde_json::Value::String(lang))]));
         let config = GenerationConfig {
-            sid: i32::try_from(sid).map_err(|_| failed)?,
+            sid: i32::try_from(sid).map_err(|_| failed())?,
             speed,
             extra,
             ..GenerationConfig::default()
@@ -153,7 +153,7 @@ impl TtsModel for Synthesizer {
         let audio = self
             .tts
             .generate_with_config(&text(words)?, &config, None::<fn(&[f32], f32) -> bool>)
-            .ok_or(failed)?;
+            .ok_or_else(failed)?;
         Ok(audio.samples().to_vec())
     }
 }

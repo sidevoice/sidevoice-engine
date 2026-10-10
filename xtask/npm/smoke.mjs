@@ -14,6 +14,6 @@ const host = {
   },
 };
 const engine = await WebEngine.create(host);
-// No key: listing the providers asks nothing of them.
-const providers = (await engine.providers()).map((provider) => provider.id);
-console.log(JSON.stringify({ wasm: wasm.pathname, backends: engine.backends(), providers }));
+// The catalogues: the local one, and each remote provider. Naming them asks nothing of anyone.
+const catalogs = engine.catalogs().map((catalog) => catalog.id);
+console.log(JSON.stringify({ wasm: wasm.pathname, backends: engine.backends(), catalogs }));

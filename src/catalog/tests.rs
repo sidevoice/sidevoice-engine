@@ -1,6 +1,6 @@
 //! What `Catalog::check` finds in a merged catalogue, and how sources merge.
 
-use super::{Catalog, CatalogFragment, CatalogSource, Problem};
+use super::{CatalogFragment, CatalogSource, MergedCatalog, Problem};
 use crate::test_support::{build, family, model, FakeCatalog};
 use crate::{Capability, Family, Result};
 
@@ -19,14 +19,14 @@ impl CatalogSource for Families {
 }
 
 fn problems(families: Vec<Family>) -> Vec<Problem> {
-    Catalog::merge(&[Box::new(Families(families)) as Box<dyn CatalogSource>])
+    MergedCatalog::merge(&[Box::new(Families(families)) as Box<dyn CatalogSource>])
         .expect("catalogue")
         .check(&crate::backend::is_known)
 }
 
 #[test]
 fn a_consistent_catalogue_has_no_problems() {
-    let catalog = Catalog::merge(&[Box::new(FakeCatalog) as Box<dyn CatalogSource>]);
+    let catalog = MergedCatalog::merge(&[Box::new(FakeCatalog) as Box<dyn CatalogSource>]);
     assert_eq!(
         catalog.expect("catalogue").check(&crate::backend::is_known),
         []
@@ -35,7 +35,7 @@ fn a_consistent_catalogue_has_no_problems() {
 
 #[test]
 fn sources_merge_in_order_and_a_family_twice_is_a_problem() {
-    let catalog = Catalog::merge(&[
+    let catalog = MergedCatalog::merge(&[
         Box::new(FakeCatalog) as Box<dyn CatalogSource>,
         Box::new(FakeCatalog),
     ])
@@ -213,4 +213,49 @@ fn call_params_take_one_path_or_a_list() {
         ["canary.src_lang", "canary.tgt_lang"]
     );
     assert_eq!(build.call_params["other"], ["x.y"]);
+}
+
+#[test]
+fn a_familys_speed_range_must_be_positive_ordered_and_sourced() {
+    let speed = |min: f32, max: f32, source: &str, decided_by: Option<&str>| {
+        let mut family = family(
+            "f",
+            vec![model(
+                "m",
+                Capability::Tts,
+                vec![build("m/b", "sherpa-onnx", 1)],
+            )],
+        );
+        family.speed = Some(crate::FamilySpeed {
+            min,
+            max,
+            source: source.to_owned(),
+            decided_by: decided_by.map(str::to_owned),
+        });
+        problems(vec![family])
+    };
+    let invalid = [Problem::InvalidSpeed {
+        family: "f".to_owned(),
+    }];
+    let source = "https://example.com";
+    assert_eq!(speed(0.5, 2.0, source, None), []);
+    assert_eq!(
+        speed(0.5, 2.0, source, Some("sidevoice: our choice")),
+        [],
+        "a decided range"
+    );
+    assert_eq!(speed(2.0, 0.5, source, None), invalid);
+    assert_eq!(speed(0.0, 1.0, source, None), invalid);
+    assert_eq!(speed(0.5, 2.0, " ", None), invalid);
+    assert_eq!(
+        speed(0.5, 2.0, source, Some(" ")),
+        invalid,
+        "a decision says who made it"
+    );
+}
+
+#[test]
+fn a_familys_speed_needs_both_bounds() {
+    let json = r#"{"min": 0.5, "source": "https://example.com"}"#;
+    assert!(serde_json::from_str::<crate::FamilySpeed>(json).is_err());
 }

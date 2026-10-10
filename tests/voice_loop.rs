@@ -1,6 +1,6 @@
 //! The voice loop for real, through the engine's public API only, as an app runs it: `NativeHost`, the bundled
-//! catalogue, `Engine::models` (the build the plan names, which must run here), `Engine::load`, then the loaded model's `as_tts`
-//! (`voices`, `speak`) and `as_stt` (`transcribe`).
+//! catalogue, the local catalogue's models (the build the plan names, which must run here), `Engine::load`, then the
+//! loaded model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`).
 //!
 //! What it runs is data, `tests/voice_loop.json`, which names catalogue builds, so one model can be heard on several
 //! backends (Whisper on sherpa-onnx and on whisper.cpp): each text-to-speech build says its language's sentence with the voice
@@ -365,7 +365,8 @@ fn load(
     build: &str,
     loaded_on: &mut BTreeMap<String, Option<Accelerator>>,
 ) -> Result<LocalModel> {
-    let models = block_on(engine.models()).map_err(|e| format!("the models: {e}"))?;
+    let local = engine.local_catalog();
+    let models = block_on(local.models(None)).map_err(|e| format!("the models: {e}"))?;
     let (model, entry) = models
         .iter()
         .find_map(|model| {

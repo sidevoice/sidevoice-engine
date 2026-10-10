@@ -1,24 +1,31 @@
-//! ElevenLabs' adapter against a fake provider: what its listings keep (models, the account's voices and their
-//! languages), Scribe's form, what speech sends and what comes back; no key, no network.
+//! ElevenLabs' adapter against a fake provider: what it reads from its spec, what its listings keep (models, the
+//! account's voices and their languages), Scribe's form, what speech sends and what comes back; no key, no network.
 
 use std::sync::Arc;
 
+use serde_json::{json, Value};
+
 use super::ElevenLabs;
 use crate::backend::BackendModel;
-use crate::provider::{Adapter, ProviderModel};
+use crate::provider::{Adapter, Facts, RemoteModelInfo};
 use crate::test_support::{block_on, contains, header, remote_api, FakeProvider};
-use crate::{Capability, Gender, Voice};
+use crate::{Capability, Gender, SpeedRange, Voice};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
-/// `/v1/models`: two text-to-speech models the spec describes, one it does not, and one that does not speak.
+/// `/v1/models` for an account with more text-to-speech models than the spec has requests of its own for, Scribe (which
+/// does not speak), and a model that is neither (voice changing).
 const MODELS: &[u8] = br#"[
     {"model_id": "eleven_flash_v2_5", "can_do_text_to_speech": true,
      "languages": [{"language_id": "en", "name": "English"}, {"language_id": "es", "name": "Spanish"}]},
+    {"model_id": "eleven_turbo_v2_5", "can_do_text_to_speech": true, "languages": [{"language_id": "en", "name": "English"}]},
     {"model_id": "eleven_multilingual_v2", "can_do_text_to_speech": true, "languages": []},
-    {"model_id": "eleven_turbo_v9", "can_do_text_to_speech": true, "languages": []},
-    {"model_id": "eleven_v3", "can_do_text_to_speech": false, "languages": []}
+    {"model_id": "eleven_v3", "can_do_text_to_speech": true, "languages": []},
+    {"model_id": "eleven_flash_v4", "can_do_text_to_speech": true, "languages": []},
+    {"model_id": "eleven_v4", "can_do_text_to_speech": true, "languages": []},
+    {"model_id": "scribe_v2", "can_do_text_to_speech": false, "languages": [{"language_id": "en", "name": "English"}]},
+    {"model_id": "eleven_english_sts_v2", "can_do_text_to_speech": false, "languages": []}
 ]"#;
 
 /// `/v1/voices`: a default voice, verified in two languages, and a cloned one with a language label.
@@ -31,6 +38,107 @@ const VOICES: &[u8] = br#"{"voices": [
      "labels": {"language": "es", "gender": "non-binary"}, "verified_languages": []}
 ]}"#;
 
+/// The parts of ElevenLabs' spec its facts come from: three per-model requests, a request of another kind with a
+/// `const` model, the speech-to-text body and the speech path's formats.
+fn spec() -> Value {
+    let speed = json!({ "anyOf": [{ "type": "number", "minimum": 0.7, "maximum": 1.2 }, { "type": "null" }] });
+    json!({
+        "paths": {
+            "/v1/text-to-speech/{voice_id}": { "post": {
+                "parameters": [
+                    { "name": "output_format", "schema": { "type": "string", "enum": ["mp3_44100_128", "pcm_24000"] } },
+                ],
+                "requestBody": { "content": { "application/json": {
+                    "schema": { "$ref": "#/components/schemas/General" },
+                }}},
+            }},
+            "/v1/speech-to-text": { "post": { "requestBody": { "content": { "multipart/form-data": {
+                "schema": { "$ref": "#/components/schemas/Body" },
+            }}}}},
+        },
+        "components": { "schemas": {
+            "ElevenFlashV2_5Request": { "properties": {
+                "text": {}, "voice": {}, "model_id": { "const": "eleven_flash_v2_5" }, "language_code": {},
+                "voice_settings": { "anyOf": [{ "$ref": "#/components/schemas/Settings" }, { "type": "null" }] },
+            }},
+            "ElevenV3Request": { "properties": {
+                "text": {}, "voice": {}, "model_id": { "const": "eleven_v3" }, "language_code": {},
+                "voice_settings": { "anyOf": [{ "$ref": "#/components/schemas/V3Settings" }, { "type": "null" }] },
+            }},
+            "ElevenMultilingualV2Request": { "properties": {
+                "text": {}, "voice": {}, "model_id": { "const": "eleven_multilingual_v2" },
+                "voice_settings": { "anyOf": [{ "$ref": "#/components/schemas/Settings" }, { "type": "null" }] },
+            }},
+            "MusicRequest": { "properties": { "prompt": {}, "model_id": { "const": "music_v1" } } },
+            "V3Settings": { "properties": { "stability": {} } },
+            "General": { "properties": {
+                "text": {}, "model_id": { "type": "string" }, "language_code": {},
+                "voice_settings": { "anyOf": [{ "$ref": "#/components/schemas/StoredSettings" }, { "type": "null" }] },
+            }},
+            "StoredSettings": { "properties": { "speed": { "anyOf": [{ "type": "number" }, { "type": "null" }] } } },
+            "Settings": { "properties": { "speed": speed } },
+            "Body": { "properties": {
+                "model_id": { "type": "string", "examples": ["scribe_v2", "scribe_v2_medical"] },
+                "language_code": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            }},
+        }},
+    })
+}
+
+fn facts() -> Facts {
+    ElevenLabs.facts(&spec()).expect("facts")
+}
+
+#[test]
+fn its_facts_come_from_its_per_model_requests_and_the_speech_to_text_body() {
+    let facts = facts();
+    let models: Vec<_> = facts
+        .models()
+        .map(|(capability, model)| {
+            (
+                capability,
+                model.model.as_str(),
+                model.language.as_deref(),
+                model.speed,
+            )
+        })
+        .collect();
+    assert_eq!(
+        models,
+        [
+            (Capability::Stt, "scribe_v2", Some("language_code"), None),
+            (
+                Capability::Stt,
+                "scribe_v2_medical",
+                Some("language_code"),
+                None
+            ),
+            (
+                Capability::Tts,
+                "eleven_flash_v2_5",
+                Some("language_code"),
+                Some([0.7, 1.2])
+            ),
+            (
+                Capability::Tts,
+                "eleven_multilingual_v2",
+                None,
+                Some([0.7, 1.2])
+            ),
+            (Capability::Tts, "eleven_v3", Some("language_code"), None),
+        ],
+        "not the music model"
+    );
+    assert!(facts.voices.is_empty(), "the account's, listed live");
+    let mut no_pcm = spec();
+    no_pcm["paths"]["/v1/text-to-speech/{voice_id}"]["post"]["parameters"][0]["schema"]["enum"] =
+        json!(["mp3_44100_128"]);
+    assert_eq!(
+        ElevenLabs.facts(&no_pcm).map_err(|e| e.code),
+        Err("provider-spec-unreadable")
+    );
+}
+
 fn voice(id: &str) -> Voice {
     Voice {
         id: id.to_owned(),
@@ -40,51 +148,56 @@ fn voice(id: &str) -> Voice {
     }
 }
 
-fn model(id: &str, capability: Capability, speed: Option<[f32; 2]>) -> ProviderModel {
-    ProviderModel {
+fn model(id: &str, capability: Capability, speed: Option<[f32; 2]>) -> RemoteModelInfo {
+    RemoteModelInfo {
         id: id.to_owned(),
         capabilities: vec![capability],
         languages: Vec::new(),
         voices: vec![voice("21m00Tcm4TlvDq8ikWAM"), voice("EXAVITQu4vr4xnSDxMaL")],
-        speed,
+        speed: speed.map(|[min, max]| SpeedRange { min, max }),
     }
 }
 
-fn open(model: &ProviderModel) -> (Box<dyn BackendModel>, Arc<FakeProvider>) {
+fn open(model: &RemoteModelInfo) -> (Box<dyn BackendModel>, Arc<FakeProvider>) {
     let (api, provider) = remote_api("elevenlabs");
     provider.key("elevenlabs", "xi-test");
-    (ElevenLabs.open(api, model).expect("opened"), provider)
+    (
+        ElevenLabs.open(api, model, &facts()).expect("opened"),
+        provider,
+    )
 }
 
 #[test]
-fn the_listing_keeps_the_spec_s_models_the_key_can_use_with_their_languages() {
+fn every_model_the_listing_says_speaks_is_offered_and_the_spec_only_enriches_it() {
     let (api, provider) = remote_api("elevenlabs");
     provider.key("elevenlabs", "xi-test");
     provider.answer("https://api.elevenlabs.io/v1/models", 200, MODELS);
-    let models = block_on(ElevenLabs.models(&api)).expect("listed");
+    let models = block_on(ElevenLabs.models(&api, &facts())).expect("listed");
     let listed: Vec<_> = models
         .iter()
         .map(|model| {
             (
                 model.id.as_str(),
                 model.capabilities[0],
-                model.languages.clone(),
+                model.languages.len(),
+                model.speed.map(|speed| [speed.min, speed.max]),
             )
         })
         .collect();
+    let speed = Some([0.7, 1.2]);
     assert_eq!(
         listed,
         [
-            ("scribe_v2", Capability::Stt, vec![]),
-            ("scribe_v2_medical", Capability::Stt, vec![]),
-            (
-                "eleven_flash_v2_5",
-                Capability::Tts,
-                vec!["en".to_owned(), "es".to_owned()]
-            ),
-            ("eleven_multilingual_v2", Capability::Tts, vec![]),
+            ("eleven_flash_v2_5", Capability::Tts, 2, speed),
+            ("eleven_turbo_v2_5", Capability::Tts, 1, None),
+            ("eleven_multilingual_v2", Capability::Tts, 0, speed),
+            ("eleven_v3", Capability::Tts, 0, None),
+            ("eleven_flash_v4", Capability::Tts, 0, None),
+            ("eleven_v4", Capability::Tts, 0, None),
+            ("scribe_v2", Capability::Stt, 1, None),
         ],
-        "Scribe from the spec; text to speech where the key's listing says it speaks and the spec describes it"
+        "every model the listing says speaks, in its order, more than the spec has requests for; Scribe because the 
+         spec names it; a speed range only where the spec gives one"
     );
     let request = &provider.requests()[0];
     assert_eq!(
@@ -98,7 +211,7 @@ fn the_voices_are_the_accounts_with_their_own_language_first() {
     let (api, provider) = remote_api("elevenlabs");
     provider.key("elevenlabs", "xi-test");
     provider.answer("https://api.elevenlabs.io/v1/voices", 200, VOICES);
-    let voices = block_on(ElevenLabs.voices(&api)).expect("listed");
+    let voices = block_on(ElevenLabs.voices(&api, &facts())).expect("listed");
     assert_eq!(
         voices,
         [
@@ -119,7 +232,7 @@ fn the_voices_are_the_accounts_with_their_own_language_first() {
     let (api, provider) = remote_api("elevenlabs");
     provider.key("elevenlabs", "xi-test");
     provider.answer("https://api.elevenlabs.io/v1/voices", 200, b"not json");
-    let listed = block_on(ElevenLabs.voices(&api)).map_err(|e| e.code);
+    let listed = block_on(ElevenLabs.voices(&api, &facts())).map_err(|e| e.code);
     assert_eq!(listed, Err("listing-failed"));
 }
 
@@ -191,6 +304,21 @@ fn speech_comes_as_pcm_at_24_khz_with_the_language_and_a_speed_in_range() {
     assert_eq!(
         block_on(tts.speak("Hola", &voice("nobody"), None, 1.0)).map_err(|e| e.code),
         Err("unknown-voice")
+    );
+}
+
+#[test]
+fn a_model_the_spec_has_no_request_for_follows_the_general_one() {
+    let (mut model, provider) = open(&model("eleven_flash_v4", Capability::Tts, None));
+    provider.answer("https://api.elevenlabs.io/v1/text-to-speech/", 200, &[]);
+    let tts = model.as_tts().expect("text to speech");
+    block_on(tts.speak("Hola", &voice("21m00Tcm4TlvDq8ikWAM"), Some("es"), 1.1)).expect("spoken");
+    let body: serde_json::Value =
+        serde_json::from_slice(&provider.requests()[0].body).expect("JSON");
+    assert_eq!(
+        body,
+        json!({ "text": "Hola", "model_id": "eleven_flash_v4", "language_code": "es" }),
+        "the general request takes a language; its stored settings give no speed range, so no speed is sent"
     );
 }
 

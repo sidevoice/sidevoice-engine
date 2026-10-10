@@ -24,7 +24,8 @@ const engine = await WebEngine.create({
     return localStorage.getItem(`key:${provider}`);
   },
 });
-const models = await engine.models(); // each with its builds ranked, whether it is installed, the recommended build
+const local = engine.localCatalog();
+const models = await local.models(); // LocalModelInfo[]: each with its builds ranked, whether it is installed
 const whisper = await engine.load("whisper-small", undefined, (progress) => show(progress), abort.signal);
 const stt = whisper.asStt();
 const text = await stt.transcribe(samples, 48000, "es"); // any rate: the engine resamples
@@ -38,10 +39,14 @@ const p = await smartTurn.asEndOfTurn().probability(turnSoFar, 48000); // the pr
 stt.free(); // the model leaves memory once its LocalModel and the Stt and Tts it handed out are freed
 whisper.free(); // (or collected)
 
-// Remote providers, beside the catalogue: listed live with the app's keys, kept in memory only.
-const providers = await engine.providers(); // each { id, name, status?, stale, models: [{ id, capabilities, languages, voices, speed? }] }
-await engine.refresh("elevenlabs"); // listed again now
-const scribe = await engine.remote("elevenlabs", "scribe_v2"); // a RemoteModel: the same asStt(), asTts()
+// Every catalogue alike: "local", then each remote provider, listed live with the app's keys, kept in memory only.
+for (const catalog of engine.catalogs()) {
+  const { reason, stale, detail } = await catalog.status(); // reason absent when current
+  const speakers = await catalog.models("tts"); // each { id, capabilities, languages, voices, speed? }, and its own fields
+}
+const elevenlabs = engine.remoteCatalog("elevenlabs");
+await elevenlabs.refresh(); // read again now
+const scribe = await elevenlabs.load("scribe_v2"); // a RemoteModel: the same asStt(), asTts()
 const heard = await scribe.asStt().transcribe(samples, 48000, "es");
 ```
 

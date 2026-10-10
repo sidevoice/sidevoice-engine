@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use super::Rejection;
 use super::Resolver;
 use crate::backend::{Backend, BackendSpec, Library, MinCores};
-use crate::catalog::{BuildEntry, Catalog, CatalogFragment, CatalogSource};
+use crate::catalog::{BuildEntry, CatalogFragment, CatalogSource, MergedCatalog};
 use crate::install::Installed;
 use crate::test_support::{build, family, model};
 use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
@@ -84,7 +84,7 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
 /// Every build of every model of `capability` in `catalog`, with its model's id and where it runs here or why not: what
 /// the engine lists, through `Resolver::builds`.
 fn ranked(
-    catalog: &Catalog,
+    catalog: &MergedCatalog,
     backends: &[Box<dyn Backend>],
     caps: &Capabilities,
     capability: Capability,
@@ -105,7 +105,7 @@ fn ranked(
 
 /// The one build `catalog` has: where it runs here, or why not.
 fn only(
-    catalog: &Catalog,
+    catalog: &MergedCatalog,
     backends: &[Box<dyn Backend>],
     caps: &Capabilities,
 ) -> Result<Accelerator, Rejection> {
@@ -126,7 +126,8 @@ fn fit_requiring(
     caps: &Capabilities,
 ) -> Result<Accelerator, Rejection> {
     let source = OneBuildCatalog(accelerators);
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     only(&catalog, &[FixedProbeBackend::probing(probe)], caps)
 }
 
@@ -207,7 +208,8 @@ fn a_build_runs_only_on_accelerators_it_requires_in_the_backends_order() {
 #[test]
 fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
     let source = crate::BundledCatalog;
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let builds = ranked(
         &catalog,
         &[FixedProbeBackend::probing(COREML_AND_CPU)],
@@ -230,7 +232,8 @@ fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
 #[test]
 fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
     let source = crate::BundledCatalog;
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let fp16_accelerators = |accelerators: &[Accelerator]| -> Vec<Accelerator> {
         let backend = || -> Box<dyn Backend> {
             Box::new(PageBackend(BackendSpec {
@@ -299,7 +302,8 @@ impl CatalogSource for WasmCatalog {
 /// The one build of [`WasmCatalog`] taking `memory_mb`, on a host that `runs` there, offered or why not.
 fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
     let source = WasmCatalog(memory_mb);
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let backend = PageBackend(BackendSpec {
         id: "transformers-js",
         name: "a backend of the page",
@@ -364,7 +368,8 @@ impl Backend for StubBackend {
 #[test]
 fn a_stub_backends_builds_do_not_run_here_and_say_why() {
     let source = OneBuildCatalog(&[]);
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let stub = StubBackend(FixedProbeBackend::probing(COREML_AND_CPU));
     let fits = caps(COREML_AND_CPU, Some(16_384), Some(8));
     assert_eq!(

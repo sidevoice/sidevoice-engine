@@ -18,18 +18,18 @@ Rules for any coding agent (and person) working in this repository.
 Read `README.md` (what the engine is and where things are) and `RELEASING.md` (how it is versioned and released).
 The repository is Rust only: one crate (`src/`), and the build tooling `cargo xtask` (`xtask/`).
 
-- **Two siblings produce models** (sidevoice-engine#63): the catalogue, of local models (files, families, builds,
-  backends, accelerators, install; `Engine::models`, `Engine::load`, a `LocalModel`), and the remote providers
-  (`src/provider/`: OpenAI, ElevenLabs; `Engine::providers`, `Engine::remote`, a `RemoteModel`). A provider is not a
-  backend: it has no builds, no install and no accelerator, and its models are not in the catalogue. Each provider is
-  one file that registers itself, as backends do; it lists its models live from its API through the host, and the
-  engine keeps the listing in memory only (`Engine::refresh`), with the provider's own status. What an API does not say
-  about its models (which are speech to text, the request field of the language, speed ranges, fixed voices) is
-  derived from the provider's official OpenAPI spec by `cargo xtask pin-providers`, pinned, and checked for drift:
-  nothing about a remote model is written by hand.
-- **One set of capability interfaces** (`src/capability.rs`: `Stt`, `Tts`, `Vad`, `EndOfTurn`), outside both
-  siblings: a `LocalModel` and a `RemoteModel` hand out the same ones, and transcribing with Whisper or with OpenAI is
-  the same call. Code that uses the engine works against them.
+- **Models come from catalogues, one interface** (sidevoice-engine#63; `Engine::catalogs`, `Catalog`: an id, a status,
+  its models by capability, `refresh`, `load`). The local catalogue (files, families, builds, backends, accelerators,
+  install; its builds also through `Engine::install`, `uninstall` and `load`) is one; each remote provider
+  (`src/provider/`: OpenAI, ElevenLabs) is another; an engine on the host would be one more. A provider is not a
+  backend: it has no builds, no install and no accelerator, and its models are not in the local catalogue. Each
+  provider is one file that registers itself, as backends do; it reads its official OpenAPI spec at run time through
+  the host, derives from it what the API does not say (which models are speech to text, where the language goes, speed
+  ranges, fixed voices), lists its models live, and the engine keeps spec facts and listing in memory only, with the
+  provider's own status. Nothing about a remote model is written by hand or generated into the repository.
+- **One set of capability interfaces** (`src/capability.rs`: `Stt`, `Tts`, `Vad`, `EndOfTurn`), outside the
+  catalogues: a `LocalModel` and a `RemoteModel` (either is a catalogue's `LoadedModel`) hand out the same ones, and
+  transcribing with Whisper or with OpenAI is the same call. Code that uses the engine works against them.
 - **Keys come from the host, never from the engine or the catalogue.** The app keeps them (the OS keychain on
   desktop, the browser's storage on the web) and the host hands one over for each call (`Host::credentials`); the
   engine stores none, and sidevoice-core holds none. The call goes through the host's HTTP (`Host::http`).

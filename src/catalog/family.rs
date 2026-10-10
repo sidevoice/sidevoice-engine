@@ -1,10 +1,10 @@
 use serde::Deserialize;
 
-use super::ModelEntry;
+use super::{FamilySpeed, ModelEntry};
 
 /// A family of models one loader runs (whisper, kokoro, ...), with its models. It has no display name: the app
 /// translates what it shows from the id.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Family {
     /// Its stable id: "whisper", "kokoro", ... A bundled family's file is named after it.
@@ -13,6 +13,10 @@ pub struct Family {
     pub architecture: String,
     /// Where the family comes from: its original publisher's page.
     pub source: String,
+    /// For a text-to-speech family, the speeds its models take, with the provenance of that range; absent, they take no
+    /// speed.
+    #[serde(default)]
+    pub speed: Option<FamilySpeed>,
     /// Its models.
     pub models: Vec<ModelEntry>,
 }

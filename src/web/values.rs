@@ -5,15 +5,15 @@ use js_sys::{Array, Float32Array, Object};
 use wasm_bindgen::JsValue;
 
 use crate::{
-    Accelerator, Audio, Capability, Error, Gender, Model, ModelBuild, Progress, Provider,
-    ProviderModel, Reason, VadEvent, VadOptions, VadOutput, Voice,
+    Accelerator, Audio, Capability, CatalogStatus, Error, Gender, LocalModelInfo, ModelBuild,
+    Progress, Reason, RemoteModelInfo, SpeedRange, VadEvent, VadOptions, VadOutput, Voice,
 };
 
 #[cfg(test)]
 mod tests;
 
-/// `{ id, family, capabilities, parametersM, languages, license, voices, installed, builds, recommendedBuild? }`.
-pub(super) fn model(model: &Model) -> JsValue {
+/// `{ id, family, capabilities, parametersM, languages, license, voices, speed?, installed, builds, recommendedBuild? }`.
+pub(super) fn model(model: &LocalModelInfo) -> JsValue {
     let capabilities: Array = model
         .capabilities
         .iter()
@@ -30,6 +30,7 @@ pub(super) fn model(model: &Model) -> JsValue {
             "voices",
             Some(model.voices.iter().map(voice).collect::<Array>().into()),
         ),
+        ("speed", model.speed.map(speed)),
         ("installed", Some(model.installed.into())),
         (
             "builds",
@@ -65,38 +66,22 @@ fn build(build: &ModelBuild) -> JsValue {
 }
 
 /// `{ code, params: { needs?, has? } }`.
-/// `{ id, name, description, status?, stale, models }`.
-pub(super) fn provider(provider: &Provider) -> JsValue {
+/// `{ reason?, stale, detail? }`.
+pub(super) fn catalog_status(status: &CatalogStatus) -> JsValue {
     object(&[
-        ("id", Some(provider.id.into())),
-        ("name", Some(provider.name.into())),
-        ("description", Some(provider.description.into())),
-        ("status", provider.status.as_ref().map(reason)),
-        ("stale", Some(provider.stale.into())),
-        (
-            "models",
-            Some(
-                provider
-                    .models
-                    .iter()
-                    .map(provider_model)
-                    .collect::<Array>()
-                    .into(),
-            ),
-        ),
+        ("reason", status.reason.as_ref().map(reason)),
+        ("stale", Some(status.stale.into())),
+        ("detail", status.detail.as_deref().map(JsValue::from)),
     ])
 }
 
 /// `{ id, capabilities, languages, voices, speed? }`.
-fn provider_model(model: &ProviderModel) -> JsValue {
+pub(super) fn provider_model(model: &RemoteModelInfo) -> JsValue {
     let capabilities: Array = model
         .capabilities
         .iter()
         .map(|c| JsValue::from(capability(*c)))
         .collect();
-    let speed = model
-        .speed
-        .map(|[low, high]| Array::of2(&JsValue::from(low), &JsValue::from(high)).into());
     object(&[
         ("id", Some(model.id.as_str().into())),
         ("capabilities", Some(capabilities.into())),
@@ -105,7 +90,15 @@ fn provider_model(model: &ProviderModel) -> JsValue {
             "voices",
             Some(model.voices.iter().map(voice).collect::<Array>().into()),
         ),
-        ("speed", speed),
+        ("speed", model.speed.map(speed)),
+    ])
+}
+
+/// `{ min, max }`.
+fn speed(range: SpeedRange) -> JsValue {
+    object(&[
+        ("min", Some(range.min.into())),
+        ("max", Some(range.max.into())),
     ])
 }
 
@@ -160,6 +153,19 @@ pub(super) fn capability(capability: Capability) -> &'static str {
         Capability::Vad => "vad",
         Capability::EndOfTurn => "end-of-turn",
     }
+}
+
+/// The capability JavaScript names `name` (as [`capability`] names it): `invalid-capability` for any other.
+pub(super) fn capability_named(name: &str) -> Result<Capability, Error> {
+    [
+        Capability::Stt,
+        Capability::Tts,
+        Capability::Vad,
+        Capability::EndOfTurn,
+    ]
+    .into_iter()
+    .find(|known| capability(*known) == name)
+    .ok_or(Error::new("invalid-capability"))
 }
 
 /// An accelerator's stable id, as a JavaScript host and the catalogue name it.
