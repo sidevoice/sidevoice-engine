@@ -216,7 +216,11 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
   16 kHz. Streaming is not used (sidevoice-engine#35).
 - **What a call fails with** has its codes: `credential-missing`, `credential-rejected`, `provider-quota` (402),
   `rate-limited` (429), the shared `transcription-failed`, `speech-failed`, `unknown-voice`, and the host's
-  `request-failed` (no answer) and `credentials-failed` (the keys could not be read).
+  `request-failed` (no answer) and `credentials-failed` (the keys could not be read). An error the provider caused
+  also carries what it said, its own code and message (`Error::detail`; `detail` on the npm package's errors), for the
+  app to show as it is (a toast); the engine neither interprets nor remembers it.
+- **The provider decides what it takes.** Every voice OpenAI's spec lists is offered on each of its text-to-speech
+  models; a voice the provider refuses for a model fails with `speech-failed` and the provider's own words.
 - **Real calls in CI** are `remote-live.yml`, by hand and before each release, never on a pull request: per provider,
   that its spec is still read, the listing, one short speech, one short transcription (the voice loop's LibriSpeech
   clip, within its word error rate, with the language sent) and an invalid key. A provider whose key secret is absent

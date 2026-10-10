@@ -56,18 +56,29 @@ pub use maybe_send::{MaybeSend, MaybeSync};
 pub use provider::{ProviderModel, RemoteModel};
 pub use resolver::Reason;
 
-/// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it. One that a
+/// remote provider caused also carries what the provider said, its own code and message (`detail`), for the app to
+/// show as it is (a toast, say): the engine neither interprets nor remembers it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Error {
     /// The stable code, such as `"not-implemented"`.
     pub code: &'static str,
+    /// What a remote provider said when it refused a call, in its own words: `"<its code>: <its message>"`, or either.
+    /// `None` for an error no provider answered.
+    pub detail: Option<String>,
 }
 
 impl Error {
     /// An error with this code.
     #[must_use]
     pub const fn new(code: &'static str) -> Self {
-        Self { code }
+        Self { code, detail: None }
+    }
+
+    /// An error with this code, and what the provider said.
+    #[must_use]
+    pub fn with_detail(code: &'static str, detail: Option<String>) -> Self {
+        Self { code, detail }
     }
 }
 

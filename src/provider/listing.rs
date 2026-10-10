@@ -110,14 +110,14 @@ impl Listings {
         if force || due(listing.models_at, now, MODELS_AGE) {
             let models = adapter.models(api, &facts).await;
             listed = models.is_ok();
-            listing.update(models, api, |listing, models| {
+            listing.update(models, |listing, models| {
                 listing.models = models;
                 listing.models_at = Some(now);
             });
         }
         if listed && (force || due(listing.voices_at, now, VOICES_AGE)) {
             let voices = adapter.voices(api, &facts).await;
-            listing.update(voices, api, |listing, voices| {
+            listing.update(voices, |listing, voices| {
                 listing.voices = voices;
                 listing.voices_at = Some(now);
             });
@@ -127,19 +127,20 @@ impl Listings {
 }
 
 impl Listing {
-    /// Keeps `answer` with `keep` when it is one; otherwise records why not (and what the provider said), and drops
+    /// Keeps `answer` with `keep` when it is one; otherwise records why not (and what the provider said, its error's
+    /// `detail`), and drops
     /// the listing for a key that cannot list.
-    fn update<T>(&mut self, answer: Result<T>, api: &Api, keep: impl FnOnce(&mut Self, T)) {
+    fn update<T>(&mut self, answer: Result<T>, keep: impl FnOnce(&mut Self, T)) {
         match answer {
             Ok(answer) => {
                 keep(self, answer);
                 self.status = None;
                 self.detail = None;
             }
-            Err(Error { code }) if unusable(code) => self.drop_for(code, api.detail()),
-            Err(Error { code }) => {
+            Err(Error { code, detail }) if unusable(code) => self.drop_for(code, detail),
+            Err(Error { code, detail }) => {
                 self.status = Some(code);
-                self.detail = api.detail();
+                self.detail = detail;
             }
         }
     }

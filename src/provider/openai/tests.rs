@@ -341,3 +341,36 @@ fn whisper_1_is_never_sent_a_chunking_strategy() {
         "name=\"chunking_strategy\""
     ));
 }
+
+/// ENG-06: every voice the spec lists is offered on every model, and the provider decides. A voice it refuses for a
+/// model fails with the stable code and carries what the provider said, for the app to show; the engine remembers
+/// nothing of it, so the next call is sent as the first was.
+#[test]
+fn a_voice_the_provider_refuses_fails_with_what_the_provider_said() {
+    let tts_1 = ProviderModel {
+        id: "tts-1".into(),
+        voices: vec![voice("alloy"), voice("marin")],
+        ..speaker()
+    };
+    let (mut model, provider) = open(&tts_1);
+    provider.key("openai", "sk-test");
+    provider.answer(
+        "https://api.openai.com/v1/audio/speech",
+        400,
+        br#"{"error": {"message": "Voice 'marin' is not supported for model 'tts-1'.", "type": "invalid_request_error", "code": "invalid_value"}}"#,
+    );
+    let tts = model.as_tts().expect("text to speech");
+    for _ in 0..2 {
+        let refused = block_on(tts.speak("Hola", &voice("marin"), None, 1.0)).unwrap_err();
+        assert_eq!(refused.code, "speech-failed");
+        assert_eq!(
+            refused.detail.as_deref(),
+            Some("invalid_value: Voice 'marin' is not supported for model 'tts-1'.")
+        );
+    }
+    assert_eq!(
+        provider.requests().len(),
+        2,
+        "nothing remembered: both calls were sent"
+    );
+}

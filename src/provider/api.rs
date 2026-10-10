@@ -2,7 +2,7 @@
 //! ([`Api`]); the statuses every provider answers alike; and the request and answer bodies they share (multipart forms,
 //! JSON, a WAV file of a turn, 16-bit PCM back); and the provider's OpenAPI spec, read as any page is.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
 use crate::host::{Host, HttpRequest};
 use crate::{Error, Result};
@@ -17,7 +17,6 @@ mod tests;
 pub(crate) struct Api {
     host: Arc<dyn Host>,
     id: &'static str,
-    detail: Arc<Mutex<Option<String>>>,
 }
 
 impl Api {
@@ -26,17 +25,7 @@ impl Api {
         Self {
             host: Arc::clone(host),
             id,
-            detail: Arc::default(),
         }
-    }
-
-    /// What the provider said when it last refused a request (its own status or code, and its message), for a
-    /// developer to read: never UI, never parsed further.
-    pub(crate) fn detail(&self) -> Option<String> {
-        self.detail
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
     }
 
     /// The provider's OpenAPI spec at `url`, read without the key: `provider-spec-unreadable` when it cannot be
@@ -99,10 +88,7 @@ impl Api {
             200..=299 => Ok(response.body),
             status => {
                 let said = said(&response.body);
-                let error = failed(self.id, status, &response.body, said.as_ref(), kind);
-                *self.detail.lock().unwrap_or_else(PoisonError::into_inner) =
-                    said.map(|said| said.text());
-                Err(error)
+                Err(failed(self.id, status, &response.body, said.as_ref(), kind))
             }
         }
     }
@@ -155,7 +141,8 @@ fn said(body: &[u8]) -> Option<Said> {
     (said.status.is_some() || said.message.is_some()).then_some(said)
 }
 
-/// The code for an answer of `status` to a request of `kind`, with what the provider said in the console on the web.
+/// The code for an answer of `status` to a request of `kind`, carrying what the provider said (its own code and
+/// message, or the start of a body that is not its JSON error), also in the console on the web.
 fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: Kind) -> Error {
     #[cfg(web)]
     web_sys::console::warn_4(
@@ -167,9 +154,17 @@ fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: K
             .into(),
     );
     #[cfg(not(web))]
-    let _ = (provider, body);
+    let _ = provider;
     let lacks_permission = said.is_some_and(Said::lacks_permission);
-    Error::new(match (status, kind) {
+    let detail = match said {
+        Some(said) => Some(said.text()),
+        None => {
+            let text = String::from_utf8_lossy(&body[..body.len().min(300)]);
+            let text = text.trim();
+            (!text.is_empty()).then(|| text.to_owned())
+        }
+    };
+    let code = match (status, kind) {
         (401 | 403, Listing) if lacks_permission => "listing-not-permitted",
         (401, _) => "credential-rejected",
         (402, _) | (429, Listing) => "provider-quota",
@@ -179,7 +174,8 @@ fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: K
         (500..=599, Listing) => "provider-unreachable",
         (_, Listing) => "listing-failed",
         (_, Call(failure)) => failure,
-    })
+    };
+    Error::with_detail(code, detail)
 }
 
 /// The JSON of a listing's answer, `listing-failed` when it is not JSON.

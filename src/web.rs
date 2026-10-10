@@ -8,7 +8,8 @@
 //! `asEndOfTurn().probability`), with a
 //! progress callback and an `AbortSignal` where the engine takes a [`ProgressSink`](crate::ProgressSink) and a
 //! [`Cancel`]. Every failure rejects with an `Error` that carries the engine's stable `code` and its `params`, which
-//! the page translates; its message is the code too.
+//! the page translates; its message is the code too. One a remote provider caused also carries `detail`, what the
+//! provider said, for the page to show as it is.
 //!
 //! Inside: `host` (the JavaScript host as the engine sees it, with the web build's storage, downloads and API calls),
 //! `opfs` (the browser's private file system, which the storage and the transformers.js backend use) and `values` (the
@@ -42,8 +43,9 @@ use host::WebHost;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TYPES: &'static str = r#"
-/** What every promise of the engine rejects with: the engine's stable code and its parameters. */
-export interface EngineError extends Error { code: string; params: Record<string, number>; }
+/** What every promise of the engine rejects with: the engine's stable code and its parameters, and, for a call a
+ * remote provider refused, what the provider said (`detail`: its own code and message), to show as it is. */
+export interface EngineError extends Error { code: string; params: Record<string, number>; detail?: string; }
 /** Why a build does not run here: a stable code and its numbers (`needs`, `has`) when there are any. */
 export interface Reason { code: string; params: { needs?: number; has?: number }; }
 export interface Voice { id: string; name?: string; languages: string[]; gender?: "female" | "male"; }
@@ -631,6 +633,9 @@ fn coded(error: Error) -> JsValue {
     let js = js_sys::Error::new(error.code);
     set(&js, "code", &error.code.into());
     set(&js, "params", &js_sys::Object::new());
+    if let Some(detail) = &error.detail {
+        set(&js, "detail", &detail.into());
+    }
     js.into()
 }
 

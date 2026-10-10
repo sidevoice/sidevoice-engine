@@ -247,14 +247,13 @@ fn a_listing_refused_keeps_what_the_provider_said() {
         headers: Vec::new(),
         body: Vec::new(),
     };
-    let listed = block_on(api.list(request)).map_err(|e| e.code);
+    let refused = block_on(api.list(request)).map(drop).unwrap_err();
     assert_eq!(
-        listed,
-        Err("listing-not-permitted"),
+        refused.code, "listing-not-permitted",
         "a scoped key, not a bad one"
     );
     assert_eq!(
-        api.detail().as_deref(),
+        refused.detail.as_deref(),
         Some("missing_permissions: The API key you used is missing the permission models_read.")
     );
 }
