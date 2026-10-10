@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.2.0...v0.3.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **engine:** uninstall one build of a model ([#81](https://github.com/sidevoice/sidevoice-engine/issues/81))
+* **engine:** catalogues as one interface, and provider facts read from their specs at run time ([#82](https://github.com/sidevoice/sidevoice-engine/issues/82))
+* **engine:** remote providers beside the catalogue, and one set of capability interfaces ([#80](https://github.com/sidevoice/sidevoice-engine/issues/80))
+
+### Features
+
+* **engine:** catalogues as one interface, and provider facts read from their specs at run time ([#82](https://github.com/sidevoice/sidevoice-engine/issues/82)) ([4f09da7](https://github.com/sidevoice/sidevoice-engine/commit/4f09da7f10c483b977a60abad3652b449b0d992b))
+* **engine:** end-of-turn capability, smart-turn v3 on the linked ONNX Runtime and on transformers.js ([#78](https://github.com/sidevoice/sidevoice-engine/issues/78)) ([8aa89d1](https://github.com/sidevoice/sidevoice-engine/commit/8aa89d1f888f8f2eb40279878c1b15855da36d1b))
+* **engine:** remote providers beside the catalogue, and one set of capability interfaces ([#80](https://github.com/sidevoice/sidevoice-engine/issues/80)) ([344bf2d](https://github.com/sidevoice/sidevoice-engine/commit/344bf2dc3165615d591a66b23b706d7c63c5c9a4))
+* **engine:** uninstall one build of a model ([#81](https://github.com/sidevoice/sidevoice-engine/issues/81)) ([2613c3a](https://github.com/sidevoice/sidevoice-engine/commit/2613c3a6706144d4dbb99ec53f42665a311d3d03))
+* **engine:** voice activity detection (vad), streaming, with Silero on sherpa-onnx and transformers.js ([#71](https://github.com/sidevoice/sidevoice-engine/issues/71)) ([c75831e](https://github.com/sidevoice/sidevoice-engine/commit/c75831e37ad7be6b8da6039240ebc3ff3f7ef137))
+
+
+### Bug Fixes
+
+* night-sweep engine fixes (ENG-02, ENG-03, ENG-08, ENG-09) ([#83](https://github.com/sidevoice/sidevoice-engine/issues/83)) ([4a35618](https://github.com/sidevoice/sidevoice-engine/commit/4a35618a8dc8d4bc592596afdfc7de61aa572605))
+* **release:** stage every npm version for the operator's approval, by trusted publishing ([#75](https://github.com/sidevoice/sidevoice-engine/issues/75)) ([7c0865c](https://github.com/sidevoice/sidevoice-engine/commit/7c0865c772e82bc1a292c271e8f5c53c97841a3c))
+
 ## [0.2.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.1.0...v0.2.0) (2026-10-09)
 
 
