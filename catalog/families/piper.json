@@ -2,6 +2,9 @@
   "id": "piper",
   "architecture": "vits",
   "source": "https://github.com/rhasspy/piper",
+  "speed": {
+    "source": "https://github.com/OHF-Voice/piper1-gpl/blob/efffbfb226bfb511ebbcf55d0cecd8b35a89743d/docs/API_HTTP.md#L52"
+  },
   "models": [
     {
       "id": "piper-es_ES-carlfm-x_low",

@@ -2,6 +2,11 @@
   "id": "kokoro",
   "architecture": "kokoro",
   "source": "https://huggingface.co/hexgrad/Kokoro-82M",
+  "speed": {
+    "min": 0.5,
+    "max": 2.0,
+    "source": "https://huggingface.co/spaces/hexgrad/Kokoro-TTS/blob/555d90e5a1eaaabd017f0b458069ad112867a6d4/app.py#L185"
+  },
   "models": [
     {
       "id": "kokoro-82m-v0.19",

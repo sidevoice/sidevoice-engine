@@ -235,3 +235,35 @@ fn call_params_take_one_path_or_a_list() {
     );
     assert_eq!(build.call_params["other"], ["x.y"]);
 }
+
+#[test]
+fn a_familys_speed_range_must_be_positive_ordered_and_sourced() {
+    let speed = |min: Option<f32>, max: Option<f32>, source: &str| {
+        let mut family = family(
+            "f",
+            vec![model(
+                "m",
+                Capability::Tts,
+                vec![build("m/b", "sherpa-onnx", 1)],
+            )],
+        );
+        family.speed = Some(crate::SpeedRange {
+            min,
+            max,
+            source: source.to_owned(),
+        });
+        problems(vec![family])
+    };
+    let invalid = [Problem::InvalidSpeed {
+        family: "f".to_owned(),
+    }];
+    assert_eq!(speed(Some(0.5), Some(2.0), "https://example.com"), []);
+    assert_eq!(
+        speed(None, None, "https://example.com"),
+        [],
+        "no bounds, with a source"
+    );
+    assert_eq!(speed(Some(2.0), Some(0.5), "https://example.com"), invalid);
+    assert_eq!(speed(Some(0.0), None, "https://example.com"), invalid);
+    assert_eq!(speed(Some(0.5), Some(2.0), " "), invalid);
+}
