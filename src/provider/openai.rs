@@ -12,7 +12,9 @@
 //!   voices are the spec's (OpenAI has no endpoint that lists them), each with no languages and no gender.
 //! - Speech to text: `POST /v1/audio/transcriptions`, a multipart form with the turn as a 16-bit WAV at 16 kHz, the
 //!   model and `response_format: json`; the language goes in the field the spec gives its request (`language`), as its
-//!   primary subtag. The transcript is the answer's `text`.
+//!   primary subtag; a turn longer than 30 seconds asks the provider to cut it, `chunking_strategy: auto`, where the
+//!   spec's request takes that value (which `gpt-4o-transcribe-diarize` requires). The transcript is the answer's
+//!   `text`.
 //! - Text to speech: `POST /v1/audio/speech`, JSON with the model, the text, the voice and the speed (within the spec's
 //!   range), answered as `pcm`: 16-bit mono samples at 24 kHz, as OpenAI's text-to-speech guide gives that format. The
 //!   model speaks the text's language, and its request takes none.
@@ -40,6 +42,11 @@ const API: &str = "https://api.openai.com/v1";
 
 /// The rate of what `/v1/audio/speech` answers as `pcm`.
 const SPEECH_RATE: u32 = 24_000;
+
+/// How long a turn is, in seconds, past which a transcription asks the provider to cut it (its `chunking_strategy`):
+/// the spec's own description of that field makes it required past 30 seconds for `gpt-4o-transcribe-diarize`, and a
+/// shorter turn is transcribed as one block, as before.
+const LONG_TURN_S: u32 = 30;
 
 struct OpenAi;
 
@@ -79,7 +86,11 @@ impl Adapter for OpenAi {
         let rules = |request: &Value| {
             let language = request["properties"].get("language").map(|_| "language");
             let speed = facts::range(spec, &request["properties"]["speed"]);
-            ModelFacts::new("", language, speed)
+            let chunking = facts::strings(spec, &request["properties"]["chunking_strategy"]);
+            ModelFacts {
+                chunking: chunking.into_iter().find(|value| value == "auto"),
+                ..ModelFacts::new("", language, speed)
+            }
         };
         let models = |request: &Value| -> Result<Vec<ModelFacts>> {
             let ids = facts::strings(spec, &request["properties"]["model"]);
@@ -198,6 +209,11 @@ impl SttModel for Transcriber {
             .text("response_format", "json");
         if let (Some(field), Some(language)) = (&self.facts.language, language) {
             form = form.text(field, &api::primary_subtag(language));
+        }
+        if let Some(chunking) = &self.facts.chunking {
+            if pcm.len() > (LONG_TURN_S * STT_RATE) as usize {
+                form = form.text("chunking_strategy", chunking);
+            }
         }
         let (content_type, body) = form.finish();
         let mut request = request("POST", format!("{API}/audio/transcriptions"), &key);

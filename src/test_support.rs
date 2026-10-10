@@ -792,8 +792,12 @@ pub(crate) fn openai_spec() -> serde_json::Value {
     use serde_json::json;
     json!({ "components": { "schemas": {
         "CreateTranscriptionRequest": { "properties": {
-            "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["whisper-1", "gpt-4o-transcribe"] }] },
+            "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["whisper-1", "gpt-4o-transcribe", "gpt-4o-transcribe-diarize"] }] },
             "language": { "type": "string" },
+            "chunking_strategy": { "anyOf": [
+                { "anyOf": [{ "type": "string", "enum": ["auto"] }, { "$ref": "#/components/schemas/VadConfig" }] },
+                { "type": "null" },
+            ]},
         }},
         "CreateSpeechRequest": { "properties": {
             "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["tts-1", "gpt-4o-mini-tts"] }] },

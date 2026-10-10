@@ -36,6 +36,9 @@ pub(crate) struct ModelFacts {
     pub(crate) language: Option<String>,
     /// The lowest and the highest speed it takes; `None` when its request takes none.
     pub(crate) speed: Option<[f32; 2]>,
+    /// The value its request's `chunking_strategy` takes to let the provider cut a long turn itself (OpenAI's `auto`),
+    /// when the request has that field; `None` otherwise.
+    pub(crate) chunking: Option<String>,
 }
 
 impl Facts {
@@ -76,6 +79,7 @@ impl ModelFacts {
             model: model.to_owned(),
             language: language.map(str::to_owned),
             speed,
+            chunking: None,
         }
     }
 

@@ -53,8 +53,14 @@ fn its_facts_come_from_its_requests_and_a_spec_without_them_is_unreadable() {
     };
     assert_eq!(
         ids(&facts.speech_to_text),
-        ["whisper-1", "gpt-4o-transcribe"]
+        [
+            "whisper-1",
+            "gpt-4o-transcribe",
+            "gpt-4o-transcribe-diarize"
+        ]
     );
+    assert_eq!(facts.transcription.chunking.as_deref(), Some("auto"));
+    assert_eq!(facts.speech.chunking, None);
     assert_eq!(ids(&facts.text_to_speech), ["tts-1", "gpt-4o-mini-tts"]);
     assert_eq!(facts.voices, ["alloy", "ash", "fable", "nova"]);
     let mut no_pcm = openai_spec();
@@ -271,4 +277,31 @@ fn a_model_of_no_kind_is_unsupported() {
             .code,
         "unsupported-model"
     );
+}
+
+/// ENG-07: a turn longer than 30 seconds asks the provider to cut it, as the spec says `gpt-4o-transcribe-diarize`
+/// requires; a shorter one is sent as one block, as before.
+#[test]
+fn a_turn_longer_than_30_seconds_is_sent_with_the_specs_chunking_strategy() {
+    let diarize = ProviderModel {
+        id: "gpt-4o-transcribe-diarize".into(),
+        ..transcriber()
+    };
+    let (mut model, provider) = open(&diarize);
+    provider.key("openai", "sk-test");
+    provider.answer(
+        "https://api.openai.com/v1/audio/transcriptions",
+        200,
+        br#"{"text": "hi"}"#,
+    );
+    let stt = model.as_stt().expect("speech to text");
+    block_on(stt.transcribe(&[0.0; 16_000 * 45], None)).expect("transcribed");
+    block_on(stt.transcribe(&[0.0; 16_000 * 5], None)).expect("transcribed");
+    let requests = provider.requests();
+    let chunked = "name=\"chunking_strategy\"\r\n\r\nauto\r\n";
+    assert!(
+        contains(&requests[0].body, chunked),
+        "45 s: cut by the provider"
+    );
+    assert!(!contains(&requests[1].body, chunked), "5 s: one block");
 }
