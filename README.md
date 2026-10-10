@@ -88,7 +88,7 @@ archives are unpacked on Tokio's blocking threads.
 ```rust
 let host = NativeHost::new(app_data_dir.join("engine"))?;
 let engine = Engine::new(Box::new(host), vec![Box::new(BundledCatalog)])?;
-let models = engine.models().await?; // every model, its builds ranked, installed or not, the recommended build
+let models = engine.catalog(LOCAL_CATALOG)?.models(None).await?; // every local model, its builds ranked, installed or not
 let cancel = Cancel::new(); // `cancel.cancel()` from anywhere stops the install
 let whisper = engine.load("whisper-small", None, &|progress: Progress| report(progress), &cancel).await?;
 let text = whisper.as_stt().expect("speech to text").transcribe(&samples, 48_000, Some("es")).await?;
@@ -103,8 +103,8 @@ let smart_turn = engine.load("smart-turn-v3.2", None, &|_| {}, &cancel).await?;
 let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_far, 48_000).await?; // P(complete)
 ```
 
-- **`Engine::models`** lists every model of the catalogue with its catalogue data, whether it is installed, every
-  build ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
+- **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, every build
+  ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
   recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
   removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
@@ -165,32 +165,53 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 - **Progress is a callback** (any `Fn(Progress)`): files done of all, and the bytes of the file being downloaded.
   **Cancelling** is a `Cancel` handle; dropping the future stops the install too. Neither leaves a partial file.
 
-## Remote providers and their keys
+## Catalogues: local and remote
 
-The remote providers (`openai`, `elevenlabs`) are the catalogue's sibling, not part of it: a provider says, live,
-which of its models the app's key may use. A remote model has no builds, no install and no accelerator.
+Every place models come from is a catalogue, behind one interface (`Engine::catalogs`, `Engine::catalog(id)`):
+`"local"`, the local catalogue, and one per remote provider (`"openai"`, `"elevenlabs"`), which says, live, which of its
+models the app's key may use. A remote model has no builds, no install and no accelerator.
 
 ```rust
-let providers = engine.providers().await; // Provider { id, name, status?, stale, models: [ProviderModel] }
-let openai = engine.refresh("openai").await?; // listed again now: the settings' refresh button, or a new key
-let scribe = engine.remote("elevenlabs", "scribe_v2").await?; // a RemoteModel
+for catalog in engine.catalogs() { // "local", "elevenlabs", "openai"
+    let status = catalog.status().await; // CatalogStatus { reason?, stale, detail? }
+    let speakers = catalog.models(Some(Capability::Tts)).await?; // Vec<Box<dyn ModelInfo>>: id, voices, speed, ...
+}
+let elevenlabs = engine.catalog("elevenlabs")?;
+elevenlabs.refresh().await; // read again now: the settings' refresh button, or a new key
+let scribe = elevenlabs.load("scribe_v2", &|_| {}, &cancel).await?; // Box<dyn Model>
+let own = engine.remote_catalog("elevenlabs")?.load("scribe_v2", &cancel).await?; // RemoteModel, as itself
 let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Some("es")).await?;
 ```
 
-- **Listed live, kept in memory only.** `Engine::providers` lists every provider of the build with its models
-  (`ProviderModel { id, capabilities, languages, voices, speed? }`) and a status of its own: `None` when the listing
-  is current, else why not, as a stable code. A listing is asked for when there is none (so the first call after the
-  app starts lists every provider with a key), when its models are a day old or its voices an hour old, and on
-  `Engine::refresh`. Nothing is written anywhere.
+- **Interfaces.** `Catalog` is a trait, implemented by `LocalCatalog` and by each provider's `RemoteCatalog`: an id, a
+  status, its models (all, or those of one capability), `refresh` and `load`. A listed model is a `ModelInfo` (id,
+  capabilities, languages, voices, speed), implemented by `LocalModelInfo` (builds, install state) and
+  `RemoteModelInfo`; a loaded one is a `Model` (id, capabilities, `as_stt`, `as_tts`, `as_vad`, `as_end_of_turn`),
+  implemented by `LocalModel` and `RemoteModel`. The traits hold only what is common and know none of their types:
+  code that needs a type's specifics asks its concrete catalogue (`Engine::local_catalog()`,
+  `Engine::remote_catalog(id)`), whose `models` and `load` hand out its own types.
+- **Speed means one thing.** A model's `speed` is a `SpeedRange { min, max }`; `None` means only that it takes no
+  speed. A remote model's comes from its provider's spec; a local one's from its family in the catalogue: Kokoro's 0.5
+  to 2 and Supertonic's 0.9 to 1.5 from their publishers, and Piper's 0.5 to 2 our own choice (it takes a speed, and
+  publishes no range), which its catalogue entry says. Where a range comes from stays in the catalogue; apps get the
+  range alone. An app that wants one picker merges the catalogues' lists itself.
+- **Listed live, kept in memory only.** A provider's status is `None` when its listing is current, else why not, as a
+  stable code. Its spec and models are read when there are none (so the first call after the app starts reads every
+  provider with a key), when they are a day old (its voices, an hour), and on `refresh`. Nothing is written anywhere.
 - **No key, no listing.** Without a key (`credential-missing`) nothing is asked. A key the provider refuses
-  (`credential-rejected`), or one it does not let list (`listing-not-permitted`), leaves the provider with no models:
-  there is no fallback, the key must be allowed to list. A provider that could not be asked (`provider-unreachable`,
-  `provider-quota`, `listing-failed`) keeps its last listing, `stale`.
-- **What the API does not say comes from its spec.** OpenAI's `/v1/models` lists ids only, and ElevenLabs' has no
-  speech-to-text flag: which models transcribe and which speak, where the language goes in a request, the speed range
-  and OpenAI's voices are derived from each provider's official OpenAPI spec by `cargo xtask pin-providers` into
-  `src/provider/<provider>/facts.json`, pinned (OpenAI's by commit; ElevenLabs' by digest), and checked for drift on
-  every pull request (`providers.yml`). A model the provider lists and its spec does not describe is not offered.
+  (`credential-rejected`), or one it does not let list (`listing-not-permitted`: a 403, or ElevenLabs' 401 for a scoped
+  key that lacks a permission), leaves the provider with no models: there is no fallback, the key must be allowed to
+  list. A provider that could not be asked (`provider-unreachable`, `provider-quota`, `listing-failed`) keeps its last
+  listing, `stale`. The status's `detail` is what the provider said (its own status and message, such as the missing
+  permission), for a developer to read.
+- **The listing decides what exists; the spec, read at run time, enriches it.** Every model ElevenLabs' `/v1/models`
+  says speaks is offered, with its languages; OpenAI's lists ids alone, so of those the ones its spec names as speech
+  to text or text to speech are. What the APIs do not say (which models transcribe, where the language goes in a
+  request, the speed range, OpenAI's voices) is read from each provider's official OpenAPI spec (OpenAI's
+  `openai-openapi` repository at `main`, about 4.8 MB; ElevenLabs' `api.elevenlabs.io/openapi.json`, about 2.3 MB;
+  both readable from a page), through the host, and kept with the listing. A model the spec has no request of its own
+  for follows its kind's general request: a parameter is offered only where that request takes it. A spec that cannot
+  be read keeps the last facts and says so (`provider-spec-unreadable`); with none yet, the provider has no models.
 - **ElevenLabs' voices are the account's** (`/v1/voices`: the defaults, and those cloned, designed or added), never
   the shared library: each with its `name`, its languages (its own language label first, then those ElevenLabs
   verified it in) and its gender where its labels state one.
@@ -200,14 +221,19 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
   has none. A page's host may have `credential(provider)`, returning (or resolving to) the key, or `null`, from the
   browser's storage.
 - **Calls go through the host's HTTP** (`Host::http`, the `HttpClient` trait): `reqwest` natively, `fetch` on the web.
-  `Engine::remote` makes no call. Speech comes back as 16-bit PCM at 24 kHz; a turn is sent as a 16-bit WAV at 16 kHz.
-  Streaming is not used (sidevoice-engine#35).
+  Loading a remote model makes no call. Speech comes back as 16-bit PCM at 24 kHz; a turn is sent as a 16-bit WAV at
+  16 kHz. Streaming is not used (sidevoice-engine#35).
 - **What a call fails with** has its codes: `credential-missing`, `credential-rejected`, `provider-quota` (402),
   `rate-limited` (429), the shared `transcription-failed`, `speech-failed`, `unknown-voice`, and the host's
-  `request-failed` (no answer) and `credentials-failed` (the keys could not be read).
+  `request-failed` (no answer) and `credentials-failed` (the keys could not be read). An error the provider caused
+  also carries what it said, its own code and message (`Error::detail`; `detail` on the npm package's errors), for the
+  app to show as it is (a toast); the engine neither interprets nor remembers it.
+- **The provider decides what it takes.** Every voice OpenAI's spec lists is offered on each of its text-to-speech
+  models; a voice the provider refuses for a model fails with `speech-failed` and the provider's own words.
 - **Real calls in CI** are `remote-live.yml`, by hand and before each release, never on a pull request: per provider,
-  the listing, one short speech, one short transcription (the voice loop's LibriSpeech clip, within its word error
-  rate, with the language sent) and an invalid key. A provider whose key secret is absent is skipped.
+  that its spec is still read, the listing, one short speech, one short transcription (the voice loop's LibriSpeech
+  clip, within its word error rate, with the language sent) and an invalid key. A provider whose key secret is absent
+  is skipped.
 
 ## Status
 
@@ -244,21 +270,23 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   VadModel and its streams), segmenter (speech from per-window probabilities, by sherpa-onnx's
                   rules), smart_turn (smart-turn's input, Whisper's log-mel features), implementations/ (one file
                   per backend)
-  provider.rs     the remote providers, the catalogue's sibling: Adapter (what each provider implements), Provider and
-                  ProviderModel (what Engine::providers lists); provider/: api (the provider's API through the host,
-                  forms, PCM), facts (what its spec says, from <provider>/facts.json), listing (the cache in memory and
-                  its ages), registry, remote_model (RemoteModel), openai, elevenlabs
-  capability.rs   the capability interfaces both siblings hand out: Stt, Tts, and the model in memory behind them;
+  provider.rs     the remote providers, one catalogue each: Adapter (what each provider implements), RemoteModelInfo (a
+                  model as listed); provider/: api (the provider's API through the host, forms, PCM, its spec), facts
+                  (what its spec says, and the readers of a spec), listing (spec facts and listing in memory, their
+                  ages), registry, remote_model (RemoteModel), openai, elevenlabs (each with its spec's derivation)
+  capability.rs   the capability interfaces every catalogue's models hand out: Stt, Tts, and the model in memory behind them;
                   capability/: vad (Vad, VadStream and their values), end_of_turn (EndOfTurn), audio (Audio,
                   resampling)
   resolver.rs     the funnel; resolver/offer.rs, what it returns (an offer, or a rejection and its reason)
   install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
                   download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
                   ProgressSink), cancel (Cancel), digest (SHA-256)
-  engine.rs       Engine: models, install, uninstall, load; engine/: model (Model, ModelBuild: what models lists),
-                  local (LocalModel), providers (providers, refresh, remote), memory (weak references: one library per
+  engine.rs       Engine: catalogs, install, uninstall, load; engine/: catalog (Catalog, CatalogStatus, LocalCatalog,
+                  RemoteCatalog), model (ModelInfo, Model), local_info (LocalModelInfo, ModelBuild: a local model as
+                  listed), local (LocalModel), providers (a
+                  provider's listing and remote models, behind its catalogue), memory (weak references: one library per
                   backend, one model per build), error (ConfigError)
-  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, LocalModel, RemoteModel, Stt,
+  web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, Catalog, LocalModel, RemoteModel, Stt,
                   Tts, Vad, VadStream, EndOfTurn; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
                   file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
                   capabilities (reading what it reports), storage (WebStorage, in OPFS), fetcher (WebFetcher, `fetch`, for
@@ -324,7 +352,7 @@ cargo test --locked --lib sherpa_onnx::inference_tests -- --ignored --nocapture
 ```
 
 The whole voice loop is an integration test, `tests/voice_loop.rs`, and uses only the public API, as an app does:
-`NativeHost`, the bundled catalogue, `Engine::models` (the builds the plan names), `Engine::load`, then the loaded
+`NativeHost`, the bundled catalogue, the local catalogue's models (the builds the plan names), `Engine::load`, then the loaded
 model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`). Each text-to-speech build of the plan
 (`tests/voice_loop.json`) says a sentence in English or Spanish, each speech-to-text build of that language
 transcribes it (Whisper base on sherpa-onnx and on whisper.cpp among them), real recorded clips are transcribed too,
@@ -370,7 +398,10 @@ cargo xtask web-e2e [DIR]
 ```
 
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
-(`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
+(`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`, and,
+for text to speech, the `speed` its models take (`min` and `max`, both required, with the pinned `source` that states
+them, or, where no source publishes a range, `decided_by` who chose it and why, with the `source` that the model takes a
+speed at all; a family with none takes no speed); a
 model, its `id`, `capabilities` (`stt`, `tts`, `vad`, `end-of-turn`), `parameters_m`, `languages` (none for a model that hears no
 language in particular, as a voice activity detector) and `license`; a build, its `id`, the
 `backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),

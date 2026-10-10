@@ -1,12 +1,13 @@
 name: remote-live
 
 # The remote providers called for real (`cargo xtask remote-live`, the engine's ignored integration test
-# tests/remote_live.rs): per provider, the key and its listing, one short speech, one short transcription (the voice
-# loop's LibriSpeech clip, held to its word error rate, with the language sent) and an invalid key that must read
-# `credential-rejected`. It spends money, so it runs by hand and before each release (release-please.yml calls it), never
-# on a pull request and never on a schedule. Each provider's key is a repository secret with a spend limit; a provider
-# whose secret is absent is skipped, and the job says so: it never fails for a missing secret. The table goes to the
-# job's summary.
+# tests/remote_live.rs): per provider, its OpenAPI spec (which the engine reads at run time, so a spec change it no longer
+# reads fails here, before a release), the key and its listing (with what the provider said when it refuses), one short
+# speech, one short transcription (the voice loop's LibriSpeech clip, held to its word error rate, with the language
+# sent) and an invalid key that must read `credential-rejected`. It spends money, so it runs by hand and before each
+# release (release-please.yml calls it), never on a pull request and never on a schedule. Each provider's key is a
+# repository secret with a spend limit; a provider whose secret is absent is skipped, and the job says so: it never fails
+# for a missing secret. The table goes to the job's summary.
 on:
   workflow_dispatch:
   workflow_call:

@@ -1,17 +1,19 @@
-//! OpenAI's adapter against a fake provider: what its listing keeps, what each call sends (URL, key, form or JSON),
-//! what each answer becomes, and how refusals read; no key, no network.
+//! OpenAI's adapter against a fake provider: what it reads from its spec, what its listing keeps, what each call sends
+//! (URL, key, form or JSON), what each answer becomes, and how refusals read; no key, no network.
 
-use super::{OpenAi, FACTS};
+use serde_json::json;
+
+use super::OpenAi;
 use crate::backend::BackendModel;
-use crate::provider::{Adapter, ProviderModel};
-use crate::test_support::{block_on, contains, header, remote_api};
-use crate::{Capability, Voice};
+use crate::provider::{Adapter, Facts, RemoteModelInfo};
+use crate::test_support::{block_on, contains, header, openai_spec, remote_api};
+use crate::{Capability, SpeedRange, Voice};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
-fn transcriber() -> ProviderModel {
-    ProviderModel {
+fn transcriber() -> RemoteModelInfo {
+    RemoteModelInfo {
         id: "gpt-4o-transcribe".into(),
         capabilities: vec![Capability::Stt],
         languages: Vec::new(),
@@ -29,35 +31,93 @@ fn voice(id: &str) -> Voice {
     }
 }
 
-fn speaker() -> ProviderModel {
-    ProviderModel {
+fn speaker() -> RemoteModelInfo {
+    RemoteModelInfo {
         id: "gpt-4o-mini-tts".into(),
         capabilities: vec![Capability::Tts],
         languages: Vec::new(),
         voices: vec![voice("alloy"), voice("nova")],
-        speed: Some([0.25, 4.0]),
+        speed: Some(SpeedRange {
+            min: 0.25,
+            max: 4.0,
+        }),
     }
 }
 
+fn facts() -> Facts {
+    OpenAi.facts(&openai_spec()).expect("facts")
+}
+
 #[test]
-fn its_facts_say_which_models_transcribe_and_which_speak() {
-    let (capability, facts) = FACTS.model("gpt-4o-transcribe").expect("described");
-    assert_eq!(capability, Capability::Stt);
-    assert_eq!(facts.language.as_deref(), Some("language"));
-    let (capability, facts) = FACTS.model("gpt-4o-mini-tts").expect("described");
-    assert_eq!(capability, Capability::Tts);
+fn its_facts_come_from_its_requests_and_a_spec_without_them_is_unreadable() {
+    let facts = facts();
+    let ids = |models: &[crate::provider::facts::ModelFacts]| -> Vec<String> {
+        models.iter().map(|model| model.model.clone()).collect()
+    };
     assert_eq!(
-        (facts.language.as_deref(), facts.speed),
+        ids(&facts.speech_to_text),
+        [
+            "whisper-1",
+            "gpt-4o-transcribe",
+            "gpt-4o-transcribe-diarize"
+        ]
+    );
+    let chunking = |id: &str| facts.of(Capability::Stt, id).chunking;
+    assert_eq!(
+        chunking("gpt-4o-transcribe-diarize").as_deref(),
+        Some("auto")
+    );
+    assert_eq!(
+        chunking("whisper-1"),
+        None,
+        "the spec does not say it takes it"
+    );
+    assert_eq!(chunking("gpt-4o-transcribe"), None);
+    assert_eq!(
+        facts.transcription.chunking, None,
+        "nor does a model it does not name"
+    );
+    assert_eq!(facts.speech.chunking, None);
+    assert_eq!(ids(&facts.text_to_speech), ["tts-1", "gpt-4o-mini-tts"]);
+    assert_eq!(facts.voices, ["alloy", "ash", "fable", "nova"]);
+    let mut no_pcm = openai_spec();
+    no_pcm["components"]["schemas"]["CreateSpeechRequest"]["properties"]["response_format"]
+        ["enum"] = json!(["mp3"]);
+    let unreadable = OpenAi.facts(&no_pcm).map_err(|e| e.code);
+    assert_eq!(unreadable, Err("provider-spec-unreadable"));
+    assert_eq!(
+        OpenAi.facts(&json!({})).map_err(|e| e.code),
+        Err("provider-spec-unreadable")
+    );
+}
+
+#[test]
+fn what_each_kind_of_model_takes_comes_from_its_request() {
+    let facts = facts();
+    let stt = facts.of(Capability::Stt, "gpt-4o-transcribe");
+    assert_eq!(
+        (stt.language.as_deref(), stt.speed),
+        (Some("language"), None)
+    );
+    let tts = facts.of(Capability::Tts, "gpt-4o-mini-tts");
+    assert_eq!(
+        (tts.language.as_deref(), tts.speed),
         (None, Some([0.25, 4.0]))
     );
-    assert!(FACTS.voices.iter().any(|voice| voice == "alloy"));
+    let newer = facts.of(Capability::Tts, "gpt-5-tts");
+    assert_eq!(
+        (newer.model.as_str(), newer.speed),
+        ("gpt-5-tts", Some([0.25, 4.0])),
+        "a model the spec does not name follows the general speech request"
+    );
+    assert!(facts.voices.iter().any(|voice| voice == "alloy"));
 }
 
 #[test]
 fn the_listing_keeps_the_audio_models_the_spec_describes() {
     let (api, provider) = remote_api("openai");
     assert_eq!(
-        block_on(OpenAi.models(&api)).map_err(|e| e.code),
+        block_on(OpenAi.models(&api, &facts())).map_err(|e| e.code),
         Err("credential-missing")
     );
     assert!(provider.requests().is_empty(), "no key, no call");
@@ -68,16 +128,19 @@ fn the_listing_keeps_the_audio_models_the_spec_describes() {
         200,
         br#"{"object": "list", "data": [{"id": "gpt-4o-mini-tts"}, {"id": "gpt-4o"}, {"id": "gpt-4o-transcribe"}]}"#,
     );
-    let models = block_on(OpenAi.models(&api)).expect("listed");
+    let models = block_on(OpenAi.models(&api, &facts())).expect("listed");
     let listed: Vec<_> = models
         .iter()
-        .map(|model| (model.id.as_str(), model.capabilities.clone(), model.speed))
+        .map(|model| {
+            let speed = model.speed.map(|speed| (speed.min, speed.max));
+            (model.id.as_str(), model.capabilities.clone(), speed)
+        })
         .collect();
     assert_eq!(
         listed,
         [
             ("gpt-4o-transcribe", vec![Capability::Stt], None),
-            ("gpt-4o-mini-tts", vec![Capability::Tts], Some([0.25, 4.0])),
+            ("gpt-4o-mini-tts", vec![Capability::Tts], Some((0.25, 4.0))),
         ],
         "in the spec's order, without the models that are not audio"
     );
@@ -87,8 +150,8 @@ fn the_listing_keeps_the_audio_models_the_spec_describes() {
         ("GET", Some("Bearer sk-test"))
     );
 
-    let voices = block_on(OpenAi.voices(&api)).expect("the spec's");
-    assert_eq!(voices.len(), FACTS.voices.len());
+    let voices = block_on(OpenAi.voices(&api, &facts())).expect("the spec's");
+    assert_eq!(voices.len(), facts().voices.len());
     assert_eq!(provider.requests().len(), 1, "voices make no call");
 }
 
@@ -104,23 +167,23 @@ fn a_listing_refused_reads_as_the_providers_status() {
         let (api, provider) = remote_api("openai");
         provider.key("openai", "sk-test");
         provider.answer("https://api.openai.com/", status, b"{}");
-        let listed = block_on(OpenAi.models(&api)).map_err(|e| e.code);
+        let listed = block_on(OpenAi.models(&api, &facts())).map_err(|e| e.code);
         assert_eq!(listed, Err(expected), "{status}");
     }
     let (api, provider) = remote_api("openai");
     provider.key("openai", "sk-test");
-    let listed = block_on(OpenAi.models(&api)).map_err(|e| e.code);
+    let listed = block_on(OpenAi.models(&api, &facts())).map_err(|e| e.code);
     assert_eq!(listed, Err("provider-unreachable"), "no answer");
 }
 
 fn open(
-    model: &ProviderModel,
+    model: &RemoteModelInfo,
 ) -> (
     Box<dyn BackendModel>,
     std::sync::Arc<crate::test_support::FakeProvider>,
 ) {
     let (api, provider) = remote_api("openai");
-    (OpenAi.open(api, model).expect("opened"), provider)
+    (OpenAi.open(api, model, &facts()).expect("opened"), provider)
 }
 
 #[test]
@@ -219,14 +282,101 @@ fn speech_is_asked_as_pcm_at_24_khz_with_a_listed_voice_and_a_speed_in_range() {
 }
 
 #[test]
-fn a_model_the_spec_does_not_describe_is_unsupported() {
+fn a_model_of_no_kind_is_unsupported() {
     let (api, _) = remote_api("openai");
-    let unknown = ProviderModel {
+    let unknown = RemoteModelInfo {
         id: "gpt-4o".into(),
+        capabilities: Vec::new(),
         ..transcriber()
     };
     assert_eq!(
-        OpenAi.open(api, &unknown).map(drop).unwrap_err().code,
+        OpenAi
+            .open(api, &unknown, &facts())
+            .map(drop)
+            .unwrap_err()
+            .code,
         "unsupported-model"
+    );
+}
+
+/// ENG-07: a turn longer than 30 seconds asks the provider to cut it, as the spec says `gpt-4o-transcribe-diarize`
+/// requires; a shorter one is sent as one block, as before.
+#[test]
+fn a_turn_longer_than_30_seconds_is_sent_with_the_specs_chunking_strategy() {
+    let diarize = RemoteModelInfo {
+        id: "gpt-4o-transcribe-diarize".into(),
+        ..transcriber()
+    };
+    let (mut model, provider) = open(&diarize);
+    provider.key("openai", "sk-test");
+    provider.answer(
+        "https://api.openai.com/v1/audio/transcriptions",
+        200,
+        br#"{"text": "hi"}"#,
+    );
+    let stt = model.as_stt().expect("speech to text");
+    block_on(stt.transcribe(&[0.0; 16_000 * 45], None)).expect("transcribed");
+    block_on(stt.transcribe(&[0.0; 16_000 * 5], None)).expect("transcribed");
+    let requests = provider.requests();
+    let chunked = "name=\"chunking_strategy\"\r\n\r\nauto\r\n";
+    assert!(
+        contains(&requests[0].body, chunked),
+        "45 s: cut by the provider"
+    );
+    assert!(!contains(&requests[1].body, chunked), "5 s: one block");
+}
+
+/// `whisper-1` is never sent `chunking_strategy`, however long the turn: the spec does not say it takes it.
+#[test]
+fn whisper_1_is_never_sent_a_chunking_strategy() {
+    let whisper = RemoteModelInfo {
+        id: "whisper-1".into(),
+        ..transcriber()
+    };
+    let (mut model, provider) = open(&whisper);
+    provider.key("openai", "sk-test");
+    provider.answer(
+        "https://api.openai.com/v1/audio/transcriptions",
+        200,
+        br#"{"text": "hi"}"#,
+    );
+    let stt = model.as_stt().expect("speech to text");
+    block_on(stt.transcribe(&[0.0; 16_000 * 45], None)).expect("transcribed");
+    assert!(!contains(
+        &provider.requests()[0].body,
+        "name=\"chunking_strategy\""
+    ));
+}
+
+/// ENG-06: every voice the spec lists is offered on every model, and the provider decides. A voice it refuses for a
+/// model fails with the stable code and carries what the provider said, for the app to show; the engine remembers
+/// nothing of it, so the next call is sent as the first was.
+#[test]
+fn a_voice_the_provider_refuses_fails_with_what_the_provider_said() {
+    let tts_1 = RemoteModelInfo {
+        id: "tts-1".into(),
+        voices: vec![voice("alloy"), voice("marin")],
+        ..speaker()
+    };
+    let (mut model, provider) = open(&tts_1);
+    provider.key("openai", "sk-test");
+    provider.answer(
+        "https://api.openai.com/v1/audio/speech",
+        400,
+        br#"{"error": {"message": "Voice 'marin' is not supported for model 'tts-1'.", "type": "invalid_request_error", "code": "invalid_value"}}"#,
+    );
+    let tts = model.as_tts().expect("text to speech");
+    for _ in 0..2 {
+        let refused = block_on(tts.speak("Hola", &voice("marin"), None, 1.0)).unwrap_err();
+        assert_eq!(refused.code, "speech-failed");
+        assert_eq!(
+            refused.detail.as_deref(),
+            Some("invalid_value: Voice 'marin' is not supported for model 'tts-1'.")
+        );
+    }
+    assert_eq!(
+        provider.requests().len(),
+        2,
+        "nothing remembered: both calls were sent"
     );
 }

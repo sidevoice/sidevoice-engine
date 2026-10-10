@@ -1,54 +1,149 @@
-//! A model as this engine sees it, what [`Engine::models`](crate::Engine::models) lists: its catalogue data, whether it
-//! is installed, every build of it ranked with whether it runs here and why not, and the build the engine recommends.
+//! What a catalogue hands out, as interfaces: [`ModelInfo`], a model as a catalogue lists it, and [`Model`], a model
+//! ready to use, which hands out the capability interfaces. The local catalogue's and each provider's own types
+//! implement them ([`LocalModelInfo`] and [`RemoteModelInfo`]; [`LocalModel`] and [`RemoteModel`]). The traits hold
+//! only what is common, and know none of them: code that needs a type's specifics (a local model's builds, say) gets
+//! it from its concrete catalogue ([`LocalCatalog`](crate::LocalCatalog), [`RemoteCatalog`](crate::RemoteCatalog)),
+//! which hands out its own types.
 
-use crate::catalog::{Capability, Voice};
-use crate::host::Accelerator;
-use crate::resolver::Reason;
+use std::fmt;
 
-/// A model of the catalogue, here.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Model {
-    /// Its stable id: what [`Engine::install`](crate::Engine::install) and [`Engine::load`](crate::Engine::load) take.
-    pub id: String,
-    /// The id of the family it belongs to in the catalogue: "whisper", "kokoro", ...
-    pub family: String,
+use crate::catalog::{Capability, SpeedRange, Voice};
+use crate::engine::{LocalModel, LocalModelInfo};
+use crate::maybe_send::{MaybeSend, MaybeSync};
+use crate::provider::{RemoteModel, RemoteModelInfo};
+use crate::{EndOfTurn, Stt, Tts, Vad};
+
+/// A model as a catalogue lists it: what every model has, wherever it comes from.
+pub trait ModelInfo: fmt::Debug + MaybeSend + MaybeSync {
+    /// Its id in its catalogue, which the catalogue's `load` takes.
+    fn id(&self) -> &str;
+
     /// What it can do.
-    pub capabilities: Vec<Capability>,
-    /// Its size, in millions of parameters.
-    pub parameters_m: u32,
-    /// The languages it handles: BCP 47 tags.
-    pub languages: Vec<String>,
-    /// Its licence, as an SPDX id.
-    pub license: String,
-    /// Its voices, as the catalogue declares them (a text-to-speech model whose source declares them).
-    pub voices: Vec<Voice>,
-    /// Whether one of its builds is installed.
-    pub installed: bool,
-    /// Every build of it, ranked: those that run here first.
-    pub builds: Vec<ModelBuild>,
-    /// The build the engine would use: the first that runs here, if any does.
-    pub recommended_build: Option<String>,
+    fn capabilities(&self) -> &[Capability];
+
+    /// The languages it handles, BCP 47 tags; empty when its source lists none.
+    fn languages(&self) -> &[String];
+
+    /// Its voices, for a text-to-speech model whose source describes them.
+    fn voices(&self) -> &[Voice];
+
+    /// The speeds it takes; `None` means only that it takes no speed.
+    fn speed(&self) -> Option<SpeedRange>;
 }
 
-/// One build of a model, here.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModelBuild {
-    /// Its stable id.
-    pub id: String,
-    /// The backend that runs it.
-    pub backend: String,
-    /// The accelerator it would run on here, when it runs here.
-    pub accelerator: Option<Accelerator>,
-    /// The format's own name for its precision ("int8", "fp16", ...): informational.
-    pub precision: String,
-    /// What installing it downloads, in bytes (an archive several files share counts once).
-    pub download_bytes: u64,
-    /// The memory it takes to run, in MB.
-    pub memory_mb: u32,
-    /// Whether it runs here.
-    pub available: bool,
-    /// Why it does not, when it does not: stable codes the app translates.
-    pub reasons: Vec<Reason>,
-    /// Whether all its files are installed.
-    pub installed: bool,
+/// A model ready to use, which a catalogue loaded: it hands out the capability interfaces, the same whatever runs it.
+pub trait Model: fmt::Debug + MaybeSend + MaybeSync {
+    /// Its id in its catalogue.
+    fn id(&self) -> &str;
+
+    /// What it can do.
+    fn capabilities(&self) -> &[Capability];
+
+    /// The model as speech to text, if it is one.
+    fn as_stt(&self) -> Option<Stt<'_>>;
+
+    /// The model as text to speech, if it is one.
+    fn as_tts(&self) -> Option<Tts<'_>>;
+
+    /// The model as a voice activity detector, if it is one.
+    fn as_vad(&self) -> Option<Vad<'_>>;
+
+    /// The model as an end-of-turn classifier, if it is one.
+    fn as_end_of_turn(&self) -> Option<EndOfTurn<'_>>;
+}
+
+impl ModelInfo for LocalModelInfo {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn capabilities(&self) -> &[Capability] {
+        &self.capabilities
+    }
+
+    fn languages(&self) -> &[String] {
+        &self.languages
+    }
+
+    fn voices(&self) -> &[Voice] {
+        &self.voices
+    }
+
+    fn speed(&self) -> Option<SpeedRange> {
+        self.speed
+    }
+}
+
+impl ModelInfo for RemoteModelInfo {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn capabilities(&self) -> &[Capability] {
+        &self.capabilities
+    }
+
+    fn languages(&self) -> &[String] {
+        &self.languages
+    }
+
+    fn voices(&self) -> &[Voice] {
+        &self.voices
+    }
+
+    fn speed(&self) -> Option<SpeedRange> {
+        self.speed
+    }
+}
+
+impl Model for LocalModel {
+    fn id(&self) -> &str {
+        LocalModel::id(self)
+    }
+
+    fn capabilities(&self) -> &[Capability] {
+        LocalModel::capabilities(self)
+    }
+
+    fn as_stt(&self) -> Option<Stt<'_>> {
+        LocalModel::as_stt(self)
+    }
+
+    fn as_tts(&self) -> Option<Tts<'_>> {
+        LocalModel::as_tts(self)
+    }
+
+    fn as_vad(&self) -> Option<Vad<'_>> {
+        LocalModel::as_vad(self)
+    }
+
+    fn as_end_of_turn(&self) -> Option<EndOfTurn<'_>> {
+        LocalModel::as_end_of_turn(self)
+    }
+}
+
+impl Model for RemoteModel {
+    fn id(&self) -> &str {
+        RemoteModel::id(self)
+    }
+
+    fn capabilities(&self) -> &[Capability] {
+        RemoteModel::capabilities(self)
+    }
+
+    fn as_stt(&self) -> Option<Stt<'_>> {
+        RemoteModel::as_stt(self)
+    }
+
+    fn as_tts(&self) -> Option<Tts<'_>> {
+        RemoteModel::as_tts(self)
+    }
+
+    fn as_vad(&self) -> Option<Vad<'_>> {
+        RemoteModel::as_vad(self)
+    }
+
+    fn as_end_of_turn(&self) -> Option<EndOfTurn<'_>> {
+        RemoteModel::as_end_of_turn(self)
+    }
 }

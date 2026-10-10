@@ -1,14 +1,14 @@
-//! A remote model, as the app holds it: [`RemoteModel`], a provider's model that
-//! [`Engine::remote`](crate::Engine::remote) made, which hands out the same capability interfaces as a local one.
+//! A remote model, as the app holds it: [`RemoteModel`], a provider's model that its catalogue loaded
+//! ([`Catalog::load`](crate::Catalog::load)), which hands out the same capability interfaces as a local one.
 
 use std::sync::Arc;
 
 use crate::capability::{EndOfTurn, Resident, Stt, Tts, Vad};
 use crate::catalog::Capability;
 
-/// A provider's model, made by [`Engine::remote`](crate::Engine::remote). Nothing of it is in memory but its
-/// description: each call goes to the provider, through the host, with the key the host hands over for it. Calls on it
-/// wait for one another.
+/// A provider's model, loaded by its catalogue ([`Catalog::load`](crate::Catalog::load)). Nothing of it is in memory
+/// but its description: each call goes to the provider, through the host, with the key the host hands over for it.
+/// Calls on it wait for one another.
 #[derive(Clone)]
 pub struct RemoteModel {
     provider: &'static str,

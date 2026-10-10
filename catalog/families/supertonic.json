@@ -2,6 +2,11 @@
   "id": "supertonic",
   "architecture": "supertonic",
   "source": "https://huggingface.co/Supertone/supertonic-3",
+  "speed": {
+    "min": 0.9,
+    "max": 1.5,
+    "source": "https://github.com/supertone-inc/supertonic/blob/1e9799e964ea4c0dad7cde993b65c3c813a7b373/py/README.md#L133"
+  },
   "models": [
     {
       "id": "supertonic-3",
