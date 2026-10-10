@@ -2,6 +2,7 @@
 //! from the local catalogue's: a provider has no builds, nothing is installed, and no accelerator is chosen.
 
 use crate::capability::Resident;
+use crate::install::Cancel;
 use crate::provider::listing::Listed;
 use crate::provider::{Adapter, Api, RemoteModel};
 use crate::{Engine, Error, Result};
@@ -9,9 +10,17 @@ use crate::{Engine, Error, Result};
 impl Engine {
     /// The model `model` of `adapter`'s provider, which its listing must have (listed first if it is missing or old).
     /// It makes no call: each call on it goes to the provider, with the key the host hands over for that call.
-    /// `model-not-found` for a model its listing does not have, and its status when it has no listing.
-    pub(super) async fn remote(&self, adapter: &dyn Adapter, model: &str) -> Result<RemoteModel> {
+    /// `model-not-found` for a model its listing does not have, and its status when it has no listing; `cancelled` once
+    /// `cancel` is, whether before or while its listing is read.
+    pub(super) async fn remote(
+        &self,
+        adapter: &dyn Adapter,
+        model: &str,
+        cancel: &Cancel,
+    ) -> Result<RemoteModel> {
+        cancel.check()?;
         let listed = self.listed(adapter, false).await;
+        cancel.check()?;
         let found = listed.models.iter().find(|listed| listed.id == model);
         let (Some(found), Some(facts)) = (found, &listed.facts) else {
             return Err(match listed.status {

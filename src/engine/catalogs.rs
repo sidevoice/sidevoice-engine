@@ -305,7 +305,7 @@ impl<'a> Catalog<'a> {
             Kind::Provider(adapter) => {
                 cancel.check()?;
                 self.engine
-                    .remote(adapter, model)
+                    .remote(adapter, model, cancel)
                     .await
                     .map(LoadedModel::Remote)
             }

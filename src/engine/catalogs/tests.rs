@@ -123,3 +123,28 @@ fn a_provider_whose_spec_cannot_be_read_has_no_models_and_says_why() {
     );
     assert!(block_on(openai.models(None)).expect("models").is_empty());
 }
+
+/// ENG82-02: a remote load cancelled while its listing is out fails with `cancelled`, not with a model.
+#[test]
+fn a_remote_load_cancelled_while_its_listing_is_read_is_cancelled() {
+    let host = MemoryHost::default();
+    let remote = host.remote();
+    remote.key("openai", "sk-test");
+    remote.answer(OPENAI_SPEC, 200, openai_spec().to_string().as_bytes());
+    remote.answer(
+        "https://api.openai.com/v1/models",
+        200,
+        br#"{"data": [{"id": "gpt-4o-transcribe"}]}"#,
+    );
+    let cancel = Cancel::new();
+    remote.cancel_during("https://api.openai.com/v1/models", &cancel);
+    let engine = Engine::new(Box::new(host), Vec::new()).expect("engine");
+    let openai = engine.catalog("openai").expect("openai");
+    let loaded = block_on(openai.load("gpt-4o-transcribe", &|_| {}, &cancel)).map(drop);
+    assert_eq!(loaded.map_err(|e| e.code), Err("cancelled"));
+    let again = block_on(openai.load("gpt-4o-transcribe", &|_| {}, &Cancel::new()));
+    assert!(
+        again.is_ok(),
+        "the listing it read stands for the next load"
+    );
+}
