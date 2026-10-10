@@ -10,7 +10,9 @@
 //! engine expects a model directory, or looks at file names and extensions, finds what it expects. [`Installed`] is
 //! where each key's file is in that folder, and a build is installed when its folder is stored, which happens only
 //! once every file is in it. Files stay on disk when their models leave memory; [`Installer::uninstall`] removes a
-//! build's folder, and each of its blobs no other folder links.
+//! build's folder, and each of its blobs no other folder links. An install may find a blob it needs already stored and
+//! link it later: no blob is removed while any install is between those two steps (`BLOBS`), so one build's uninstall
+//! never takes a shared file from under another's install.
 //!
 //! An artifact with an `archive_path` is a member of an archive: several keys may share one archive (the same `url`
 //! and `sha256`), each naming its own member. Each distinct archive is downloaded once, checked against its digest,
@@ -43,6 +45,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use async_lock::RwLock;
+
 use crate::host::{Host, Storage};
 use crate::{Error, Result};
 
@@ -57,6 +61,12 @@ mod progress;
 mod tests;
 
 pub use cancel::Cancel;
+
+/// Held, shared, by every install from the moment it looks for its blobs until its folder links them, and, alone, by an
+/// uninstall while it removes the blobs no folder links: a blob an install has found, or is storing, is never removed
+/// before it is linked. One for the process, so that several engines on one storage keep to it too; an uninstall waits
+/// for the installs in progress, and they for it.
+static BLOBS: RwLock<()> = RwLock::new(());
 #[cfg(test)]
 use plan::file_path;
 pub use progress::{Progress, ProgressSink};
@@ -121,6 +131,7 @@ impl Installer {
         let members = plan::check(artifacts)?;
         let paths = plan::paths(artifacts, &members)?;
         let storage = host.storage();
+        let _blobs = BLOBS.read().await;
         if storage.find_folder(folder).await?.is_none() {
             let wanted = plan::wanted(artifacts);
             let mut report = Progress {
@@ -189,15 +200,12 @@ impl Installer {
     }
 
     /// Removes the build folder `folder`, then each blob of `artifacts` that no other build folder links: a file
-    /// shared by two builds stays as long as either is installed.
+    /// shared by two builds stays as long as either is installed, and while any install is in progress the blobs wait
+    /// for it, so that a file it found stored is still there when it links it.
     ///
     /// # Errors
     ///
     /// What the host's storage fails with.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "the engine does not remove builds yet")
-    )]
     pub(crate) async fn uninstall(
         &self,
         folder: &str,
@@ -205,6 +213,7 @@ impl Installer {
         storage: &dyn Storage,
     ) -> Result<()> {
         storage.remove_folder(folder).await?;
+        let _blobs = BLOBS.write().await;
         let digests: BTreeSet<&str> = artifacts.iter().map(|a| a.sha256.as_str()).collect();
         for digest in digests {
             for blob in [digest.to_owned(), plan::unpacked(digest)] {

@@ -4,7 +4,7 @@
 
 use std::sync::Mutex;
 
-use super::{file_path, member_path, Artifact, Cancel, Installed, Installer, Progress};
+use super::{file_path, member_path, Artifact, Cancel, Installed, Installer, Progress, BLOBS};
 use crate::test_support::{artifact, block_on, member, sha256, MemoryHost};
 #[cfg(native)]
 use crate::test_support::{bzip2, tar, TarEntry};
@@ -465,4 +465,57 @@ fn a_member_path_is_relative_plain_and_normalised() {
     for path in ["", ".", "/", "/lib", "..", "a/../b", "a\\b", "c:", "a\nb"] {
         assert_eq!(member_path(path), None, "{path:?}");
     }
+}
+
+/// ENG-02: another build's install has found a blob this build shares, and links it later. An uninstall of this build
+/// that comes in between removes its folder, then waits for that install before removing blobs, and finds the blob
+/// linked by then: it stays.
+#[test]
+fn an_uninstall_waits_for_an_install_that_found_a_shared_blob_before_removing_it() {
+    use std::future::Future;
+    use std::pin::pin;
+    use std::task::{Context, Poll};
+
+    let host = host();
+    install(&host, &artifacts(), &Cancel::new())
+        .0
+        .expect("installed");
+    // The other build's install, between finding the shared blob stored and linking it.
+    let installing = block_on(BLOBS.read());
+
+    let artifacts = artifacts();
+    let uninstall = Installer.uninstall(BUILD, &artifacts, &host);
+    let mut uninstall = pin!(uninstall);
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    assert!(
+        uninstall.as_mut().poll(&mut context).is_pending(),
+        "it waits for the install"
+    );
+    assert_eq!(host.folder(BUILD), None, "its own folder is gone already");
+    assert!(
+        host.stored().contains_key(&sha256(MODEL)),
+        "the shared blob is not"
+    );
+
+    // The other install links the blob, and is done.
+    let mut folder =
+        block_on(crate::host::Storage::create_folder(&host, "model/other")).expect("folder");
+    block_on(folder.link("model.onnx", &sha256(MODEL), None)).expect("linked");
+    block_on(folder.commit()).expect("committed");
+    drop(installing);
+
+    let uninstalled = loop {
+        if let Poll::Ready(uninstalled) = uninstall.as_mut().poll(&mut context) {
+            break uninstalled;
+        }
+    };
+    uninstalled.expect("uninstalled");
+    assert!(
+        host.stored().contains_key(&sha256(MODEL)),
+        "the other build's file stays"
+    );
+    assert!(
+        !host.stored().contains_key(&sha256(LIBRARY)),
+        "this build's own file goes"
+    );
 }
