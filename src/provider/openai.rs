@@ -1,28 +1,33 @@
 //! OpenAI: speech to text and text to speech on OpenAI's API, a remote provider. Nothing runs here: a model is the
 //! provider's, called through the host's HTTP with the key the host hands over for each call.
 //!
-//! - Its models: those `GET /v1/models` lists for the key that its spec describes (`openai/facts.json`, which
-//!   `cargo xtask pin-providers` derives from OpenAI's OpenAPI spec): the API lists ids only, and the spec says which
-//!   are speech to text and which text to speech. OpenAI publishes no languages for them: they have none here. Its
+//! - Its facts, from OpenAI's OpenAPI spec (github.com/openai/openai-openapi, `openapi.json` at `main`), read at run
+//!   time: the speech-to-text models are the ids `CreateTranscriptionRequest.model` enumerates, the text-to-speech ones
+//!   those of `CreateSpeechRequest.model`; the voices, every id `CreateSpeechRequest.voice` enumerates; a model's
+//!   language field is its request's `language`, when the request has one; the speed range is
+//!   `CreateSpeechRequest.speed`'s; and the spec must still list `pcm` among the speech formats.
+//! - Its models: what `GET /v1/models` lists for the key decides which exist. It lists ids alone, with no kind, so of
+//!   those the ones offered are the ids the spec names as speech to text or as text to speech (a listed id it names as
+//!   neither cannot be told apart from a chat model). OpenAI publishes no languages for them: they have none here. Its
 //!   voices are the spec's (OpenAI has no endpoint that lists them), each with no languages and no gender.
 //! - Speech to text: `POST /v1/audio/transcriptions`, a multipart form with the turn as a 16-bit WAV at 16 kHz, the
 //!   model and `response_format: json`; the language goes in the field the spec gives its request (`language`), as its
-//!   primary subtag. The transcript is the answer's `text`.
+//!   primary subtag; for a model the spec's `chunking_strategy` names as taking it (`gpt-4o-transcribe-diarize`, which
+//!   requires it past 30 seconds), a turn longer than 30 seconds asks the provider to cut it, `chunking_strategy:
+//!   auto`; no other model is sent it. The transcript is the answer's `text`.
 //! - Text to speech: `POST /v1/audio/speech`, JSON with the model, the text, the voice and the speed (within the spec's
 //!   range), answered as `pcm`: 16-bit mono samples at 24 kHz, as OpenAI's text-to-speech guide gives that format. The
 //!   model speaks the text's language, and its request takes none.
 //!
 //! Streaming is not used (sidevoice-engine#35).
 
-use std::sync::LazyLock;
-
 use async_trait::async_trait;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use super::api::{self, Form};
-use super::facts::{Facts, ModelFacts};
+use super::facts::{self, Facts, ModelFacts};
 use super::registry::ProviderFactory;
-use super::{Adapter, Api, ProviderModel, ProviderSpec};
+use super::{Adapter, Api, ProviderSpec, RemoteModelInfo};
 use crate::backend::{BackendModel, SttModel, TtsModel};
 use crate::capability::STT_RATE;
 use crate::catalog::{Capability, Voice};
@@ -38,15 +43,17 @@ const API: &str = "https://api.openai.com/v1";
 /// The rate of what `/v1/audio/speech` answers as `pcm`.
 const SPEECH_RATE: u32 = 24_000;
 
-/// What OpenAI's spec says that its API does not.
-static FACTS: LazyLock<Facts> = LazyLock::new(|| Facts::parse(include_str!("openai/facts.json")));
+/// How long a turn is, in seconds, past which a transcription asks the provider to cut it (its `chunking_strategy`):
+/// the spec's own description of that field makes it required past 30 seconds for `gpt-4o-transcribe-diarize`, and a
+/// shorter turn is transcribed as one block, as before.
+const LONG_TURN_S: u32 = 30;
 
 struct OpenAi;
 
 const SPEC: ProviderSpec = ProviderSpec {
     id: "openai",
     name: "OpenAI",
-    description: "Speech to text and text to speech on OpenAI's API, with the app's key.",
+    spec: "https://raw.githubusercontent.com/openai/openai-openapi/main/openapi.json",
 };
 
 inventory::submit! { ProviderFactory(|| Box::new(OpenAi)) }
@@ -68,8 +75,67 @@ impl Adapter for OpenAi {
         &SPEC
     }
 
+    fn facts(&self, spec: &Value) -> Result<Facts> {
+        let transcription = facts::schema(spec, "CreateTranscriptionRequest")?;
+        let speech = facts::schema(spec, "CreateSpeechRequest")?;
+        let formats = facts::strings(spec, &speech["properties"]["response_format"]);
+        if !formats.iter().any(|format| format == "pcm") {
+            return Err(facts::unreadable());
+        }
+        // What a request takes: the field its language goes in, and its speed range, where it takes either.
+        let rules = |request: &Value| {
+            let language = request["properties"].get("language").map(|_| "language");
+            let speed = facts::range(spec, &request["properties"]["speed"]);
+            ModelFacts::new("", language, speed)
+        };
+        // The models the spec's `chunking_strategy` says take it (by name, in its description: the diarization model,
+        // which requires it past 30 seconds), and the value that lets the provider cut a turn itself (`auto`). No other
+        // model is sent it: `whisper-1` is not said to take it.
+        let chunking = &transcription["properties"]["chunking_strategy"];
+        let auto = facts::strings(spec, chunking)
+            .into_iter()
+            .find(|value| value == "auto");
+        let chunked: Vec<String> = facts::descriptions(spec, chunking)
+            .iter()
+            .flat_map(|description| {
+                description
+                    .split('`')
+                    .skip(1)
+                    .step_by(2)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let models = |request: &Value| -> Result<Vec<ModelFacts>> {
+            let ids = facts::strings(spec, &request["properties"]["model"]);
+            if ids.is_empty() {
+                return Err(facts::unreadable());
+            }
+            let rules = rules(request);
+            Ok(ids
+                .iter()
+                .map(|id| ModelFacts {
+                    model: id.clone(),
+                    chunking: auto.clone().filter(|_| chunked.contains(id)),
+                    ..rules.clone()
+                })
+                .collect())
+        };
+        let voices = facts::strings(spec, &speech["properties"]["voice"]);
+        if voices.is_empty() {
+            return Err(facts::unreadable());
+        }
+        Ok(Facts {
+            speech_to_text: models(transcription)?,
+            text_to_speech: models(speech)?,
+            transcription: rules(transcription),
+            speech: rules(speech),
+            voices,
+        })
+    }
+
     /// `GET /v1/models`, kept to the ids the spec describes, in the spec's order.
-    async fn models(&self, api: &Api) -> Result<Vec<ProviderModel>> {
+    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<RemoteModelInfo>> {
         let key = api.key().await?;
         let answer = api
             .list(request("GET", format!("{API}/models"), &key))
@@ -81,22 +147,22 @@ impl Adapter for OpenAi {
             .iter()
             .filter_map(|model| model["id"].as_str())
             .collect();
-        Ok(FACTS
+        Ok(facts
             .models()
             .filter(|(_, facts)| ids.contains(&facts.model.as_str()))
-            .map(|(capability, facts)| ProviderModel {
+            .map(|(capability, facts)| RemoteModelInfo {
                 id: facts.model.clone(),
                 capabilities: vec![capability],
                 languages: Vec::new(),
                 voices: Vec::new(),
-                speed: facts.speed,
+                speed: facts.range(),
             })
             .collect())
     }
 
     /// The spec's voices: no call.
-    async fn voices(&self, _api: &Api) -> Result<Vec<Voice>> {
-        Ok(FACTS
+    async fn voices(&self, _api: &Api, facts: &Facts) -> Result<Vec<Voice>> {
+        Ok(facts
             .voices
             .iter()
             .map(|id| Voice {
@@ -108,11 +174,17 @@ impl Adapter for OpenAi {
             .collect())
     }
 
-    fn open(&self, api: Api, model: &ProviderModel) -> Result<Box<dyn BackendModel>> {
-        let (capability, facts) = FACTS
-            .model(&model.id)
+    fn open(
+        &self,
+        api: Api,
+        model: &RemoteModelInfo,
+        facts: &Facts,
+    ) -> Result<Box<dyn BackendModel>> {
+        let capability = *model
+            .capabilities
+            .first()
             .ok_or(Error::new("unsupported-model"))?;
-        let facts = facts.clone();
+        let facts = facts.of(capability, &model.id);
         Ok(match capability {
             Capability::Stt => Box::new(Transcriber { api, facts }),
             _ => Box::new(Speaker {
@@ -152,6 +224,11 @@ impl SttModel for Transcriber {
             .text("response_format", "json");
         if let (Some(field), Some(language)) = (&self.facts.language, language) {
             form = form.text(field, &api::primary_subtag(language));
+        }
+        if let Some(chunking) = &self.facts.chunking {
+            if pcm.len() > (LONG_TURN_S * STT_RATE) as usize {
+                form = form.text("chunking_strategy", chunking);
+            }
         }
         let (content_type, body) = form.finish();
         let mut request = request("POST", format!("{API}/audio/transcriptions"), &key);

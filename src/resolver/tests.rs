@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use super::Resolver;
 use super::{Offer, Rejection};
 use crate::backend::{Backend, BackendSpec, Library, MinCores};
-use crate::catalog::{Catalog, CatalogFragment, CatalogSource};
+use crate::catalog::{CatalogFragment, CatalogSource, MergedCatalog};
 use crate::install::Installed;
 use crate::test_support::{build, family, model};
 use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
@@ -93,7 +93,8 @@ fn fit_requiring(
     caps: &Capabilities,
 ) -> Result<Accelerator, Rejection> {
     let source = OneBuildCatalog(accelerators);
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let offers = Resolver::default().offers(
         &catalog,
         &[FixedProbeBackend::probing(probe)],
@@ -183,7 +184,8 @@ fn a_build_runs_only_on_accelerators_it_requires_in_the_backends_order() {
 #[test]
 fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
     let source = crate::BundledCatalog;
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let offers = Resolver::default().offers(
         &catalog,
         &[FixedProbeBackend::probing(COREML_AND_CPU)],
@@ -215,7 +217,8 @@ fn a_bundled_kokoro_build_is_never_offered_on_core_ml() {
 #[test]
 fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
     let source = crate::BundledCatalog;
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let fp16_accelerators = |accelerators: &[Accelerator]| -> Vec<Accelerator> {
         let backend = || -> Box<dyn Backend> {
             Box::new(PageBackend(BackendSpec {
@@ -290,7 +293,8 @@ impl CatalogSource for WasmCatalog {
 /// The one build of [`WasmCatalog`] taking `memory_mb`, on a host that `runs` there, offered or why not.
 fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
     let source = WasmCatalog(memory_mb);
-    let catalog = Catalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
     let backend = PageBackend(BackendSpec {
         id: "transformers-js",
         name: "a backend of the page",

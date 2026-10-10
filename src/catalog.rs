@@ -14,6 +14,7 @@ use model::CALL_ARGUMENTS;
 mod bundled;
 mod family;
 mod model;
+mod speed;
 #[cfg(test)]
 mod tests;
 
@@ -22,6 +23,7 @@ pub use family::Family;
 pub use model::{
     BuildEntry, Capability, Gender, Memory, MemorySource, ModelEntry, ModelFile, Requires, Voice,
 };
+pub use speed::{FamilySpeed, SpeedRange};
 
 /// Where catalogue entries come from: the catalogue bundled in the engine, a remote one pinned by digest, the
 /// user's own models.
@@ -35,15 +37,15 @@ pub trait CatalogSource: MaybeSend + MaybeSync {
 }
 
 /// What one source contributes.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct CatalogFragment {
     /// Its families, with their models.
     pub families: Vec<Family>,
 }
 
 /// The merged catalogue.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Catalog {
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct MergedCatalog {
     families: Vec<Family>,
 }
 
@@ -54,6 +56,12 @@ pub enum Problem {
     /// Two sources, or one twice, define a family with this id.
     DuplicateFamily {
         /// The repeated id.
+        family: String,
+    },
+    /// A family's speed range has a bound that is not positive, a slowest speed above its fastest, no source, or an empty
+    /// `decided_by`.
+    InvalidSpeed {
+        /// The family.
         family: String,
     },
     /// A family with no model.
@@ -138,7 +146,7 @@ pub enum Problem {
     },
 }
 
-impl Catalog {
+impl MergedCatalog {
     /// Every source's families, in the order of `sources`.
     pub(crate) fn merge(sources: &[Box<dyn CatalogSource>]) -> Result<Self> {
         let mut families = Vec::new();
@@ -175,6 +183,11 @@ impl Catalog {
         for family in &self.families {
             if !families.insert(&family.id) {
                 problems.push(Problem::DuplicateFamily {
+                    family: family.id.clone(),
+                });
+            }
+            if family.speed.as_ref().is_some_and(|speed| !speed.is_valid()) {
+                problems.push(Problem::InvalidSpeed {
                     family: family.id.clone(),
                 });
             }

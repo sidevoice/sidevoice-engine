@@ -625,6 +625,7 @@ pub(crate) fn family(id: &str, models: Vec<ModelEntry>) -> Family {
         id: id.to_owned(),
         architecture: id.to_owned(),
         source: format!("https://example.com/{id}"),
+        speed: None,
         models,
     }
 }
@@ -699,9 +700,17 @@ pub(crate) struct FakeProvider {
     keys: Mutex<BTreeMap<String, String>>,
     answers: Mutex<Vec<(String, HttpResponse)>>,
     requests: Mutex<Vec<HttpRequest>>,
+    /// Cancelled when a request whose URL starts with its prefix is answered: what a person cancelling while that request
+    /// is out does.
+    cancels: Mutex<Vec<(String, crate::Cancel)>>,
 }
 
 impl FakeProvider {
+    /// `cancel` is cancelled while a request whose URL starts with `prefix` is out, before it is answered.
+    pub(crate) fn cancel_during(&self, prefix: &str, cancel: &crate::Cancel) {
+        lock(&self.cancels).push((prefix.to_owned(), cancel.clone()));
+    }
+
     /// The host has `key` for `provider`.
     pub(crate) fn key(&self, provider: &str, key: &str) {
         lock(&self.keys).insert(provider.to_owned(), key.to_owned());
@@ -712,13 +721,14 @@ impl FakeProvider {
         lock(&self.keys).remove(provider);
     }
 
-    /// A request whose URL starts with `prefix` is answered with `status` and `body` (the first such answer given).
+    /// A request whose URL starts with `prefix` is answered with `status` and `body` (the last such answer given: a later one
+    /// replaces it).
     pub(crate) fn answer(&self, prefix: &str, status: u16, body: &[u8]) {
         let response = HttpResponse {
             status,
             body: body.to_vec(),
         };
-        lock(&self.answers).push((prefix.to_owned(), response));
+        lock(&self.answers).insert(0, (prefix.to_owned(), response));
     }
 
     /// Every request made, in order.
@@ -736,6 +746,11 @@ impl HttpClient for FakeProvider {
             .iter()
             .find(|(prefix, _)| request.url.starts_with(prefix.as_str()))
             .map(|(_, response)| response.clone());
+        for (prefix, cancel) in lock(&self.cancels).iter() {
+            if request.url.starts_with(prefix.as_str()) {
+                cancel.cancel();
+            }
+        }
         lock(&self.requests).push(request);
         answer.ok_or(Error::new("request-failed"))
     }
@@ -770,4 +785,30 @@ pub(crate) fn header<'a>(request: &'a HttpRequest, name: &str) -> Option<&'a str
 pub(crate) fn contains(body: &[u8], part: &str) -> bool {
     body.windows(part.len())
         .any(|window| window == part.as_bytes())
+}
+
+/// The parts of OpenAI's spec its facts come from, shaped as the spec shapes them: what the provider's tests read,
+/// and what a fake provider serves at its URL.
+pub(crate) fn openai_spec() -> serde_json::Value {
+    use serde_json::json;
+    json!({ "components": { "schemas": {
+        "CreateTranscriptionRequest": { "properties": {
+            "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["whisper-1", "gpt-4o-transcribe", "gpt-4o-transcribe-diarize"] }] },
+            "language": { "type": "string" },
+            "chunking_strategy": { "anyOf": [
+                { "description": "Controls how the audio is cut into chunks. Required when using `gpt-4o-transcribe-diarize` for inputs longer than 30 seconds.", "anyOf": [{ "type": "string", "enum": ["auto"] }, { "$ref": "#/components/schemas/VadConfig" }] },
+                { "type": "null" },
+            ]},
+        }},
+        "CreateSpeechRequest": { "properties": {
+            "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["tts-1", "gpt-4o-mini-tts"] }] },
+            "voice": { "anyOf": [
+                { "anyOf": [{ "$ref": "#/components/schemas/VoiceIdsShared" }, { "type": "string", "enum": ["fable", "nova"] }] },
+                { "type": "object", "properties": { "id": { "type": "string" } } },
+            ]},
+            "speed": { "type": "number", "minimum": 0.25, "maximum": 4 },
+            "response_format": { "type": "string", "enum": ["mp3", "pcm"] },
+        }},
+        "VoiceIdsShared": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["alloy", "ash"] }] },
+    }}})
 }

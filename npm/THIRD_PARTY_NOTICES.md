@@ -15,4 +15,4 @@ decision, tracked in [sidevoice-engine#30](https://github.com/sidevoice/sidevoic
 this notice says what the package depends on, and nothing here settles it.
 
 The models themselves are not part of the package: the engine downloads each from the URL its catalogue pins, under
-the model's own licence, which `WebEngine.models()` reports per model.
+the model's own licence, which the local catalogue's `models()` reports per model.

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
 use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
-use crate::catalog::{BuildEntry, Capability, Catalog, ModelEntry};
+use crate::catalog::{BuildEntry, Capability, MergedCatalog, ModelEntry};
 use crate::host::{Accelerator, Capabilities, Runs};
 
 mod offer;
@@ -61,7 +61,7 @@ impl Resolver {
     )]
     pub(crate) fn offers(
         &self,
-        catalog: &Catalog,
+        catalog: &MergedCatalog,
         backends: &[Box<dyn Backend>],
         caps: &Capabilities,
         capability: Capability,

@@ -2,6 +2,12 @@
   "id": "piper",
   "architecture": "vits",
   "source": "https://github.com/rhasspy/piper",
+  "speed": {
+    "min": 0.5,
+    "max": 2.0,
+    "source": "https://github.com/OHF-Voice/piper1-gpl/blob/efffbfb226bfb511ebbcf55d0cecd8b35a89743d/docs/API_HTTP.md#L52",
+    "decided_by": "sidevoice: Piper takes a speed (its length_scale, per the source) and publishes no range; 0.5 to 2.0 is our choice, not Piper's"
+  },
   "models": [
     {
       "id": "piper-es_ES-carlfm-x_low",

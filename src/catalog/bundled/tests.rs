@@ -1,5 +1,5 @@
 use super::{parse, BundledCatalog, FAMILIES};
-use crate::catalog::{Catalog, CatalogSource};
+use crate::catalog::{CatalogSource, MergedCatalog};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -11,7 +11,7 @@ fn every_bundled_family_parses_and_the_merge_has_no_problems() {
             panic!("{error}");
         }
     }
-    let catalog = Catalog::merge(&[Box::new(BundledCatalog) as Box<dyn CatalogSource>]);
+    let catalog = MergedCatalog::merge(&[Box::new(BundledCatalog) as Box<dyn CatalogSource>]);
     assert_eq!(
         catalog
             .expect("bundled catalogue")
