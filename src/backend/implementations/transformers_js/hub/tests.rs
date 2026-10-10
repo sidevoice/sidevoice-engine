@@ -55,3 +55,43 @@ fn a_served_model_finds_its_files_by_local_path_and_by_url_and_nothing_else() {
         assert_eq!(models.location(path), None, "{path:?}");
     }
 }
+
+/// ENG-03: two engines' libraries on one transformers.js module share its hub, so they never answer each other's
+/// models, and `env` is put back only when the last of them is closed.
+#[wasm_bindgen_test]
+fn libraries_on_one_module_share_its_hub_and_env_comes_back_after_the_last() {
+    use std::rc::Rc;
+
+    use js_sys::{Function, Object, Reflect};
+    use wasm_bindgen::JsValue;
+
+    use super::Hub;
+
+    let env = Object::new();
+    let fetch = Function::new_no_args("return null;");
+    Reflect::set(&env, &"fetch".into(), &fetch).unwrap();
+    let module = Object::new();
+    Reflect::set(&module, &"env".into(), &env).unwrap();
+    let module: JsValue = module.into();
+    let fetch_now = || Reflect::get(&env, &"fetch".into()).unwrap();
+
+    let first = Hub::open(&module).expect("opened");
+    let second = Hub::open(&module).expect("opened");
+    assert!(Rc::ptr_eq(&first, &second), "one hub per module");
+    assert!(!Object::is(&fetch_now(), &fetch), "env points at the hub");
+    first.models.borrow_mut().next += 1;
+    assert_eq!(second.models.borrow().next, 1, "one numbering for both");
+
+    drop(first);
+    assert!(!Object::is(&fetch_now(), &fetch), "still used by the other");
+    drop(second);
+    assert!(Object::is(&fetch_now(), &fetch), "put back after the last");
+
+    let again = Hub::open(&module).expect("opened");
+    assert!(
+        !Object::is(&fetch_now(), &fetch),
+        "a new hub points it again"
+    );
+    drop(again);
+    assert!(Object::is(&fetch_now(), &fetch));
+}

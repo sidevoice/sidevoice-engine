@@ -3,12 +3,16 @@
 //! hub answers both for the models the engine serves, each under a name of its own (`sidevoice-engine-opfs/m<n>`):
 //! the cache with the file in the build's folder, at its path in the repository (a `Response` over the OPFS file), `fetch` with a 404 for a path the build
 //! does not have (an optional file such as `generation_config.json` of a model without one). Anything else goes where
-//! it went before: the page's own use of transformers.js keeps its cache and its downloads. Closing the library puts
-//! `env` back as it was.
+//! it went before: the page's own use of transformers.js keeps its cache and its downloads.
+//!
+//! The hub is one per transformers.js module, shared by every engine of the page that imports it (each engine's
+//! library opens it, and gets the same one): its models are numbered across all of them, so no two share a name, each
+//! is served until its own model is dropped, and `env` is put back as it was only when the last library using the hub
+//! is closed.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use js_sys::{Promise, Reflect};
 use wasm_bindgen::prelude::*;
@@ -70,7 +74,12 @@ extern "C" {
     ) -> Result<js_sys::Function, JsValue>;
 }
 
-/// The hub while the library is open: which files each served model has, and what puts `env` back.
+thread_local! {
+    /// Each transformers.js module's hub while something uses it. The web build has one thread.
+    static HUBS: RefCell<Vec<(JsValue, Weak<Hub>)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// A module's hub while any library uses it: which files each served model has, and what puts `env` back.
 pub(super) struct Hub {
     models: Rc<RefCell<Models>>,
     restore: js_sys::Function,
@@ -86,8 +95,25 @@ struct Models {
 }
 
 impl Hub {
-    /// Points the `env` of the transformers.js `module` at the models it will serve.
+    /// The hub of the transformers.js `module`: the one already pointing its `env` at the models served, if a library
+    /// uses it, else a new one, which points `env` there.
     pub(super) fn open(module: &JsValue) -> Result<Rc<Self>, JsValue> {
+        let open = HUBS.with_borrow_mut(|hubs| {
+            hubs.retain(|(_, hub)| hub.strong_count() > 0);
+            hubs.iter()
+                .find(|(served, _)| js_sys::Object::is(served, module))
+                .and_then(|(_, hub)| hub.upgrade())
+        });
+        if let Some(hub) = open {
+            return Ok(hub);
+        }
+        let hub = Self::point(module)?;
+        HUBS.with_borrow_mut(|hubs| hubs.push((module.clone(), Rc::downgrade(&hub))));
+        Ok(hub)
+    }
+
+    /// Points the `env` of the transformers.js `module` at the models it will serve.
+    fn point(module: &JsValue) -> Result<Rc<Self>, JsValue> {
         let env = Reflect::get(module, &"env".into())?;
         let models = Rc::new(RefCell::new(Models::default()));
         let served = Rc::clone(&models);
