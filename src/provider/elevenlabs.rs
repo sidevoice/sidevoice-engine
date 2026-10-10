@@ -186,7 +186,7 @@ impl Adapter for ElevenLabs {
                     capabilities: vec![capability],
                     languages: strings(&model["languages"], "language_id"),
                     voices: Vec::new(),
-                    speed: facts.of(capability, id).range(SPEC.spec),
+                    speed: facts.of(capability, id).range(),
                 })
             })
             .collect())

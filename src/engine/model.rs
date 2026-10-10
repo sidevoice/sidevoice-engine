@@ -27,8 +27,8 @@ pub trait ModelInfo: fmt::Debug + MaybeSend + MaybeSync {
     /// Its voices, for a text-to-speech model whose source describes them.
     fn voices(&self) -> &[Voice];
 
-    /// The speeds it takes, with their source; `None` means only that it takes no speed.
-    fn speed(&self) -> Option<&SpeedRange>;
+    /// The speeds it takes; `None` means only that it takes no speed.
+    fn speed(&self) -> Option<SpeedRange>;
 }
 
 /// A model ready to use, which a catalogue loaded: it hands out the capability interfaces, the same whatever runs it.
@@ -69,8 +69,8 @@ impl ModelInfo for LocalModelInfo {
         &self.voices
     }
 
-    fn speed(&self) -> Option<&SpeedRange> {
-        self.speed.as_ref()
+    fn speed(&self) -> Option<SpeedRange> {
+        self.speed
     }
 }
 
@@ -91,8 +91,8 @@ impl ModelInfo for RemoteModelInfo {
         &self.voices
     }
 
-    fn speed(&self) -> Option<&SpeedRange> {
-        self.speed.as_ref()
+    fn speed(&self) -> Option<SpeedRange> {
+        self.speed
     }
 }
 

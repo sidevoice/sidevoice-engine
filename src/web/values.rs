@@ -30,7 +30,7 @@ pub(super) fn model(model: &LocalModelInfo) -> JsValue {
             "voices",
             Some(model.voices.iter().map(voice).collect::<Array>().into()),
         ),
-        ("speed", model.speed.as_ref().map(speed)),
+        ("speed", model.speed.map(speed)),
         ("installed", Some(model.installed.into())),
         (
             "builds",
@@ -90,16 +90,15 @@ pub(super) fn provider_model(model: &RemoteModelInfo) -> JsValue {
             "voices",
             Some(model.voices.iter().map(voice).collect::<Array>().into()),
         ),
-        ("speed", model.speed.as_ref().map(speed)),
+        ("speed", model.speed.map(speed)),
     ])
 }
 
-/// `{ min?, max?, source }`.
-fn speed(range: &SpeedRange) -> JsValue {
+/// `{ min, max }`.
+fn speed(range: SpeedRange) -> JsValue {
     object(&[
-        ("min", range.min.map(JsValue::from)),
-        ("max", range.max.map(JsValue::from)),
-        ("source", Some(range.source.as_str().into())),
+        ("min", Some(range.min.into())),
+        ("max", Some(range.max.into())),
     ])
 }
 

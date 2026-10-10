@@ -24,7 +24,7 @@ pub struct LocalModelInfo {
     pub license: String,
     /// Its voices, as the catalogue declares them (a text-to-speech model whose source declares them).
     pub voices: Vec<Voice>,
-    /// The speeds it takes, as its family declares them with their source; `None`, it takes no speed.
+    /// The speeds it takes, as its family declares them; `None`, it takes no speed.
     pub speed: Option<SpeedRange>,
     /// Whether one of its builds is installed.
     pub installed: bool,

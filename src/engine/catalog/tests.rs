@@ -3,7 +3,7 @@
 //! transcribes through the same interface as a local one.
 
 use crate::test_support::{block_on, openai_spec, FakeCatalog, MemoryHost};
-use crate::{Cancel, Capability, Engine, LOCAL_CATALOG};
+use crate::{Cancel, Capability, CatalogSource, Engine, LOCAL_CATALOG};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -170,20 +170,29 @@ fn local_models_carry_their_familys_speeds_and_a_model_without_takes_none() {
     let models = block_on(crate::Catalog::models(&local, None)).expect("models");
     let speed = |id: &str| {
         let model = models.iter().find(|model| model.id() == id).expect(id);
-        model.speed().map(|speed| {
-            (
-                speed.min,
-                speed.max,
-                speed.source.contains("github.com") || speed.source.contains("huggingface.co"),
-            )
-        })
+        model.speed().map(|speed| (speed.min, speed.max))
     };
-    assert_eq!(speed("kokoro-82m-v1.0"), Some((Some(0.5), Some(2.0), true)));
-    assert_eq!(speed("supertonic-3"), Some((Some(0.9), Some(1.5), true)));
+    assert_eq!(speed("kokoro-82m-v1.0"), Some((0.5, 2.0)));
+    assert_eq!(speed("supertonic-3"), Some((0.9, 1.5)));
     assert_eq!(
         speed("piper-en_US-ljspeech-medium"),
-        Some((None, None, true)),
-        "takes a speed, no bounds published"
+        Some((0.5, 2.0)),
+        "our choice"
+    );
+    // Where each range comes from stays in the catalogue: Piper's is ours, and says so.
+    let piper = crate::BundledCatalog.load().expect("bundled");
+    let piper = piper
+        .families
+        .iter()
+        .find(|family| family.id == "piper")
+        .expect("piper");
+    let decided = piper
+        .speed
+        .as_ref()
+        .and_then(|speed| speed.decided_by.as_deref());
+    assert!(
+        decided.is_some_and(|by| by.starts_with("sidevoice")),
+        "{decided:?}"
     );
     assert_eq!(speed("whisper-tiny"), None, "speech to text takes no speed");
     let kokoro = models

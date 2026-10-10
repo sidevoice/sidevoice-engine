@@ -154,11 +154,7 @@ fn model(id: &str, capability: Capability, speed: Option<[f32; 2]>) -> RemoteMod
         capabilities: vec![capability],
         languages: Vec::new(),
         voices: vec![voice("21m00Tcm4TlvDq8ikWAM"), voice("EXAVITQu4vr4xnSDxMaL")],
-        speed: speed.map(|[min, max]| SpeedRange {
-            min: Some(min),
-            max: Some(max),
-            source: "a spec".into(),
-        }),
+        speed: speed.map(|[min, max]| SpeedRange { min, max }),
     }
 }
 
@@ -184,11 +180,11 @@ fn every_model_the_listing_says_speaks_is_offered_and_the_spec_only_enriches_it(
                 model.id.as_str(),
                 model.capabilities[0],
                 model.languages.len(),
-                model.speed.as_ref().map(|speed| [speed.min, speed.max]),
+                model.speed.map(|speed| [speed.min, speed.max]),
             )
         })
         .collect();
-    let speed = Some([Some(0.7), Some(1.2)]);
+    let speed = Some([0.7, 1.2]);
     assert_eq!(
         listed,
         [

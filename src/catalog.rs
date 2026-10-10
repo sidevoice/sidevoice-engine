@@ -23,7 +23,7 @@ pub use family::Family;
 pub use model::{
     BuildEntry, Capability, Gender, Memory, MemorySource, ModelEntry, ModelFile, Requires, Voice,
 };
-pub use speed::SpeedRange;
+pub use speed::{FamilySpeed, SpeedRange};
 
 /// Where catalogue entries come from: the catalogue bundled in the engine, a remote one pinned by digest, the
 /// user's own models.
@@ -58,7 +58,8 @@ pub enum Problem {
         /// The repeated id.
         family: String,
     },
-    /// A family's speed range has a bound that is not positive, a slowest speed above its fastest, or no source.
+    /// A family's speed range has a bound that is not positive, a slowest speed above its fastest, no source, or an empty
+    /// `decided_by`.
     InvalidSpeed {
         /// The family.
         family: String,

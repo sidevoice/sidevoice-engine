@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{ModelEntry, SpeedRange};
+use super::{FamilySpeed, ModelEntry};
 
 /// A family of models one loader runs (whisper, kokoro, ...), with its models. It has no display name: the app
 /// translates what it shows from the id.
@@ -13,10 +13,10 @@ pub struct Family {
     pub architecture: String,
     /// Where the family comes from: its original publisher's page.
     pub source: String,
-    /// For a text-to-speech family, the speeds its models take, with the source of that range; absent, they take no
+    /// For a text-to-speech family, the speeds its models take, with the provenance of that range; absent, they take no
     /// speed.
     #[serde(default)]
-    pub speed: Option<SpeedRange>,
+    pub speed: Option<FamilySpeed>,
     /// Its models.
     pub models: Vec<ModelEntry>,
 }

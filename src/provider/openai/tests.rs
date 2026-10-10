@@ -38,9 +38,8 @@ fn speaker() -> RemoteModelInfo {
         languages: Vec::new(),
         voices: vec![voice("alloy"), voice("nova")],
         speed: Some(SpeedRange {
-            min: Some(0.25),
-            max: Some(4.0),
-            source: "a spec".into(),
+            min: 0.25,
+            max: 4.0,
         }),
     }
 }
@@ -133,10 +132,7 @@ fn the_listing_keeps_the_audio_models_the_spec_describes() {
     let listed: Vec<_> = models
         .iter()
         .map(|model| {
-            let speed = model
-                .speed
-                .as_ref()
-                .map(|speed| (speed.min, speed.max, speed.source.as_str()));
+            let speed = model.speed.map(|speed| (speed.min, speed.max));
             (model.id.as_str(), model.capabilities.clone(), speed)
         })
         .collect();
@@ -144,15 +140,7 @@ fn the_listing_keeps_the_audio_models_the_spec_describes() {
         listed,
         [
             ("gpt-4o-transcribe", vec![Capability::Stt], None),
-            (
-                "gpt-4o-mini-tts",
-                vec![Capability::Tts],
-                Some((
-                    Some(0.25),
-                    Some(4.0),
-                    "https://raw.githubusercontent.com/openai/openai-openapi/main/openapi.json"
-                ))
-            ),
+            ("gpt-4o-mini-tts", vec![Capability::Tts], Some((0.25, 4.0))),
         ],
         "in the spec's order, without the models that are not audio"
     );

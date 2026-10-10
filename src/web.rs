@@ -50,9 +50,8 @@ export interface ModelBuild {
   id: string; backend: string; accelerator?: string; precision: string; downloadBytes: number; memoryMb: number;
   available: boolean; reasons: Reason[]; installed: boolean;
 }
-/** The speeds a model takes, with where that comes from; a bound only where the source states one. A model with no
- * `speed` takes none. */
-export interface SpeedRange { min?: number; max?: number; source: string; }
+/** The speeds a model takes, 1 being its normal pace. A model with no `speed` takes none. */
+export interface SpeedRange { min: number; max: number; }
 /** A model as a catalogue lists it, whichever: what every model has. */
 export interface ModelInfo {
   id: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; languages: string[];

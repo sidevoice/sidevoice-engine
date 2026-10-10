@@ -83,14 +83,9 @@ impl ModelFacts {
         }
     }
 
-    /// Its speeds as the engine lists them, with the spec at `source` as where they come from; `None` for a model
-    /// that takes no speed.
-    pub(crate) fn range(&self, source: &str) -> Option<SpeedRange> {
-        self.speed.map(|[min, max]| SpeedRange {
-            min: Some(min),
-            max: Some(max),
-            source: source.to_owned(),
-        })
+    /// Its speeds as the engine lists them; `None` for a model that takes no speed.
+    pub(crate) fn range(&self) -> Option<SpeedRange> {
+        self.speed.map(|[min, max]| SpeedRange { min, max })
     }
 
     /// `speed` within the model's range; `None` for a model that takes no speed.

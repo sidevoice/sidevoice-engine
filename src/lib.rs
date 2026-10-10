@@ -38,8 +38,8 @@ pub use capability::{
     Audio, EndOfTurn, Stt, Tts, Vad, VadEvent, VadFrame, VadOptions, VadOutput, VadStream,
 };
 pub use catalog::{
-    BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Gender, Memory,
-    MemorySource, ModelEntry, ModelFile, Problem, Requires, SpeedRange, Voice,
+    BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, FamilySpeed,
+    Gender, Memory, MemorySource, ModelEntry, ModelFile, Problem, Requires, SpeedRange, Voice,
 };
 pub use engine::{
     Catalog, CatalogStatus, ConfigError, Engine, LocalCatalog, LocalModel, LocalModelInfo, Model,

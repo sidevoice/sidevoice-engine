@@ -189,11 +189,11 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
   implemented by `LocalModel` and `RemoteModel`. The traits hold only what is common and know none of their types:
   code that needs a type's specifics asks its concrete catalogue (`Engine::local_catalog()`,
   `Engine::remote_catalog(id)`), whose `models` and `load` hand out its own types.
-- **Speed means one thing.** A model's `speed` is a `SpeedRange` (a bound only where its source states one, and that
-  source); `None` means only that it takes no speed. A remote model's comes from its provider's spec; a local one's
-  from its family in the catalogue: Kokoro's 0.5 to 2 and Supertonic's 0.9 to 1.5 from their publishers, Piper's with
-  no bounds (it takes a speed, and publishes none). An app that wants one
-  picker merges the catalogues' lists itself.
+- **Speed means one thing.** A model's `speed` is a `SpeedRange { min, max }`; `None` means only that it takes no
+  speed. A remote model's comes from its provider's spec; a local one's from its family in the catalogue: Kokoro's 0.5
+  to 2 and Supertonic's 0.9 to 1.5 from their publishers, and Piper's 0.5 to 2 our own choice (it takes a speed, and
+  publishes no range), which its catalogue entry says. Where a range comes from stays in the catalogue; apps get the
+  range alone. An app that wants one picker merges the catalogues' lists itself.
 - **Listed live, kept in memory only.** A provider's status is `None` when its listing is current, else why not, as a
   stable code. Its spec and models are read when there are none (so the first call after the app starts reads every
   provider with a key), when they are a day old (its voices, an hour), and on `refresh`. Nothing is written anywhere.
@@ -398,8 +398,9 @@ cargo xtask web-e2e [DIR]
 
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
 (`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`, and,
-for text to speech, the `speed` its models take (`min` and `max` where its publisher states them, and the pinned
-`source` that does; a family with none takes no speed); a
+for text to speech, the `speed` its models take (`min` and `max`, both required, with the pinned `source` that states
+them, or, where no source publishes a range, `decided_by` who chose it and why, with the `source` that the model takes a
+speed at all; a family with none takes no speed); a
 model, its `id`, `capabilities` (`stt`, `tts`, `vad`, `end-of-turn`), `parameters_m`, `languages` (none for a model that hears no
 language in particular, as a voice activity detector) and `license`; a build, its `id`, the
 `backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),

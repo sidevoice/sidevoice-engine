@@ -155,7 +155,7 @@ impl Adapter for OpenAi {
                 capabilities: vec![capability],
                 languages: Vec::new(),
                 voices: Vec::new(),
-                speed: facts.range(SPEC.spec),
+                speed: facts.range(),
             })
             .collect())
     }

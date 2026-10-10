@@ -13,7 +13,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::backend::{self, Backend, BackendInfo};
 use crate::capability::Resident;
-use crate::catalog::{BuildEntry, CatalogSource, MergedCatalog, ModelEntry, ModelFile};
+use crate::catalog::{
+    BuildEntry, CatalogSource, FamilySpeed, MergedCatalog, ModelEntry, ModelFile,
+};
 use crate::host::{Accelerator, Host};
 use crate::install::{Artifact, Cancel, Installer, ProgressSink};
 use crate::provider::listing::Listings;
@@ -156,7 +158,7 @@ impl Engine {
                 languages: entry.languages.clone(),
                 license: entry.license.clone(),
                 voices: entry.voices.clone(),
-                speed: family_speed.clone(),
+                speed: family_speed.as_ref().map(FamilySpeed::range),
                 installed: builds.iter().any(|build| build.installed),
                 recommended_build: builds
                     .iter()
