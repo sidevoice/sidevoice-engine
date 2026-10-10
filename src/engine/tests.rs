@@ -39,10 +39,9 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .expect("small");
     assert_eq!(small.family, "whisper", "its family, from the catalogue");
 
+    // Not MLX on Apple silicon: the stub runs nothing yet (ENG-08).
     let recommended = if cfg!(target_arch = "wasm32") {
         "whisper-small-web"
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        "whisper-small-mlx"
     } else {
         "whisper-small-onnx"
     };
@@ -50,6 +49,15 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     assert_eq!(small.builds[0].id, recommended);
     assert!(small.builds[0].available && small.builds[0].accelerator.is_some());
     assert!(small.builds[0].reasons.is_empty());
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        let mlx = small
+            .builds
+            .iter()
+            .find(|b| b.id == "whisper-small-mlx")
+            .expect("mlx");
+        assert!(!mlx.available && mlx.accelerator.is_none());
+        assert_eq!(mlx.reasons, [Reason::new("not-implemented")]);
+    }
     let gguf = small
         .builds
         .iter()
