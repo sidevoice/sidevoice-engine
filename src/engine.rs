@@ -8,7 +8,6 @@
 //! ([`LocalModel`]), `providers` (the remote side), `memory` (weak references: one library per backend, one model per
 //! build) and `error` (why an engine cannot be built).
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -59,17 +58,12 @@ pub struct Engine {
     memory: Mutex<Memory>,
     /// Held while a model is loaded, so that two loads of one build make one model in memory.
     loading: async_lock::Mutex<()>,
-    /// The builds being installed (or loaded) and uninstalled now: a build is never both.
-    builds: Mutex<Builds>,
-}
-
-/// What is being done to builds' files now. An install or a load of a build counts in `installing` from before it
-/// touches the build's files until the model is in memory; an uninstall reserves its builds in `uninstalling`, checked
-/// and taken under the same lock as the engine's memory is read, until its files are gone.
-#[derive(Default)]
-struct Builds {
-    installing: BTreeMap<String, usize>,
-    uninstalling: BTreeSet<String>,
+    /// The stored files' one lock: held shared by every install and every load (from before it touches its build's
+    /// files until its model is in memory), so they run side by side; and alone by an uninstall, which so never removes
+    /// a folder or a blob an install or a load is using (one of its own build, or one another build shares). It is the
+    /// last lock an install or a load takes before it waits on storage, and an uninstall takes no other while it waits
+    /// for it.
+    files: async_lock::RwLock<()>,
 }
 
 impl fmt::Debug for Engine {
@@ -119,7 +113,7 @@ impl Engine {
             installer: Installer,
             memory: Mutex::default(),
             loading: async_lock::Mutex::new(()),
-            builds: Mutex::default(),
+            files: async_lock::RwLock::new(()),
         })
     }
 
@@ -191,8 +185,7 @@ impl Engine {
     ///
     /// `model-not-found`, `build-not-found` (not a build of that model), `no-build-available` (none runs here), the
     /// reason a build asked for does not run here (`backend-not-in-this-build`, `memory`, ...), `cancelled`, and what
-    /// installing fails with (`digest-mismatch`, `download-failed`, ...); `uninstall-in-progress` while the build is
-    /// being uninstalled.
+    /// installing fails with (`digest-mismatch`, `download-failed`, ...). It waits for an uninstall in progress.
     pub async fn install(
         &self,
         model: &str,
@@ -202,7 +195,7 @@ impl Engine {
     ) -> Result<()> {
         let (_, build, _) = self.choose(model, build).await?;
         let (_, artifacts) = self.artifacts(build)?;
-        let _installing = Installing::new(&self.builds, &build.id)?;
+        let _files = self.files.read().await;
         self.installer
             .install(&build.id, &artifacts, &*self.host, progress, cancel)
             .await
@@ -217,10 +210,9 @@ impl Engine {
     /// # Errors
     ///
     /// `model-not-found`, `build-not-found` (not a build of that model), `model-in-use` while a [`LocalModel`] of a
-    /// build it would remove lives, `install-in-progress` while one of those builds is being installed (or loaded, and
-    /// installed first, until it is in memory), `uninstall-in-progress` while another uninstall has one of them, and
-    /// what the host's storage fails with. Nothing is removed when it fails before storage. The builds are checked and
-    /// reserved at once: until they are removed, installing or loading any of them fails with `uninstall-in-progress`.
+    /// build it would remove lives, and what the host's storage fails with. Nothing is removed when it fails before
+    /// storage. It waits for the installs and loads in progress, and holds the engine's files alone while it checks what
+    /// is in memory and removes: no install or load starts meanwhile, and none can lose a file it found.
     pub async fn uninstall(&self, model: &str, build: Option<&str>) -> Result<()> {
         let entry = self.entry(model)?;
         let builds: Vec<&BuildEntry> = match build {
@@ -231,11 +223,14 @@ impl Engine {
                 .find(|build| build.id == wanted)
                 .ok_or(Error::new("build-not-found"))?],
         };
-        // Lock order: the reservation first, taken and checked at once under `builds` (and `memory`), which no one holds
-        // across an await; then, build by build, the installer's blob lock, taken alone only to remove blobs. Neither
-        // waits for the other: an install or a load of a reserved build is refused before it reaches the blob lock, and
-        // one of another build that holds the blob lock is never waiting for a reservation.
-        let _uninstalling = Uninstalling::new(&self.builds, &self.memory, &builds)?;
+        let _files = self.files.write().await;
+        let in_use = {
+            let memory = lock(&self.memory);
+            builds.iter().any(|build| memory.model(&build.id).is_some())
+        };
+        if in_use {
+            return Err(Error::new("model-in-use"));
+        }
         for build in builds {
             let artifacts = match self.artifacts(build) {
                 Ok((_, artifacts)) => artifacts,
@@ -276,7 +271,7 @@ impl Engine {
         }
         let (backend, artifacts) = self.artifacts(build)?;
         // Held until the model is in memory, so that no uninstall removes its files in between.
-        let _installing = Installing::new(&self.builds, &build.id)?;
+        let _files = self.files.read().await;
         let files = self
             .installer
             .install(&build.id, &artifacts, &*self.host, progress, cancel)
@@ -359,91 +354,6 @@ impl Engine {
             .ok_or(Error::new("backend-not-in-this-build"))?;
         let artifacts = build.files.iter().map(ModelFile::artifact).collect();
         Ok((backend, artifacts))
-    }
-}
-
-/// One install (or load) of a build in progress, counted in the engine's `installing` while it lives.
-struct Installing<'a> {
-    builds: &'a Mutex<Builds>,
-    build: String,
-}
-
-impl<'a> Installing<'a> {
-    /// Counts an install of `build`: `uninstall-in-progress` while it is reserved for an uninstall.
-    fn new(builds: &'a Mutex<Builds>, build: &str) -> Result<Self> {
-        let mut state = lock(builds);
-        if state.uninstalling.contains(build) {
-            return Err(Error::new("uninstall-in-progress"));
-        }
-        *state.installing.entry(build.to_owned()).or_default() += 1;
-        Ok(Self {
-            builds,
-            build: build.to_owned(),
-        })
-    }
-}
-
-impl Drop for Installing<'_> {
-    fn drop(&mut self) {
-        let mut state = lock(self.builds);
-        if let Some(count) = state.installing.get_mut(&self.build) {
-            *count -= 1;
-            if *count == 0 {
-                state.installing.remove(&self.build);
-            }
-        }
-    }
-}
-
-/// Builds reserved for one uninstall while it lives.
-struct Uninstalling<'a> {
-    builds: &'a Mutex<Builds>,
-    reserved: Vec<String>,
-}
-
-impl<'a> Uninstalling<'a> {
-    /// Reserves `reserved`, under the lock that installs and loads count under, and with the engine's memory read
-    /// under it too: `model-in-use` if one is in memory, `install-in-progress` if one is being installed or loaded,
-    /// `uninstall-in-progress` if another uninstall has one.
-    fn new(
-        builds: &'a Mutex<Builds>,
-        memory: &Mutex<Memory>,
-        reserved: &[&BuildEntry],
-    ) -> Result<Self> {
-        let mut state = lock(builds);
-        let in_memory = {
-            let memory = lock(memory);
-            reserved
-                .iter()
-                .any(|build| memory.model(&build.id).is_some())
-        };
-        if in_memory {
-            return Err(Error::new("model-in-use"));
-        }
-        if reserved
-            .iter()
-            .any(|build| state.installing.contains_key(&build.id))
-        {
-            return Err(Error::new("install-in-progress"));
-        }
-        if reserved
-            .iter()
-            .any(|build| state.uninstalling.contains(&build.id))
-        {
-            return Err(Error::new("uninstall-in-progress"));
-        }
-        let reserved: Vec<String> = reserved.iter().map(|build| build.id.clone()).collect();
-        state.uninstalling.extend(reserved.iter().cloned());
-        Ok(Self { builds, reserved })
-    }
-}
-
-impl Drop for Uninstalling<'_> {
-    fn drop(&mut self) {
-        let mut state = lock(self.builds);
-        for build in &self.reserved {
-            state.uninstalling.remove(build);
-        }
     }
 }
 
