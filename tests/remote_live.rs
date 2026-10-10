@@ -36,8 +36,8 @@ use std::{env, fs};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
-    async_trait, Cancel, Capabilities, Capability, CatalogModel, CatalogStatus, Credentials,
-    Engine, Fetcher, Host, HttpClient, HttpRequest, HttpResponse, LoadedModel, NativeHost,
+    async_trait, Cancel, Capabilities, Capability, CatalogStatus, Credentials, Engine, Fetcher,
+    Host, HttpClient, HttpRequest, HttpResponse, Model, ModelInfo, NativeHost,
     Result as EngineResult, Storage,
 };
 
@@ -129,7 +129,7 @@ fn each_provider_with_a_key_lists_speaks_transcribes_and_refuses_a_bad_key() {
 /// A provider's catalogue as refreshed: its status and its models.
 struct Listed {
     status: CatalogStatus,
-    models: Vec<CatalogModel>,
+    models: Vec<Box<dyn ModelInfo>>,
 }
 
 /// The status `status` reads as, with what the provider said, if anything.
@@ -247,16 +247,16 @@ fn pick<'a>(listed: &'a Listed, capability: Capability, preferred: &str) -> Resu
         .models
         .iter()
         .filter(|model| model.capabilities().contains(&capability));
-    let first = models.clone().next().map(CatalogModel::id);
+    let first = models.clone().next().map(|model| model.id());
     models
         .find(|model| model.id() == preferred)
-        .map(CatalogModel::id)
+        .map(|model| model.id())
         .or(first)
         .ok_or(format!("no {capability:?} model listed"))
 }
 
 /// `provider`'s model `id`, loaded from its catalogue.
-fn load(engine: &Engine, provider: &str, id: &str) -> Result<LoadedModel> {
+fn load(engine: &Engine, provider: &str, id: &str) -> Result<Box<dyn Model>> {
     let catalog = engine.catalog(provider).map_err(|e| e.code.to_owned())?;
     block_on(catalog.load(id, &|_| {}, &Cancel::new())).map_err(|e| e.code.to_owned())
 }

@@ -625,6 +625,7 @@ pub(crate) fn family(id: &str, models: Vec<ModelEntry>) -> Family {
         id: id.to_owned(),
         architecture: id.to_owned(),
         source: format!("https://example.com/{id}"),
+        speed: None,
         models,
     }
 }

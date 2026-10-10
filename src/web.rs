@@ -27,10 +27,7 @@ use wasm_bindgen_futures::{future_to_promise, JsFuture};
 use web_sys::AbortSignal;
 
 use crate::capability::Resident;
-use crate::{
-    BundledCatalog, Cancel, Engine, Error, LoadedModel, LocalModel, Progress, RemoteModel,
-    VadStream,
-};
+use crate::{BundledCatalog, Cancel, Engine, Error, LocalModel, Progress, RemoteModel, VadStream};
 
 mod host;
 pub(crate) mod opfs;
@@ -53,18 +50,23 @@ export interface ModelBuild {
   id: string; backend: string; accelerator?: string; precision: string; downloadBytes: number; memoryMb: number;
   available: boolean; reasons: Reason[]; installed: boolean;
 }
-export interface Model {
-  id: string; family: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; parametersM: number; languages: string[];
-  license: string;
-  voices: Voice[]; installed: boolean; builds: ModelBuild[]; recommendedBuild?: string;
+/** The speeds a model takes, with where that comes from; a bound only where the source states one. A model with no
+ * `speed` takes none. */
+export interface SpeedRange { min?: number; max?: number; source: string; }
+/** A model as a catalogue lists it, whichever: what every model has. */
+export interface ModelInfo {
+  kind: "local" | "remote"; id: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; languages: string[];
+  voices: Voice[]; speed?: SpeedRange;
 }
-/** A remote provider's model, as listed: `speed` is the range it speaks at, when it takes one. */
-export interface ProviderModel {
-  id: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; languages: string[]; voices: Voice[];
-  speed?: [number, number];
+/** A model of the local catalogue: its family, size, licence, builds ranked and what is installed. */
+export interface LocalModelInfo extends ModelInfo {
+  kind: "local"; family: string; parametersM: number; license: string; installed: boolean; builds: ModelBuild[];
+  recommendedBuild?: string;
 }
-/** A catalogue's model: a local one (`Model`) or a remote provider's (`ProviderModel`), told apart by `kind`. */
-export type CatalogModel = (Model & { kind: "local" }) | (ProviderModel & { kind: "remote" });
+/** A model of a remote provider, as listed. */
+export interface RemoteModelInfo extends ModelInfo { kind: "remote"; }
+/** A model ready to use, from a catalogue's `load`: either hands out the same capabilities. */
+export type Model = LocalModel | RemoteModel;
 /** How a catalogue stands: why it is not current (absent when it is), whether its models are the last kept, and what
  * the provider said when it last refused, for a developer to read. */
 export interface CatalogStatus { reason?: Reason; stale: boolean; detail?: string; }
@@ -231,7 +233,7 @@ impl WebCatalog {
 
     /// Its models, those of `capability` alone when given (`"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`); rejects with
     /// `invalid-capability` for any other.
-    #[wasm_bindgen(unchecked_return_type = "Promise<CatalogModel[]>")]
+    #[wasm_bindgen(unchecked_return_type = "Promise<(LocalModelInfo | RemoteModelInfo)[]>")]
     pub fn models(
         &self,
         #[wasm_bindgen(unchecked_param_type = "\"stt\" | \"tts\" | \"vad\" | \"end-of-turn\"")]
@@ -246,7 +248,7 @@ impl WebCatalog {
             let models = engine.catalog(&id)?.models(capability).await?;
             Ok(models
                 .iter()
-                .map(values::catalog_model)
+                .map(|model| values::catalog_model(model.as_ref()))
                 .collect::<Array>()
                 .into())
         })
@@ -264,7 +266,7 @@ impl WebCatalog {
 
     /// The model `model`, ready to use: a `LocalModel` (loaded as `WebEngine.load` does with no build, installing it
     /// first and telling `onProgress`; `signal` aborts it) or a `RemoteModel`.
-    #[wasm_bindgen(unchecked_return_type = "Promise<LocalModel | RemoteModel>")]
+    #[wasm_bindgen(unchecked_return_type = "Promise<Model>")]
     pub fn load(
         &self,
         model: String,
@@ -278,12 +280,18 @@ impl WebCatalog {
             let progress = reporter(on_progress);
             let catalog = engine.catalog(&id)?;
             let loading = catalog.load(&model, &progress, &cancel);
-            Ok(
-                match until_aborted(signal.as_ref(), &cancel, loading).await? {
-                    LoadedModel::Local(loaded) => WebLocalModel { loaded }.into(),
-                    LoadedModel::Remote(remote) => WebRemoteModel { remote }.into(),
-                },
-            )
+            let model = until_aborted(signal.as_ref(), &cancel, loading).await?;
+            if let Some(loaded) = model.as_local() {
+                return Ok(WebLocalModel {
+                    loaded: loaded.clone(),
+                }
+                .into());
+            }
+            let remote = model.as_remote().ok_or(Error::new("not-implemented"))?;
+            Ok(WebRemoteModel {
+                remote: remote.clone(),
+            }
+            .into())
         })
     }
 }

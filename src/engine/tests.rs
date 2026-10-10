@@ -88,7 +88,7 @@ trait DownloadBytes {
     fn download_bytes(&self) -> u64;
 }
 
-impl DownloadBytes for crate::Model {
+impl DownloadBytes for crate::LocalModelInfo {
     fn download_bytes(&self) -> u64 {
         self.builds[0].download_bytes
     }

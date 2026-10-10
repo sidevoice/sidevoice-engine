@@ -5,15 +5,15 @@ use serde_json::json;
 
 use super::OpenAi;
 use crate::backend::BackendModel;
-use crate::provider::{Adapter, Facts, ProviderModel};
+use crate::provider::{Adapter, Facts, RemoteModelInfo};
 use crate::test_support::{block_on, contains, header, openai_spec, remote_api};
-use crate::{Capability, Voice};
+use crate::{Capability, SpeedRange, Voice};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
-fn transcriber() -> ProviderModel {
-    ProviderModel {
+fn transcriber() -> RemoteModelInfo {
+    RemoteModelInfo {
         id: "gpt-4o-transcribe".into(),
         capabilities: vec![Capability::Stt],
         languages: Vec::new(),
@@ -31,13 +31,17 @@ fn voice(id: &str) -> Voice {
     }
 }
 
-fn speaker() -> ProviderModel {
-    ProviderModel {
+fn speaker() -> RemoteModelInfo {
+    RemoteModelInfo {
         id: "gpt-4o-mini-tts".into(),
         capabilities: vec![Capability::Tts],
         languages: Vec::new(),
         voices: vec![voice("alloy"), voice("nova")],
-        speed: Some([0.25, 4.0]),
+        speed: Some(SpeedRange {
+            min: Some(0.25),
+            max: Some(4.0),
+            source: "a spec".into(),
+        }),
     }
 }
 
@@ -128,13 +132,27 @@ fn the_listing_keeps_the_audio_models_the_spec_describes() {
     let models = block_on(OpenAi.models(&api, &facts())).expect("listed");
     let listed: Vec<_> = models
         .iter()
-        .map(|model| (model.id.as_str(), model.capabilities.clone(), model.speed))
+        .map(|model| {
+            let speed = model
+                .speed
+                .as_ref()
+                .map(|speed| (speed.min, speed.max, speed.source.as_str()));
+            (model.id.as_str(), model.capabilities.clone(), speed)
+        })
         .collect();
     assert_eq!(
         listed,
         [
             ("gpt-4o-transcribe", vec![Capability::Stt], None),
-            ("gpt-4o-mini-tts", vec![Capability::Tts], Some([0.25, 4.0])),
+            (
+                "gpt-4o-mini-tts",
+                vec![Capability::Tts],
+                Some((
+                    Some(0.25),
+                    Some(4.0),
+                    "https://raw.githubusercontent.com/openai/openai-openapi/main/openapi.json"
+                ))
+            ),
         ],
         "in the spec's order, without the models that are not audio"
     );
@@ -171,7 +189,7 @@ fn a_listing_refused_reads_as_the_providers_status() {
 }
 
 fn open(
-    model: &ProviderModel,
+    model: &RemoteModelInfo,
 ) -> (
     Box<dyn BackendModel>,
     std::sync::Arc<crate::test_support::FakeProvider>,
@@ -278,7 +296,7 @@ fn speech_is_asked_as_pcm_at_24_khz_with_a_listed_voice_and_a_speed_in_range() {
 #[test]
 fn a_model_of_no_kind_is_unsupported() {
     let (api, _) = remote_api("openai");
-    let unknown = ProviderModel {
+    let unknown = RemoteModelInfo {
         id: "gpt-4o".into(),
         capabilities: Vec::new(),
         ..transcriber()
@@ -297,7 +315,7 @@ fn a_model_of_no_kind_is_unsupported() {
 /// requires; a shorter one is sent as one block, as before.
 #[test]
 fn a_turn_longer_than_30_seconds_is_sent_with_the_specs_chunking_strategy() {
-    let diarize = ProviderModel {
+    let diarize = RemoteModelInfo {
         id: "gpt-4o-transcribe-diarize".into(),
         ..transcriber()
     };
@@ -323,7 +341,7 @@ fn a_turn_longer_than_30_seconds_is_sent_with_the_specs_chunking_strategy() {
 /// `whisper-1` is never sent `chunking_strategy`, however long the turn: the spec does not say it takes it.
 #[test]
 fn whisper_1_is_never_sent_a_chunking_strategy() {
-    let whisper = ProviderModel {
+    let whisper = RemoteModelInfo {
         id: "whisper-1".into(),
         ..transcriber()
     };
@@ -347,7 +365,7 @@ fn whisper_1_is_never_sent_a_chunking_strategy() {
 /// nothing of it, so the next call is sent as the first was.
 #[test]
 fn a_voice_the_provider_refuses_fails_with_what_the_provider_said() {
-    let tts_1 = ProviderModel {
+    let tts_1 = RemoteModelInfo {
         id: "tts-1".into(),
         voices: vec![voice("alloy"), voice("marin")],
         ..speaker()

@@ -8,7 +8,7 @@
 
 use serde_json::Value;
 
-use crate::catalog::Capability;
+use crate::catalog::{Capability, SpeedRange};
 use crate::{Error, Result};
 
 /// One provider's facts, derived from its spec.
@@ -81,6 +81,16 @@ impl ModelFacts {
             speed,
             chunking: None,
         }
+    }
+
+    /// Its speeds as the engine lists them, with the spec at `source` as where they come from; `None` for a model
+    /// that takes no speed.
+    pub(crate) fn range(&self, source: &str) -> Option<SpeedRange> {
+        self.speed.map(|[min, max]| SpeedRange {
+            min: Some(min),
+            max: Some(max),
+            source: source.to_owned(),
+        })
     }
 
     /// `speed` within the model's range; `None` for a model that takes no speed.

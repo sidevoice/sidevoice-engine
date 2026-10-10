@@ -32,7 +32,7 @@ use serde_json::{json, Value};
 use super::api::{self, Form};
 use super::facts::{self, Facts, ModelFacts};
 use super::registry::ProviderFactory;
-use super::{Adapter, Api, ProviderModel, ProviderSpec};
+use super::{Adapter, Api, ProviderSpec, RemoteModelInfo};
 use crate::backend::{BackendModel, SttModel, TtsModel};
 use crate::capability::STT_RATE;
 use crate::catalog::{Capability, Gender, Voice};
@@ -162,7 +162,7 @@ impl Adapter for ElevenLabs {
     /// `GET /v1/models`, in its order: every model it says speaks (`can_do_text_to_speech`), and every one it lists
     /// that the spec names as speech to text (the listing has no flag for it); each with the languages it lists, and
     /// the speed range its facts, or the general request's, give.
-    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<ProviderModel>> {
+    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<RemoteModelInfo>> {
         let key = api.key().await?;
         let answer = api
             .list(request("GET", format!("{API}/models"), key))
@@ -181,12 +181,12 @@ impl Adapter for ElevenLabs {
                 } else {
                     return None;
                 };
-                Some(ProviderModel {
+                Some(RemoteModelInfo {
                     id: id.to_owned(),
                     capabilities: vec![capability],
                     languages: strings(&model["languages"], "language_id"),
                     voices: Vec::new(),
-                    speed: facts.of(capability, id).speed,
+                    speed: facts.of(capability, id).range(SPEC.spec),
                 })
             })
             .collect())
@@ -208,7 +208,7 @@ impl Adapter for ElevenLabs {
     fn open(
         &self,
         api: Api,
-        model: &ProviderModel,
+        model: &RemoteModelInfo,
         facts: &Facts,
     ) -> Result<Box<dyn BackendModel>> {
         let capability = *model

@@ -5,15 +5,16 @@ use js_sys::{Array, Float32Array, Object};
 use wasm_bindgen::JsValue;
 
 use crate::{
-    Accelerator, Audio, Capability, CatalogModel, CatalogStatus, Error, Gender, Model, ModelBuild,
-    Progress, ProviderModel, Reason, VadEvent, VadOptions, VadOutput, Voice,
+    Accelerator, Audio, Capability, CatalogStatus, Error, Gender, LocalModelInfo, ModelBuild,
+    ModelInfo, Progress, Reason, RemoteModelInfo, SpeedRange, VadEvent, VadOptions, VadOutput,
+    Voice,
 };
 
 #[cfg(test)]
 mod tests;
 
-/// `{ id, family, capabilities, parametersM, languages, license, voices, installed, builds, recommendedBuild? }`.
-pub(super) fn model(model: &Model) -> JsValue {
+/// `{ id, family, capabilities, parametersM, languages, license, voices, speed?, installed, builds, recommendedBuild? }`.
+pub(super) fn model(model: &LocalModelInfo) -> JsValue {
     let capabilities: Array = model
         .capabilities
         .iter()
@@ -30,6 +31,7 @@ pub(super) fn model(model: &Model) -> JsValue {
             "voices",
             Some(model.voices.iter().map(voice).collect::<Array>().into()),
         ),
+        ("speed", model.speed.as_ref().map(speed)),
         ("installed", Some(model.installed.into())),
         (
             "builds",
@@ -75,25 +77,23 @@ pub(super) fn catalog_status(status: &CatalogStatus) -> JsValue {
 }
 
 /// A local model (`model`) or a remote one (`provider_model`), with its `kind`, `"local"` or `"remote"`.
-pub(super) fn catalog_model(model: &CatalogModel) -> JsValue {
-    let (value, kind) = match model {
-        CatalogModel::Local(local) => (self::model(local), "local"),
-        CatalogModel::Remote(remote) => (provider_model(remote), "remote"),
+pub(super) fn catalog_model(model: &dyn ModelInfo) -> JsValue {
+    let (value, kind) = match (model.as_local(), model.as_remote()) {
+        (Some(local), _) => (self::model(local), "local"),
+        (None, Some(remote)) => (provider_model(remote), "remote"),
+        (None, None) => (JsValue::from(Object::new()), "other"),
     };
     let _ = js_sys::Reflect::set(&value, &"kind".into(), &kind.into());
     value
 }
 
 /// `{ id, capabilities, languages, voices, speed? }`.
-fn provider_model(model: &ProviderModel) -> JsValue {
+fn provider_model(model: &RemoteModelInfo) -> JsValue {
     let capabilities: Array = model
         .capabilities
         .iter()
         .map(|c| JsValue::from(capability(*c)))
         .collect();
-    let speed = model
-        .speed
-        .map(|[low, high]| Array::of2(&JsValue::from(low), &JsValue::from(high)).into());
     object(&[
         ("id", Some(model.id.as_str().into())),
         ("capabilities", Some(capabilities.into())),
@@ -102,7 +102,16 @@ fn provider_model(model: &ProviderModel) -> JsValue {
             "voices",
             Some(model.voices.iter().map(voice).collect::<Array>().into()),
         ),
-        ("speed", speed),
+        ("speed", model.speed.as_ref().map(speed)),
+    ])
+}
+
+/// `{ min?, max?, source }`.
+fn speed(range: &SpeedRange) -> JsValue {
+    object(&[
+        ("min", range.min.map(JsValue::from)),
+        ("max", range.max.map(JsValue::from)),
+        ("source", Some(range.source.as_str().into())),
     ])
 }
 

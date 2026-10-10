@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::backend::BackendModel;
-use crate::catalog::{Capability, Voice};
+use crate::catalog::{Capability, SpeedRange, Voice};
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
 
@@ -38,7 +38,7 @@ pub use remote_model::RemoteModel;
 
 /// One model of a provider's, as listed.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ProviderModel {
+pub struct RemoteModelInfo {
     /// The provider's id of it, which its API is called with and its catalogue's `load` takes:
     /// `"gpt-4o-transcribe"`, `"eleven_flash_v2_5"`.
     pub id: String,
@@ -51,7 +51,7 @@ pub struct ProviderModel {
     pub voices: Vec<Voice>,
     /// The lowest and the highest speed it speaks at, from the provider's spec; `None` when it takes no speed (a model
     /// that is not text to speech, or Eleven v3). [`Tts::speak`](crate::Tts::speak) keeps a speed within it.
-    pub speed: Option<[f32; 2]>,
+    pub speed: Option<SpeedRange>,
 }
 
 /// What a provider is, as data.
@@ -79,13 +79,17 @@ pub(crate) trait Adapter: MaybeSend + MaybeSync {
 
     /// Its models the key may use, listed now: those the provider lists and `facts` describe, and nothing else, with
     /// no voices (the engine adds them, [`Adapter::voices`]).
-    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<ProviderModel>>;
+    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<RemoteModelInfo>>;
 
     /// The voices of its text-to-speech models: the account's, listed now, or those `facts` fix.
     async fn voices(&self, api: &Api, facts: &Facts) -> Result<Vec<Voice>>;
 
     /// The model `model` (one it listed) calling the provider through `api`: makes no call. `unsupported-model` for a
     /// model `facts` do not describe.
-    fn open(&self, api: Api, model: &ProviderModel, facts: &Facts)
-        -> Result<Box<dyn BackendModel>>;
+    fn open(
+        &self,
+        api: Api,
+        model: &RemoteModelInfo,
+        facts: &Facts,
+    ) -> Result<Box<dyn BackendModel>>;
 }

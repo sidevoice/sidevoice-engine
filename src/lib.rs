@@ -39,11 +39,11 @@ pub use capability::{
 };
 pub use catalog::{
     BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, Gender, Memory,
-    MemorySource, ModelEntry, ModelFile, Problem, Requires, Voice,
+    MemorySource, ModelEntry, ModelFile, Problem, Requires, SpeedRange, Voice,
 };
 pub use engine::{
-    Catalog, CatalogModel, CatalogStatus, ConfigError, Engine, LoadedModel, LocalModel, Model,
-    ModelBuild, LOCAL_CATALOG,
+    Catalog, CatalogStatus, ConfigError, Engine, LocalCatalog, LocalModel, LocalModelInfo, Model,
+    ModelBuild, ModelInfo, RemoteCatalog, LOCAL_CATALOG,
 };
 pub use host::{
     Accelerator, Capabilities, Credentials, Download, Fetcher, FolderWriter, Host, HttpClient,
@@ -53,7 +53,7 @@ pub use host::{
 pub use host::{NativeHost, TreeWriter};
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
-pub use provider::{ProviderModel, RemoteModel};
+pub use provider::{RemoteModel, RemoteModelInfo};
 pub use resolver::Reason;
 
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it. One that a

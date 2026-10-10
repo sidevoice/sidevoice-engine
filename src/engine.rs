@@ -21,19 +21,21 @@ use crate::provider::{self, Adapter};
 use crate::resolver::{Reason, Rejection, Resolver};
 use crate::{Error, Result};
 
-mod catalogs;
+mod catalog;
 mod error;
 mod local;
+mod local_info;
 mod memory;
 mod model;
 mod providers;
 #[cfg(test)]
 mod tests;
 
-pub use catalogs::{Catalog, CatalogModel, CatalogStatus, LoadedModel, LOCAL_CATALOG};
+pub use catalog::{Catalog, CatalogStatus, LocalCatalog, RemoteCatalog, LOCAL_CATALOG};
 pub use error::ConfigError;
 pub use local::LocalModel;
-pub use model::{Model, ModelBuild};
+pub use local_info::{LocalModelInfo, ModelBuild};
+pub use model::{Model, ModelInfo};
 
 use memory::Memory;
 
@@ -122,14 +124,15 @@ impl Engine {
     /// # Errors
     ///
     /// What the host's storage fails with, asked what is installed.
-    pub(crate) async fn models(&self) -> Result<Vec<Model>> {
+    pub(crate) async fn models(&self) -> Result<Vec<LocalModelInfo>> {
         let caps = self.host.capabilities();
         let mut models = Vec::new();
         let mut entries = Vec::new();
         for family in self.catalog.families() {
-            entries.extend(family.models.iter().map(|entry| (&family.id, entry)));
+            entries.extend(family.models.iter().map(|entry| (family, entry)));
         }
         for (family, entry) in entries {
+            let family_speed = &family.speed;
             let mut builds = Vec::new();
             for (build, fit) in self.resolver.builds(entry, &self.backends, &caps) {
                 let installed = self.is_installed(build).await?;
@@ -145,14 +148,15 @@ impl Engine {
                     installed,
                 });
             }
-            models.push(Model {
+            models.push(LocalModelInfo {
                 id: entry.id.clone(),
-                family: family.clone(),
+                family: family.id.clone(),
                 capabilities: entry.capabilities.clone(),
                 parameters_m: entry.parameters_m,
                 languages: entry.languages.clone(),
                 license: entry.license.clone(),
                 voices: entry.voices.clone(),
+                speed: family_speed.clone(),
                 installed: builds.iter().any(|build| build.installed),
                 recommended_build: builds
                     .iter()

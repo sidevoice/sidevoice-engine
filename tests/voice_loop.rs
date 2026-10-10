@@ -37,8 +37,8 @@ use std::{env, fs};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
-    Accelerator, BundledCatalog, Cancel, CatalogModel, Engine, Host, LocalModel, NativeHost,
-    Progress, Vad, VadEvent, VadOptions, LOCAL_CATALOG,
+    Accelerator, BundledCatalog, Cancel, Engine, Host, LocalModel, NativeHost, Progress, Vad,
+    VadEvent, VadOptions, LOCAL_CATALOG,
 };
 
 #[path = "voice_loop/audio.rs"]
@@ -371,10 +371,7 @@ fn load(
     let models = block_on(local.models(None)).map_err(|e| format!("the models: {e}"))?;
     let (model, entry) = models
         .iter()
-        .filter_map(|model| match model {
-            CatalogModel::Local(model) => Some(model),
-            _ => None,
-        })
+        .filter_map(|model| model.as_local())
         .find_map(|model| {
             let entry = model.builds.iter().find(|entry| entry.id == build)?;
             Some((model, entry))

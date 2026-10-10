@@ -7,9 +7,9 @@ use serde_json::{json, Value};
 
 use super::ElevenLabs;
 use crate::backend::BackendModel;
-use crate::provider::{Adapter, Facts, ProviderModel};
+use crate::provider::{Adapter, Facts, RemoteModelInfo};
 use crate::test_support::{block_on, contains, header, remote_api, FakeProvider};
-use crate::{Capability, Gender, Voice};
+use crate::{Capability, Gender, SpeedRange, Voice};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -148,17 +148,21 @@ fn voice(id: &str) -> Voice {
     }
 }
 
-fn model(id: &str, capability: Capability, speed: Option<[f32; 2]>) -> ProviderModel {
-    ProviderModel {
+fn model(id: &str, capability: Capability, speed: Option<[f32; 2]>) -> RemoteModelInfo {
+    RemoteModelInfo {
         id: id.to_owned(),
         capabilities: vec![capability],
         languages: Vec::new(),
         voices: vec![voice("21m00Tcm4TlvDq8ikWAM"), voice("EXAVITQu4vr4xnSDxMaL")],
-        speed,
+        speed: speed.map(|[min, max]| SpeedRange {
+            min: Some(min),
+            max: Some(max),
+            source: "a spec".into(),
+        }),
     }
 }
 
-fn open(model: &ProviderModel) -> (Box<dyn BackendModel>, Arc<FakeProvider>) {
+fn open(model: &RemoteModelInfo) -> (Box<dyn BackendModel>, Arc<FakeProvider>) {
     let (api, provider) = remote_api("elevenlabs");
     provider.key("elevenlabs", "xi-test");
     (
@@ -180,11 +184,11 @@ fn every_model_the_listing_says_speaks_is_offered_and_the_spec_only_enriches_it(
                 model.id.as_str(),
                 model.capabilities[0],
                 model.languages.len(),
-                model.speed,
+                model.speed.as_ref().map(|speed| [speed.min, speed.max]),
             )
         })
         .collect();
-    let speed = Some([0.7, 1.2]);
+    let speed = Some([Some(0.7), Some(1.2)]);
     assert_eq!(
         listed,
         [

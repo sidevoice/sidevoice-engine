@@ -2,13 +2,14 @@
 //! its catalogue data, whether it is installed, every build of it ranked with whether it runs here and why not, and
 //! the build the engine recommends.
 
-use crate::catalog::{Capability, Voice};
+use crate::catalog::{Capability, SpeedRange, Voice};
 use crate::host::Accelerator;
 use crate::resolver::Reason;
 
-/// A model of the catalogue, here.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Model {
+/// A model of the local catalogue, here: what [`ModelInfo`](crate::ModelInfo) says of every model, and the local
+/// specifics (its family, size, licence, builds and what is installed).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocalModelInfo {
     /// Its stable id: what [`Engine::install`](crate::Engine::install) and [`Engine::load`](crate::Engine::load) take.
     pub id: String,
     /// The id of the family it belongs to in the catalogue: "whisper", "kokoro", ...
@@ -23,6 +24,8 @@ pub struct Model {
     pub license: String,
     /// Its voices, as the catalogue declares them (a text-to-speech model whose source declares them).
     pub voices: Vec<Voice>,
+    /// The speeds it takes, as its family declares them with their source; `None`, it takes no speed.
+    pub speed: Option<SpeedRange>,
     /// Whether one of its builds is installed.
     pub installed: bool,
     /// Every build of it, ranked: those that run here first.

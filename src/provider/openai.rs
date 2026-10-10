@@ -27,7 +27,7 @@ use serde_json::{json, Value};
 use super::api::{self, Form};
 use super::facts::{self, Facts, ModelFacts};
 use super::registry::ProviderFactory;
-use super::{Adapter, Api, ProviderModel, ProviderSpec};
+use super::{Adapter, Api, ProviderSpec, RemoteModelInfo};
 use crate::backend::{BackendModel, SttModel, TtsModel};
 use crate::capability::STT_RATE;
 use crate::catalog::{Capability, Voice};
@@ -135,7 +135,7 @@ impl Adapter for OpenAi {
     }
 
     /// `GET /v1/models`, kept to the ids the spec describes, in the spec's order.
-    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<ProviderModel>> {
+    async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<RemoteModelInfo>> {
         let key = api.key().await?;
         let answer = api
             .list(request("GET", format!("{API}/models"), &key))
@@ -150,12 +150,12 @@ impl Adapter for OpenAi {
         Ok(facts
             .models()
             .filter(|(_, facts)| ids.contains(&facts.model.as_str()))
-            .map(|(capability, facts)| ProviderModel {
+            .map(|(capability, facts)| RemoteModelInfo {
                 id: facts.model.clone(),
                 capabilities: vec![capability],
                 languages: Vec::new(),
                 voices: Vec::new(),
-                speed: facts.speed,
+                speed: facts.range(SPEC.spec),
             })
             .collect())
     }
@@ -177,7 +177,7 @@ impl Adapter for OpenAi {
     fn open(
         &self,
         api: Api,
-        model: &ProviderModel,
+        model: &RemoteModelInfo,
         facts: &Facts,
     ) -> Result<Box<dyn BackendModel>> {
         let capability = *model

@@ -8,7 +8,7 @@ use web_time::Instant;
 
 use super::{due, Listings, MODELS_AGE, VOICES_AGE};
 use crate::backend::BackendModel;
-use crate::provider::{Adapter, Api, Facts, ProviderModel, ProviderSpec};
+use crate::provider::{Adapter, Api, Facts, ProviderSpec, RemoteModelInfo};
 use crate::test_support::{block_on, remote_api};
 use crate::{async_trait, Capability, Error, Result, Voice};
 
@@ -31,8 +31,8 @@ const SPEC: ProviderSpec = ProviderSpec {
 /// Where the fake provider's spec is: a host's provider side answers it with `{"ok": true}`, which the fake reads.
 const SPEC_URL: &str = "https://spec.example/openapi.json";
 
-fn listed(id: &str, capability: Capability) -> ProviderModel {
-    ProviderModel {
+fn listed(id: &str, capability: Capability) -> RemoteModelInfo {
+    RemoteModelInfo {
         id: id.into(),
         capabilities: vec![capability],
         languages: Vec::new(),
@@ -79,7 +79,7 @@ impl Adapter for Fake {
         })
     }
 
-    async fn models(&self, _api: &Api, _facts: &Facts) -> Result<Vec<ProviderModel>> {
+    async fn models(&self, _api: &Api, _facts: &Facts) -> Result<Vec<RemoteModelInfo>> {
         self.answer("models")?;
         Ok(vec![
             listed("ear", Capability::Stt),
@@ -100,7 +100,7 @@ impl Adapter for Fake {
     fn open(
         &self,
         _api: Api,
-        _model: &ProviderModel,
+        _model: &RemoteModelInfo,
         _facts: &Facts,
     ) -> Result<Box<dyn BackendModel>> {
         Err(Error::new("not-implemented"))

@@ -17,7 +17,7 @@ use std::time::Duration;
 use web_time::Instant;
 
 use crate::catalog::{Capability, Voice};
-use crate::provider::{Adapter, Api, Facts, ProviderModel};
+use crate::provider::{Adapter, Api, Facts, RemoteModelInfo};
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -45,7 +45,7 @@ struct Listing {
     spec_failed_at: Option<Instant>,
     /// Why the spec was last not read, until it is.
     spec_status: Option<&'static str>,
-    models: Vec<ProviderModel>,
+    models: Vec<RemoteModelInfo>,
     models_at: Option<Instant>,
     voices: Vec<Voice>,
     voices_at: Option<Instant>,
@@ -63,7 +63,7 @@ pub(crate) struct Listed {
     pub(crate) detail: Option<String>,
     /// Whether `models` is the last listing kept after a refresh failed.
     pub(crate) stale: bool,
-    pub(crate) models: Vec<ProviderModel>,
+    pub(crate) models: Vec<RemoteModelInfo>,
     pub(crate) facts: Option<Arc<Facts>>,
 }
 

@@ -103,8 +103,9 @@ let smart_turn = engine.load("smart-turn-v3.2", None, &|_| {}, &cancel).await?;
 let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_far, 48_000).await?; // P(complete)
 ```
 
-- **The local catalogue's `models`** (`Catalog::models`, `CatalogModel::Local`) lists every model of the catalogue with its catalogue data, whether it is installed, every
-  build ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
+- **The local catalogue's `models`** (`Catalog::models`; each a `ModelInfo` whose `as_local()` is its
+  `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, every build
+  ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
   recommends. `Engine::install` and `Engine::uninstall` take a model id (and, to install, a build id or `None`);
   uninstalling removes each of the model's build folders, keeps any file another build's folder links, and refuses a
@@ -173,18 +174,23 @@ models the app's key may use. A remote model has no builds, no install and no ac
 ```rust
 for catalog in engine.catalogs() { // "local", "elevenlabs", "openai"
     let status = catalog.status().await; // CatalogStatus { reason?, stale, detail? }
-    let speakers = catalog.models(Some(Capability::Tts)).await?; // CatalogModel::Local(Model) | Remote(ProviderModel)
+    let speakers = catalog.models(Some(Capability::Tts)).await?; // Vec<Box<dyn ModelInfo>>: id, voices, speed, ...
 }
 let elevenlabs = engine.catalog("elevenlabs")?;
 elevenlabs.refresh().await; // read again now: the settings' refresh button, or a new key
-let scribe = elevenlabs.load("scribe_v2", &|_| {}, &cancel).await?; // LoadedModel::Remote
+let scribe = elevenlabs.load("scribe_v2", &|_| {}, &cancel).await?; // Box<dyn Model>; as_remote() is the RemoteModel
 let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Some("es")).await?;
 ```
 
-- **One interface.** Each catalogue has an id, a status, its models (all, or those of one capability), `refresh` and
-  `load`, which returns a `LoadedModel` (a `LocalModel` or a `RemoteModel`) with the same `as_stt`, `as_tts`, `as_vad`
-  and `as_end_of_turn`. Every model has an id, capabilities, languages, voices and, where its source says, a speed
-  range; a local one has its builds and install state, a remote one its provider's listing. An app that wants one
+- **Interfaces.** `Catalog` is a trait, implemented by `LocalCatalog` and by each provider's `RemoteCatalog`: an id, a
+  status, its models (all, or those of one capability), `refresh` and `load`. A listed model is a `ModelInfo` (id,
+  capabilities, languages, voices, speed), implemented by `LocalModelInfo` (builds, install state) and
+  `RemoteModelInfo`; a loaded one is a `Model` (id, capabilities, `as_stt`, `as_tts`, `as_vad`, `as_end_of_turn`),
+  implemented by `LocalModel` and `RemoteModel`. Each reaches its own specifics through `as_local()` and `as_remote()`.
+- **Speed means one thing.** A model's `speed` is a `SpeedRange` (a bound only where its source states one, and that
+  source); `None` means only that it takes no speed. A remote model's comes from its provider's spec; a local one's
+  from its family in the catalogue: Kokoro's 0.5 to 2 and Supertonic's 0.9 to 1.5 from their publishers, Piper's with
+  no bounds (it takes a speed, and publishes none). An app that wants one
   picker merges the catalogues' lists itself.
 - **Listed live, kept in memory only.** A provider's status is `None` when its listing is current, else why not, as a
   stable code. Its spec and models are read when there are none (so the first call after the app starts reads every
@@ -261,7 +267,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   VadModel and its streams), segmenter (speech from per-window probabilities, by sherpa-onnx's
                   rules), smart_turn (smart-turn's input, Whisper's log-mel features), implementations/ (one file
                   per backend)
-  provider.rs     the remote providers, one catalogue each: Adapter (what each provider implements), ProviderModel (a
+  provider.rs     the remote providers, one catalogue each: Adapter (what each provider implements), RemoteModelInfo (a
                   model as listed); provider/: api (the provider's API through the host, forms, PCM, its spec), facts
                   (what its spec says, and the readers of a spec), listing (spec facts and listing in memory, their
                   ages), registry, remote_model (RemoteModel), openai, elevenlabs (each with its spec's derivation)
@@ -272,8 +278,9 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
   install.rs      the installer (Artifact), which runs its steps; install/: plan (what is wanted, checked first),
                   download (one file fetched, verified and committed), archive (unpacking), progress (Progress,
                   ProgressSink), cancel (Cancel), digest (SHA-256)
-  engine.rs       Engine: catalogs, install, uninstall, load; engine/: catalogs (Catalog, CatalogStatus, CatalogModel,
-                  LoadedModel), model (Model, ModelBuild: a local model as listed), local (LocalModel), providers (a
+  engine.rs       Engine: catalogs, install, uninstall, load; engine/: catalog (Catalog, CatalogStatus, LocalCatalog,
+                  RemoteCatalog), model (ModelInfo, Model), local_info (LocalModelInfo, ModelBuild: a local model as
+                  listed), local (LocalModel), providers (a
                   provider's listing and remote models, behind its catalogue), memory (weak references: one library per
                   backend, one model per build), error (ConfigError)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, Catalog, LocalModel, RemoteModel, Stt,
@@ -388,7 +395,9 @@ cargo xtask web-e2e [DIR]
 ```
 
 The catalogue of models is data too: one file per family in `catalog/families/<family>.json`, compiled in
-(`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`; a
+(`BundledCatalog`), three levels deep. A family has its `id`, the `architecture` its loader runs and its `source`, and,
+for text to speech, the `speed` its models take (`min` and `max` where its publisher states them, and the pinned
+`source` that does; a family with none takes no speed); a
 model, its `id`, `capabilities` (`stt`, `tts`, `vad`, `end-of-turn`), `parameters_m`, `languages` (none for a model that hears no
 language in particular, as a voice activity detector) and `license`; a build, its `id`, the
 `backend` that runs it, its `precision` (the format's own name for it, as the backend uses it: informational),
