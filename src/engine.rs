@@ -231,6 +231,10 @@ impl Engine {
                 .find(|build| build.id == wanted)
                 .ok_or(Error::new("build-not-found"))?],
         };
+        // Lock order: the reservation first, taken and checked at once under `builds` (and `memory`), which no one holds
+        // across an await; then, build by build, the installer's blob lock, taken alone only to remove blobs. Neither
+        // waits for the other: an install or a load of a reserved build is refused before it reaches the blob lock, and
+        // one of another build that holds the blob lock is never waiting for a reservation.
         let _uninstalling = Uninstalling::new(&self.builds, &self.memory, &builds)?;
         for build in builds {
             let artifacts = match self.artifacts(build) {

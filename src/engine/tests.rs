@@ -841,3 +841,53 @@ fn two_calls_on_one_model_run_one_after_the_other() {
         "one at a time"
     );
 }
+
+/// The uninstall reservation (#81) and the shared-blob lock (ENG-02) compose: an uninstall reserves its build, removes
+/// its folder, then waits for an install in progress before removing blobs; meanwhile an install, a load or another
+/// uninstall of the reserved build is refused at once, never waiting on the blob lock, so nothing deadlocks; and the
+/// blob another build shares stays.
+#[test]
+fn an_uninstall_waiting_for_the_blob_lock_keeps_its_reservation_and_refuses_at_once() {
+    use std::future::Future;
+    use std::pin::pin;
+    use std::task::{Context, Poll};
+
+    let fixture = Fixture::new();
+    fixture.install("ear", Some("ear-1")).expect("installed");
+    fixture.install("other", None).expect("installed");
+    // Another install in progress, between finding blobs and linking them.
+    let installing = block_on(crate::install::BLOBS.read());
+
+    let uninstall = fixture.engine.uninstall("ear", Some("ear-1"));
+    let mut uninstall = pin!(uninstall);
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    assert!(
+        uninstall.as_mut().poll(&mut context).is_pending(),
+        "it waits for the install's blobs"
+    );
+    let busy = Err(Error::new("uninstall-in-progress"));
+    assert_eq!(fixture.install("ear", Some("ear-1")), busy);
+    assert_eq!(fixture.load("ear", Some("ear-1")).map(drop), busy);
+    assert_eq!(
+        block_on(fixture.engine.uninstall("ear", Some("ear-1"))),
+        busy
+    );
+    assert_eq!(
+        fixture.installed("ear")[0],
+        pair("ear-1", false),
+        "its folder is gone"
+    );
+
+    drop(installing);
+    let uninstalled = loop {
+        if let Poll::Ready(uninstalled) = uninstall.as_mut().poll(&mut context) {
+            break uninstalled;
+        }
+    };
+    uninstalled.expect("uninstalled");
+    assert_eq!(fixture.installed("other"), [pair("other-1", true)]);
+    fixture.load("other", None).expect("the shared file stayed");
+    fixture
+        .install("ear", Some("ear-1"))
+        .expect("installed again once the uninstall is over");
+}

@@ -66,7 +66,7 @@ pub use cancel::Cancel;
 /// uninstall while it removes the blobs no folder links: a blob an install has found, or is storing, is never removed
 /// before it is linked. One for the process, so that several engines on one storage keep to it too; an uninstall waits
 /// for the installs in progress, and they for it.
-static BLOBS: RwLock<()> = RwLock::new(());
+pub(crate) static BLOBS: RwLock<()> = RwLock::new(());
 #[cfg(test)]
 use plan::file_path;
 pub use progress::{Progress, ProgressSink};
