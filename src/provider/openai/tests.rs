@@ -59,7 +59,21 @@ fn its_facts_come_from_its_requests_and_a_spec_without_them_is_unreadable() {
             "gpt-4o-transcribe-diarize"
         ]
     );
-    assert_eq!(facts.transcription.chunking.as_deref(), Some("auto"));
+    let chunking = |id: &str| facts.of(Capability::Stt, id).chunking;
+    assert_eq!(
+        chunking("gpt-4o-transcribe-diarize").as_deref(),
+        Some("auto")
+    );
+    assert_eq!(
+        chunking("whisper-1"),
+        None,
+        "the spec does not say it takes it"
+    );
+    assert_eq!(chunking("gpt-4o-transcribe"), None);
+    assert_eq!(
+        facts.transcription.chunking, None,
+        "nor does a model it does not name"
+    );
     assert_eq!(facts.speech.chunking, None);
     assert_eq!(ids(&facts.text_to_speech), ["tts-1", "gpt-4o-mini-tts"]);
     assert_eq!(facts.voices, ["alloy", "ash", "fable", "nova"]);
@@ -304,4 +318,26 @@ fn a_turn_longer_than_30_seconds_is_sent_with_the_specs_chunking_strategy() {
         "45 s: cut by the provider"
     );
     assert!(!contains(&requests[1].body, chunked), "5 s: one block");
+}
+
+/// `whisper-1` is never sent `chunking_strategy`, however long the turn: the spec does not say it takes it.
+#[test]
+fn whisper_1_is_never_sent_a_chunking_strategy() {
+    let whisper = ProviderModel {
+        id: "whisper-1".into(),
+        ..transcriber()
+    };
+    let (mut model, provider) = open(&whisper);
+    provider.key("openai", "sk-test");
+    provider.answer(
+        "https://api.openai.com/v1/audio/transcriptions",
+        200,
+        br#"{"text": "hi"}"#,
+    );
+    let stt = model.as_stt().expect("speech to text");
+    block_on(stt.transcribe(&[0.0; 16_000 * 45], None)).expect("transcribed");
+    assert!(!contains(
+        &provider.requests()[0].body,
+        "name=\"chunking_strategy\""
+    ));
 }

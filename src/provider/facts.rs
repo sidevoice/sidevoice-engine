@@ -37,7 +37,7 @@ pub(crate) struct ModelFacts {
     /// The lowest and the highest speed it takes; `None` when its request takes none.
     pub(crate) speed: Option<[f32; 2]>,
     /// The value its request's `chunking_strategy` takes to let the provider cut a long turn itself (OpenAI's `auto`),
-    /// when the request has that field; `None` otherwise.
+    /// for a model the spec says takes that field; `None` for any other.
     pub(crate) chunking: Option<String>,
 }
 
@@ -179,4 +179,21 @@ pub(crate) fn range(spec: &Value, value: &Value) -> Option<[f32; 2]> {
         .into_iter()
         .flatten()
         .find_map(|branch| range(spec, branch))
+}
+
+/// Every description a schema gives, through `$ref`, `anyOf` and `oneOf`: where a spec says in words what its types do
+/// not (which models a field is for).
+pub(crate) fn descriptions(spec: &Value, value: &Value) -> Vec<String> {
+    let value = resolve(spec, value);
+    let mut found: Vec<String> = value["description"]
+        .as_str()
+        .map(str::to_owned)
+        .into_iter()
+        .collect();
+    for key in ["anyOf", "oneOf"] {
+        for branch in value[key].as_array().into_iter().flatten() {
+            found.extend(descriptions(spec, branch));
+        }
+    }
+    found
 }

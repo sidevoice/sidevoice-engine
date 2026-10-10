@@ -12,9 +12,9 @@
 //!   voices are the spec's (OpenAI has no endpoint that lists them), each with no languages and no gender.
 //! - Speech to text: `POST /v1/audio/transcriptions`, a multipart form with the turn as a 16-bit WAV at 16 kHz, the
 //!   model and `response_format: json`; the language goes in the field the spec gives its request (`language`), as its
-//!   primary subtag; a turn longer than 30 seconds asks the provider to cut it, `chunking_strategy: auto`, where the
-//!   spec's request takes that value (which `gpt-4o-transcribe-diarize` requires). The transcript is the answer's
-//!   `text`.
+//!   primary subtag; for a model the spec's `chunking_strategy` names as taking it (`gpt-4o-transcribe-diarize`, which
+//!   requires it past 30 seconds), a turn longer than 30 seconds asks the provider to cut it, `chunking_strategy:
+//!   auto`; no other model is sent it. The transcript is the answer's `text`.
 //! - Text to speech: `POST /v1/audio/speech`, JSON with the model, the text, the voice and the speed (within the spec's
 //!   range), answered as `pcm`: 16-bit mono samples at 24 kHz, as OpenAI's text-to-speech guide gives that format. The
 //!   model speaks the text's language, and its request takes none.
@@ -86,12 +86,26 @@ impl Adapter for OpenAi {
         let rules = |request: &Value| {
             let language = request["properties"].get("language").map(|_| "language");
             let speed = facts::range(spec, &request["properties"]["speed"]);
-            let chunking = facts::strings(spec, &request["properties"]["chunking_strategy"]);
-            ModelFacts {
-                chunking: chunking.into_iter().find(|value| value == "auto"),
-                ..ModelFacts::new("", language, speed)
-            }
+            ModelFacts::new("", language, speed)
         };
+        // The models the spec's `chunking_strategy` says take it (by name, in its description: the diarization model,
+        // which requires it past 30 seconds), and the value that lets the provider cut a turn itself (`auto`). No other
+        // model is sent it: `whisper-1` is not said to take it.
+        let chunking = &transcription["properties"]["chunking_strategy"];
+        let auto = facts::strings(spec, chunking)
+            .into_iter()
+            .find(|value| value == "auto");
+        let chunked: Vec<String> = facts::descriptions(spec, chunking)
+            .iter()
+            .flat_map(|description| {
+                description
+                    .split('`')
+                    .skip(1)
+                    .step_by(2)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let models = |request: &Value| -> Result<Vec<ModelFacts>> {
             let ids = facts::strings(spec, &request["properties"]["model"]);
             if ids.is_empty() {
@@ -102,6 +116,7 @@ impl Adapter for OpenAi {
                 .iter()
                 .map(|id| ModelFacts {
                     model: id.clone(),
+                    chunking: auto.clone().filter(|_| chunked.contains(id)),
                     ..rules.clone()
                 })
                 .collect())

@@ -795,7 +795,7 @@ pub(crate) fn openai_spec() -> serde_json::Value {
             "model": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["whisper-1", "gpt-4o-transcribe", "gpt-4o-transcribe-diarize"] }] },
             "language": { "type": "string" },
             "chunking_strategy": { "anyOf": [
-                { "anyOf": [{ "type": "string", "enum": ["auto"] }, { "$ref": "#/components/schemas/VadConfig" }] },
+                { "description": "Controls how the audio is cut into chunks. Required when using `gpt-4o-transcribe-diarize` for inputs longer than 30 seconds.", "anyOf": [{ "type": "string", "enum": ["auto"] }, { "$ref": "#/components/schemas/VadConfig" }] },
                 { "type": "null" },
             ]},
         }},
