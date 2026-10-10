@@ -206,9 +206,10 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
   list. A provider that could not be asked (`provider-unreachable`, `provider-quota`, `listing-failed`) keeps its last
   listing, `stale`. The status's `detail` is what the provider said (its own status and message, such as the missing
   permission), for a developer to read.
-- **The listing decides what exists; the spec, read at run time, enriches it.** Every model ElevenLabs' `/v1/models`
-  says speaks is offered, with its languages; OpenAI's lists ids alone, so of those the ones its spec names as speech
-  to text or text to speech are. What the APIs do not say (which models transcribe, where the language goes in a
+- **The listing decides for what it reports; the spec, read at run time, for what it never does, and enriches the
+  rest.** Every model ElevenLabs' `/v1/models` says speaks is offered, with its languages; that listing never reports
+  speech to text (it lists no Scribe), so ElevenLabs' speech-to-text models are its spec's. OpenAI's lists ids alone,
+  so of those the ones its spec names as speech to text or text to speech are. What the APIs do not say (which models transcribe, where the language goes in a
   request, the speed range, OpenAI's voices) is read from each provider's official OpenAPI spec (OpenAI's
   `openai-openapi` repository at `main`, about 4.8 MB; ElevenLabs' `api.elevenlabs.io/openapi.json`, about 2.3 MB;
   both readable from a page), through the host, and kept with the listing. A model the spec has no request of its own

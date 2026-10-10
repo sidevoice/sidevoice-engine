@@ -195,9 +195,11 @@ fn every_model_the_listing_says_speaks_is_offered_and_the_spec_only_enriches_it(
             ("eleven_flash_v4", Capability::Tts, 0, None),
             ("eleven_v4", Capability::Tts, 0, None),
             ("scribe_v2", Capability::Stt, 1, None),
+            ("scribe_v2_medical", Capability::Stt, 0, None),
         ],
-        "every model the listing says speaks, in its order, more than the spec has requests for; Scribe because the 
-         spec names it; a speed range only where the spec gives one"
+        "every model the listing says speaks, in its order, more than the spec has requests for; then the spec's \
+         speech-to-text models, with the languages the listing gives one it lists; a speed range only where the spec \
+         gives one"
     );
     let request = &provider.requests()[0];
     assert_eq!(
@@ -346,4 +348,37 @@ fn a_model_whose_request_takes_no_language_or_no_speed_is_sent_neither() {
             "{id}"
         );
     }
+}
+
+/// What `/v1/models` answers for a real key: text-to-speech models only, no Scribe (remote-live, engine 0.3.0). The
+/// listing never reports speech to text, so the spec's Scribe models are offered all the same.
+#[test]
+fn a_listing_without_scribe_still_offers_the_specs_speech_to_text() {
+    let (api, provider) = remote_api("elevenlabs");
+    provider.key("elevenlabs", "xi-test");
+    provider.answer(
+        "https://api.elevenlabs.io/v1/models",
+        200,
+        br#"[
+            {"model_id": "eleven_flash_v2_5", "can_do_text_to_speech": true, "languages": [{"language_id": "en", "name": "English"}]},
+            {"model_id": "eleven_multilingual_v2", "can_do_text_to_speech": true, "languages": []}
+        ]"#,
+    );
+    let models = block_on(ElevenLabs.models(&api, &facts())).expect("listed");
+    let of = |capability| -> Vec<&str> {
+        models
+            .iter()
+            .filter(|model| model.capabilities.contains(&capability))
+            .map(|model| model.id.as_str())
+            .collect()
+    };
+    assert_eq!(
+        of(Capability::Tts),
+        ["eleven_flash_v2_5", "eleven_multilingual_v2"]
+    );
+    assert_eq!(
+        of(Capability::Stt),
+        ["scribe_v2", "scribe_v2_medical"],
+        "from the spec: the listing reports no speech to text"
+    );
 }
