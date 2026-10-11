@@ -1,7 +1,9 @@
 //! Where a host keeps files, in the layout of Hugging Face's hub cache: blobs, each stored once under a name the
 //! installer gives it (its digest), and build folders (`models/<build id>/`), where each of a build's files sits under
 //! its original name, as a link to its blob. A blob is a file or, in a native build, a tree (an unpacked archive).
-//! Storage does not know what a file is, and a name is only ever stored once its bytes have been checked.
+//! Storage does not know what a file is, and a name is only ever stored once its bytes have been checked. Beside the
+//! blobs the engine keeps one small record of its own, under a name no digest has (`last-used`: when each model was
+//! last loaded), replaced whole each time it changes.
 
 use async_trait::async_trait;
 

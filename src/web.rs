@@ -57,10 +57,13 @@ export interface ModelInfo {
   id: string; capabilities: ("stt" | "tts" | "vad" | "end-of-turn")[]; languages: string[];
   voices: Voice[]; speed?: SpeedRange;
 }
-/** A model of the local catalogue: its family, size, licence, builds ranked and what is installed. */
+/** A model of the local catalogue: its family, size, licence, builds ranked, what is installed and when it was
+ * last loaded. */
 export interface LocalModelInfo extends ModelInfo {
-  family: string; parametersM: number; license: string; installed: boolean; builds: ModelBuild[];
-  recommendedBuild?: string;
+  family: string; parametersM: number; license: string; installed: boolean;
+  /** When it was last loaded, in milliseconds since the epoch; absent when it is not installed or not loaded since. */
+  lastUsedAt?: number;
+  builds: ModelBuild[]; recommendedBuild?: string;
 }
 /** A model of a remote provider, as listed. */
 export interface RemoteModelInfo extends ModelInfo {}
@@ -267,7 +270,8 @@ impl WebLocalCatalog {
     }
 
     /// Its models, those of `capability` alone when given (`"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`), each with its
-    /// builds ranked and what is installed; rejects with `invalid-capability` for any other.
+    /// builds ranked, what is installed and when it was last loaded (`lastUsedAt`); rejects with `invalid-capability`
+    /// for any other.
     #[wasm_bindgen(unchecked_return_type = "Promise<LocalModelInfo[]>")]
     pub fn models(
         &self,

@@ -6,7 +6,8 @@
 //!
 //! Inside: `catalogs` (the catalogue interface), `model` (a local model as its catalogue lists it), `local`
 //! ([`LocalModel`]), `providers` (the remote side), `memory` (weak references: one library per backend, one model per
-//! build) and `error` (why an engine cannot be built).
+//! build), `last_used` (when each local model was last loaded, kept in the host's storage) and `error` (why an engine
+//! cannot be built).
 
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -25,6 +26,7 @@ use crate::{Error, Result};
 
 mod catalog;
 mod error;
+mod last_used;
 mod local;
 mod local_info;
 mod memory;
@@ -39,6 +41,7 @@ pub use local::LocalModel;
 pub use local_info::{LocalModelInfo, ModelBuild};
 pub use model::{Model, ModelInfo};
 
+use last_used::LastUsed;
 use memory::Memory;
 
 /// The engine of one place: what can run here, what is installed, what is loaded, and what the remote providers offer.
@@ -64,6 +67,8 @@ pub struct Engine {
     /// last lock an install or a load takes before it waits on storage, and an uninstall takes no other while it waits
     /// for it.
     files: async_lock::RwLock<()>,
+    /// When each local model was last loaded, kept in the host's storage.
+    last_used: LastUsed,
 }
 
 impl fmt::Debug for Engine {
@@ -114,6 +119,7 @@ impl Engine {
             memory: Mutex::default(),
             loading: async_lock::Mutex::new(()),
             files: async_lock::RwLock::new(()),
+            last_used: LastUsed::default(),
         })
     }
 
@@ -127,14 +133,15 @@ impl Engine {
     }
 
     /// Every model of the local catalogue, in catalogue order, each with its builds ranked (those that run here first,
-    /// with the accelerator each would use; the rest with why not), whether it is installed, and the build the engine
-    /// recommends: the first that runs here.
+    /// with the accelerator each would use; the rest with why not), whether it is installed, when it was last loaded
+    /// (if it is installed), and the build the engine recommends: the first that runs here.
     ///
     /// # Errors
     ///
     /// What the host's storage fails with, asked what is installed.
     pub(crate) async fn models(&self) -> Result<Vec<LocalModelInfo>> {
         let caps = self.host.capabilities();
+        let last_used = self.last_used.read(self.host.storage()).await;
         let mut models = Vec::new();
         let mut entries = Vec::new();
         for family in self.catalog.families() {
@@ -157,6 +164,7 @@ impl Engine {
                     installed,
                 });
             }
+            let installed = builds.iter().any(|build| build.installed);
             models.push(LocalModelInfo {
                 id: entry.id.clone(),
                 family: family.id.clone(),
@@ -166,7 +174,8 @@ impl Engine {
                 license: entry.license.clone(),
                 voices: entry.voices.clone(),
                 speed: family_speed.as_ref().map(FamilySpeed::range),
-                installed: builds.iter().any(|build| build.installed),
+                installed,
+                last_used_at: last_used.get(&entry.id).copied().filter(|_| installed),
                 recommended_build: builds
                     .iter()
                     .find(|build| build.available)
@@ -204,7 +213,8 @@ impl Engine {
 
     /// Removes `build` of the model `model` from storage, or, with `None`, every build of it: each build's folder, then
     /// each of its files no other build's folder links, so a file another build (of this model or another) uses stays.
-    /// A build that is not installed is left as it is. As [`Engine::install`] takes a model and one of its builds, so
+    /// A build that is not installed is left as it is. Once no build of the model is installed, when it was last loaded
+    /// is forgotten too. As [`Engine::install`] takes a model and one of its builds, so
     /// does this; removing one build is what undoes an install that finished before it could be cancelled.
     ///
     /// # Errors
@@ -240,6 +250,14 @@ impl Engine {
                 .uninstall(&build.id, &artifacts, self.host.storage())
                 .await?;
         }
+        // When it was last loaded goes with its last build (and stays if it cannot be told that none is left).
+        let mut left = false;
+        for build in &entry.builds {
+            left |= self.is_installed(build).await.unwrap_or(true);
+        }
+        if !left {
+            self.last_used.forget(self.host.storage(), &entry.id).await;
+        }
         Ok(())
     }
 
@@ -251,7 +269,8 @@ impl Engine {
     /// Loads `build` of the model `model`, or, with `None`, an installed build that runs here, else the recommended
     /// one; it is installed first if it is not (telling `progress`, stopping once `cancel` is cancelled). A build
     /// already in memory is not loaded again: the [`LocalModel`] returned shares it. Only the build's backend is ever
-    /// activated, and its library is opened with the first of its models.
+    /// activated, and its library is opened with the first of its models. Each load that succeeds, shared or not,
+    /// notes the time in the host's storage, by model ([`LocalModelInfo::last_used_at`]); noting it never fails a load.
     ///
     /// # Errors
     ///
@@ -259,6 +278,21 @@ impl Engine {
     /// `unsupported-model`, `not-implemented`, ...). While it installs and loads, until the model is in memory,
     /// no uninstall removes the build.
     pub async fn load(
+        &self,
+        model: &str,
+        build: Option<&str>,
+        progress: &dyn ProgressSink,
+        cancel: &Cancel,
+    ) -> Result<LocalModel> {
+        let loaded = self.load_build(model, build, progress, cancel).await?;
+        self.last_used
+            .record(self.host.storage(), loaded.id(), self.host.now_ms())
+            .await;
+        Ok(loaded)
+    }
+
+    /// [`Engine::load`], but for noting when the model was loaded.
+    async fn load_build(
         &self,
         model: &str,
         build: Option<&str>,

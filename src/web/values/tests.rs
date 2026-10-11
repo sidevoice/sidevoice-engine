@@ -2,8 +2,11 @@ use js_sys::Reflect;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::wasm_bindgen_test;
 
-use super::{audio, progress, reason, vad_options, vad_output, voice};
-use crate::{Audio, Gender, Progress, Reason, VadEvent, VadFrame, VadOptions, VadOutput, Voice};
+use super::{audio, model, progress, reason, vad_options, vad_output, voice};
+use crate::{
+    Audio, Capability, Gender, LocalModelInfo, Progress, Reason, VadEvent, VadFrame, VadOptions,
+    VadOutput, Voice,
+};
 
 fn get(value: &JsValue, key: &str) -> JsValue {
     Reflect::get(value, &key.into()).unwrap()
@@ -131,4 +134,28 @@ fn a_vad_output_has_its_frames_and_typed_events() {
         (get(&end, "start").as_f64(), get(&end, "end").as_f64()),
         (Some(0.0), Some(900.0))
     );
+}
+
+#[wasm_bindgen_test]
+fn a_local_model_says_when_it_was_last_loaded_only_when_it_is_known() {
+    let mut ear = LocalModelInfo {
+        id: "ear".into(),
+        family: "fake".into(),
+        capabilities: vec![Capability::Stt],
+        parameters_m: 1,
+        languages: vec!["en".into()],
+        license: "MIT".into(),
+        voices: Vec::new(),
+        speed: None,
+        installed: true,
+        last_used_at: Some(1_760_000_000_123),
+        builds: Vec::new(),
+        recommended_build: None,
+    };
+    assert_eq!(
+        get(&model(&ear), "lastUsedAt").as_f64(),
+        Some(1_760_000_000_123.0)
+    );
+    ear.last_used_at = None;
+    assert!(!Reflect::has(&model(&ear), &"lastUsedAt".into()).unwrap());
 }

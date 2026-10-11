@@ -41,7 +41,7 @@ merges, its CI keeps the npm package it built for 7 days, as the Actions artifac
 ([`RELEASING.md`](RELEASING.md#a-pull-requests-package)).
 
 The platform is injected: a `Host` gives the engine the machine's capabilities, its storage, a way to fetch files,
-its HTTP for API calls, and the keys of remote providers. The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
+its HTTP for API calls, the keys of remote providers, and the time (`Host::now_ms`, the platform's clock by default). The engine ships the host of each kind of build, chosen like the backends at compile time: `NativeHost` in
 every native build, and in the web build the page's, built by `WebEngine.create(host)` from what the page reports,
 with the engine's own storage (OPFS, the browser's private file system), downloads and API calls (`fetch`). The
 `Host` interface stays open, so tests and other platforms bring their own. The backends that run models are internal
@@ -103,13 +103,18 @@ let smart_turn = engine.load("smart-turn-v3.2", None, &|_| {}, &cancel).await?;
 let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_far, 48_000).await?; // P(complete)
 ```
 
-- **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, every build
-  ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
+- **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, when it was last loaded,
+  every build ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
   it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
   recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
   removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
-  refuses a build that is loaded (`model-in-use`). Removing one build is what undoes an install that finished before
-  its cancel landed. One engine-wide lock keeps uninstalls apart from installs and loads: these hold it shared, so they
+  refuses a build that is loaded (`model-in-use`). When a model was last loaded (`last_used_at`; `lastUsedAt` on the
+  web) is in milliseconds since the Unix epoch, by the host's clock (`Host::now_ms`): every load that succeeds notes it
+  by model, whatever the build and whether it was already in memory, in one small record in the host's storage (the
+  file `last-used` beside the blobs; noting it never fails a load, and a record that cannot be read counts as none),
+  so it outlives the app; it is forgotten once no build of the model is installed, and is `None` for a model that is
+  not installed. The app can so remove what has not been used for a while. Removing one build is what undoes an
+  install that finished before its cancel landed. One engine-wide lock keeps uninstalls apart from installs and loads: these hold it shared, so they
   run side by side (a first voice call loads its four models at once), and an uninstall alone, waiting for them; so no
   install or load loses a file it found, its own or one another build shares.
 - **`Engine::load`** installs the build if it is not (with `None`: an installed build that runs here, else the
@@ -133,7 +138,7 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 - **Memory follows the `LocalModel`s.** Loading a build that is already in memory returns it again; calls on one
   model wait for one another; the model is unloaded when the last `LocalModel` of its build is dropped, and a
   backend's library is opened with the first of its models and closed after the last one. The engine keeps only weak
-  references: no clock, no idle unloading.
+  references: no idle unloading.
 - **`NativeHost`** (`src/host/native.rs`) takes one parameter, the data directory, which it creates. It reports `os`
   and `arch` from `std::env::consts`, `cores` from `available_parallelism`, the machine's memory (or its cgroup's
   limit) from `sysinfo`, and `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver is
@@ -289,7 +294,8 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   RemoteCatalog), model (ModelInfo, Model), local_info (LocalModelInfo, ModelBuild: a local model as
                   listed), local (LocalModel), providers (a
                   provider's listing and remote models, behind its catalogue), memory (weak references: one library per
-                  backend, one model per build), error (ConfigError)
+                  backend, one model per build), last_used (when each local model was last loaded, a record in the
+                  host's storage), error (ConfigError)
   web.rs          the bridge to JavaScript, only in the wasm32 build (the npm package): WebEngine, Catalog, LocalModel, RemoteModel, Stt,
                   Tts, Vad, VadStream, EndOfTurn; web/values.rs, the engine's values as JavaScript objects; web/opfs.rs, the browser's private
                   file system; web/host.rs, the JavaScript host (JsHost) as the engine sees it; web/host/:
