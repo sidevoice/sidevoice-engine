@@ -987,17 +987,124 @@ fn installs_and_loads_run_side_by_side() {
     drop(installing);
 }
 
+/// Polls every future, in turn, until all are done; as [`both`], only for futures that wake themselves.
 #[cfg(native)]
+fn all(mut futures: Vec<std::pin::Pin<Box<dyn Future<Output = ()> + '_>>>) {
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    while !futures.is_empty() {
+        futures.retain_mut(|future| future.as_mut().poll(&mut context).is_pending());
+    }
+}
+
+/// Waits, yielding, until `ready` holds.
+#[cfg(native)]
+async fn until(ready: impl Fn() -> bool) {
+    while !ready() {
+        YieldOnce(false).await;
+    }
+}
+
+/// Yields `times` times: lets the other futures [`all`] polls run on.
+#[cfg(native)]
+async fn yields(times: usize) {
+    for _ in 0..times {
+        YieldOnce(false).await;
+    }
+}
+
 #[test]
-fn two_loads_that_finish_together_both_note_when() {
+fn a_record_the_storage_cannot_read_is_left_whole_and_the_load_still_succeeds() {
     let fixture = Fixture::new();
-    fixture.host.set_now(42);
-    let cancel = Cancel::new();
-    let load = |model| fixture.engine.load(model, None, &|_| {}, &cancel);
-    let (ear, voice) = both(load("ear"), load("voice"));
-    drop((ear.expect("loaded"), voice.expect("loaded")));
+    fixture.host.set_now(1);
+    drop(fixture.load("ear", None).expect("loaded"));
+    fixture.host.fail_reads("last-used", true);
+    fixture.host.set_now(2);
+    drop(fixture.load("voice", None).expect("loads all the same"));
+    assert_eq!(
+        fixture.last_used("ear"),
+        None,
+        "listed without: it cannot be read"
+    );
+    fixture.host.fail_reads("last-used", false);
     assert_eq!(
         (fixture.last_used("ear"), fixture.last_used("voice")),
-        (Some(42), Some(42))
+        (Some(1), None),
+        "ear's time kept, voice's change skipped"
+    );
+}
+
+/// Two loads that finish together: the second waits for the first's change, then takes the time and makes its own, so
+/// neither is lost and the later time is the one kept.
+#[cfg(native)]
+#[test]
+fn changes_to_the_record_wait_for_one_another_and_take_the_time_in_turn() {
+    let fixture = Fixture::new();
+    let (host, engine, cancel) = (&fixture.host, &fixture.engine, Cancel::new());
+    host.set_now(1);
+    drop(fixture.load("ear", None).expect("loaded"));
+    host.set_now(10);
+    let paused = host.pause_reads("last-used");
+    let voice = async {
+        let voice = engine.load("voice", None, &|_| {}, &cancel).await;
+        drop(voice.expect("loaded"));
+    };
+    let ear = async {
+        // Voice's change holds the record, waiting in its read.
+        until(|| host.waiting_reads() >= 1).await;
+        host.set_now(20);
+        drop(
+            engine
+                .load("ear", None, &|_| {}, &cancel)
+                .await
+                .expect("loaded"),
+        );
+    };
+    let release = async {
+        until(|| host.waiting_reads() >= 1).await;
+        yields(100).await;
+        assert_eq!(host.waiting_reads(), 1, "ear's change waits for voice's");
+        host.set_now(30);
+        drop(paused);
+    };
+    all(vec![Box::pin(voice), Box::pin(ear), Box::pin(release)]);
+    assert_eq!(
+        (fixture.last_used("voice"), fixture.last_used("ear")),
+        (Some(10), Some(30))
+    );
+}
+
+/// A load that finishes while another model is uninstalled: the uninstall's forgetting waits for the load's change.
+#[cfg(native)]
+#[test]
+fn forgetting_a_model_waits_for_the_change_of_a_load_in_progress() {
+    let fixture = Fixture::new();
+    let (host, engine, cancel) = (&fixture.host, &fixture.engine, Cancel::new());
+    host.set_now(1);
+    drop(fixture.load("ear", None).expect("loaded"));
+    drop(fixture.load("voice", None).expect("loaded"));
+    host.set_now(10);
+    let paused = host.pause_reads("last-used");
+    let ear = async {
+        drop(
+            engine
+                .load("ear", None, &|_| {}, &cancel)
+                .await
+                .expect("loaded"),
+        );
+    };
+    let uninstall = async {
+        until(|| host.waiting_reads() >= 1).await;
+        engine.uninstall("voice", None).await.expect("uninstalled");
+    };
+    let release = async {
+        until(|| host.waiting_reads() >= 1).await;
+        yields(100).await;
+        assert_eq!(host.waiting_reads(), 1, "the uninstall's change waits");
+        drop(paused);
+    };
+    all(vec![Box::pin(ear), Box::pin(uninstall), Box::pin(release)]);
+    assert_eq!(
+        fixture.host.stored().get("last-used").map(Vec::as_slice),
+        Some(br#"{"ear":10}"#.as_slice())
     );
 }

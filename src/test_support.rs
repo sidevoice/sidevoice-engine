@@ -4,7 +4,7 @@
 //! build has, the builders it is made with, a provider's side of remote calls (keys, scripted answers, the requests
 //! made), and a way to run a future to its end.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -126,7 +126,8 @@ impl HttpClient for FakeHost {
 }
 
 /// [`FakeHost`]'s capabilities, a storage in memory (files, trees, and build folders of links), and a fetcher that
-/// serves some URLs, a few bytes at a time; its clock stands still (at 0 until a test sets it).
+/// serves some URLs, a few bytes at a time; its clock stands still (at 0 until a test sets it), and a test may make the
+/// reads of a stored file fail or wait.
 #[derive(Default)]
 pub(crate) struct MemoryHost {
     served: BTreeMap<String, Vec<u8>>,
@@ -137,7 +138,15 @@ pub(crate) struct MemoryHost {
     remote: Arc<FakeProvider>,
     /// Its clock: milliseconds since the epoch, fixed until a test moves it.
     now: Arc<AtomicU64>,
+    /// Reads that fail, by name.
+    failing: Arc<Mutex<BTreeSet<String>>>,
+    /// Reads that wait, by name, while a test holds the lock; and how many have started waiting.
+    gate: Arc<Mutex<Option<Gate>>>,
+    waiting: Arc<AtomicUsize>,
 }
+
+/// The reads of one stored file that wait, and the lock they wait for.
+type Gate = (String, Arc<async_lock::Mutex<()>>);
 
 /// A build folder's links: each path, and the blob (and member of it) it links.
 pub(crate) type MemoryFolder = BTreeMap<String, (String, Option<String>)>;
@@ -168,7 +177,35 @@ impl MemoryHost {
             fetches: AtomicUsize::new(0),
             remote: Arc::clone(&self.remote),
             now: Arc::clone(&self.now),
+            failing: Arc::clone(&self.failing),
+            gate: Arc::clone(&self.gate),
+            waiting: Arc::clone(&self.waiting),
         }
+    }
+
+    /// Makes every read of `name` fail with `storage-failed`, or, with `fail` false, succeed again.
+    pub(crate) fn fail_reads(&self, name: &str, fail: bool) {
+        let mut failing = lock(&self.failing);
+        if fail {
+            failing.insert(name.to_owned());
+        } else {
+            failing.remove(name);
+        }
+    }
+
+    /// Makes every read of `name` wait until the guard returned is dropped.
+    #[cfg(native)]
+    pub(crate) fn pause_reads(&self, name: &str) -> async_lock::MutexGuardArc<()> {
+        let gate = Arc::new(async_lock::Mutex::new(()));
+        let guard = gate.try_lock_arc().expect("a new lock");
+        *lock(&self.gate) = Some((name.to_owned(), gate));
+        guard
+    }
+
+    /// How many reads have waited, or are waiting, since [`MemoryHost::pause_reads`].
+    #[cfg(native)]
+    pub(crate) fn waiting_reads(&self) -> usize {
+        self.waiting.load(Ordering::Relaxed)
     }
 
     /// Sets its clock to `ms` since the epoch.
@@ -259,6 +296,17 @@ impl Storage for MemoryHost {
     }
 
     async fn read(&self, name: &str) -> Result<Box<dyn Download>> {
+        if lock(&self.failing).contains(name) {
+            return Err(Error::new("storage-failed"));
+        }
+        let gate = lock(&self.gate)
+            .as_ref()
+            .filter(|(gated, _)| gated == name)
+            .map(|(_, gate)| Arc::clone(gate));
+        if let Some(gate) = gate {
+            self.waiting.fetch_add(1, Ordering::Relaxed);
+            drop(gate.lock().await);
+        }
         let bytes = lock(&self.stored).get(name).cloned();
         Ok(Box::new(MemoryDownload(
             bytes.ok_or(Error::new("storage-failed"))?,

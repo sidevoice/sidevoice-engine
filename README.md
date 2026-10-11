@@ -111,9 +111,11 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   refuses a build that is loaded (`model-in-use`). When a model was last loaded (`last_used_at`; `lastUsedAt` on the
   web) is in milliseconds since the Unix epoch, by the host's clock (`Host::now_ms`): every load that succeeds notes it
   by model, whatever the build and whether it was already in memory, in one small record in the host's storage (the
-  file `last-used` beside the blobs; noting it never fails a load, and a record that cannot be read counts as none),
-  so it outlives the app; it is forgotten once no build of the model is installed, and is `None` for a model that is
-  not installed. The app can so remove what has not been used for a while. Removing one build is what undoes an
+  file `last-used` beside the blobs; noting it never fails a load, a malformed record counts as none, and one the
+  storage fails to read is kept as it is, that change skipped), so it outlives the app. Changes are serialised within
+  one engine; two engines over one storage may each overwrite the other's latest. It is forgotten once no build of
+  the model is installed, and is `None` for a model that is not installed. The app can so remove what has not been
+  used for a while. Removing one build is what undoes an
   install that finished before its cancel landed. One engine-wide lock keeps uninstalls apart from installs and loads: these hold it shared, so they
   run side by side (a first voice call loads its four models at once), and an uninstall alone, waiting for them; so no
   install or load loses a file it found, its own or one another build shares.

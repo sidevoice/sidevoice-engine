@@ -285,9 +285,7 @@ impl Engine {
         cancel: &Cancel,
     ) -> Result<LocalModel> {
         let loaded = self.load_build(model, build, progress, cancel).await?;
-        self.last_used
-            .record(self.host.storage(), loaded.id(), self.host.now_ms())
-            .await;
+        self.last_used.record(self.host.as_ref(), loaded.id()).await;
         Ok(loaded)
     }
 
