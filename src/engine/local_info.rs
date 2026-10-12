@@ -1,13 +1,13 @@
 //! A local model as this engine sees it, what the local catalogue lists ([`Catalog::models`](crate::Catalog::models)):
-//! its catalogue data, whether it is installed, every build of it ranked with whether it runs here and why not, and
-//! the build the engine recommends.
+//! its catalogue data, whether it is installed and when it was last loaded, every build of it ranked with whether it
+//! runs here and why not, and the build the engine recommends.
 
 use crate::catalog::{Capability, SpeedRange, Voice};
 use crate::host::Accelerator;
 use crate::resolver::Reason;
 
 /// A model of the local catalogue, here: what [`ModelInfo`](crate::ModelInfo) says of every model, and the local
-/// specifics (its family, size, licence, builds and what is installed).
+/// specifics (its family, size, licence, builds, what is installed and when it was last loaded).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocalModelInfo {
     /// Its stable id: what [`Engine::install`](crate::Engine::install) and [`Engine::load`](crate::Engine::load) take.
@@ -28,6 +28,10 @@ pub struct LocalModelInfo {
     pub speed: Option<SpeedRange>,
     /// Whether one of its builds is installed.
     pub installed: bool,
+    /// When it was last loaded ([`Engine::load`](crate::Engine::load), any build), in milliseconds since the Unix epoch,
+    /// by the host's clock ([`Host::now_ms`](crate::Host::now_ms)); kept in the host's storage, so it outlives the app.
+    /// `None` when it is not installed, or has not been loaded since it was (or since the engine began noting it).
+    pub last_used_at: Option<u64>,
     /// Every build of it, ranked: those that run here first.
     pub builds: Vec<ModelBuild>,
     /// The build the engine would use: the first that runs here, if any does.

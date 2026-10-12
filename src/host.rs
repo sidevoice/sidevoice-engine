@@ -26,7 +26,7 @@ pub use native::NativeHost;
 pub use storage::TreeWriter;
 pub use storage::{FolderWriter, Storage, StorageWriter};
 
-/// The facts, storage, downloads, API calls and keys of the place the engine runs in. Without a host there is no engine: an app passes
+/// The facts, storage, downloads, API calls, keys and clock of the place the engine runs in. Without a host there is no engine: an app passes
 /// the built-in one for its build ([`NativeHost`] natively) or its own.
 ///
 /// A host must be `Send + Sync` in a native build and need not be in the web build ([`MaybeSend`], [`MaybeSync`]).
@@ -62,4 +62,15 @@ pub trait Host: MaybeSend + MaybeSync {
     fn http(&self) -> &dyn HttpClient;
     /// Where the keys of remote providers are: the app's, never the engine's.
     fn credentials(&self) -> &dyn Credentials;
+
+    /// The time now, in milliseconds since the Unix epoch: when a local model is loaded, the engine notes it
+    /// ([`LocalModelInfo::last_used_at`](crate::LocalModelInfo::last_used_at)). By default the platform's clock
+    /// (natively the system's, on the web the page's `Date.now()`); a host overrides it only to fix the time (a test's).
+    fn now_ms(&self) -> u64 {
+        web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            })
+    }
 }

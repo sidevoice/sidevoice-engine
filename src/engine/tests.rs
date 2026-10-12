@@ -1,7 +1,8 @@
 //! The engine over fake hosts, catalogues and a fake backend. What the local catalogue's models say: builds ranked, those that
 //! run here first, the rest with why not, and what is installed. Then the interface: install, load (installing first,
 //! one model in memory per build, one library per backend, closed with its last model), the build `load` chooses,
-//! what fails and why, uninstalling, and a loaded model's calls: resampled audio, voices described by the catalogue,
+//! what fails and why, uninstalling, when each model was last loaded (noted on every load, kept in the host's storage,
+//! forgotten with its last build), and a loaded model's calls: resampled audio, voices described by the catalogue,
 //! and calls on one model waiting for one another.
 
 #[cfg(native)]
@@ -474,19 +475,41 @@ fn served() -> MemoryHost {
 struct Fixture {
     engine: Engine,
     counters: Counters,
+    /// The engine's host, shared: its storage and its clock.
+    host: MemoryHost,
 }
 
 impl Fixture {
     fn new() -> Self {
+        Self::over(served())
+    }
+
+    /// An engine over `host`.
+    fn over(host: MemoryHost) -> Self {
         let counters = Counters::default();
         let backend = FakeBackend(counters.clone());
+        let shared = host.sharing();
         let engine = Engine::with_backends(
-            Box::new(served()),
+            Box::new(host),
             vec![Box::new(FakeModels)],
             vec![Box::new(backend)],
         )
         .expect("engine");
-        Self { engine, counters }
+        Self {
+            engine,
+            counters,
+            host: shared,
+        }
+    }
+
+    /// When the listing says `model` was last loaded.
+    fn last_used(&self, model: &str) -> Option<u64> {
+        let models = block_on(self.engine.models()).expect("models");
+        models
+            .iter()
+            .find(|m| m.id == model)
+            .expect("listed")
+            .last_used_at
     }
 
     fn load(&self, model: &str, build: Option<&str>) -> Result<LocalModel> {
@@ -677,6 +700,105 @@ fn a_loaded_build_is_not_uninstalled_until_dropped() {
 }
 
 #[test]
+fn each_load_notes_when_by_model_shared_or_not_and_installing_does_not() {
+    let fixture = Fixture::new();
+    assert_eq!(fixture.last_used("ear"), None, "never loaded");
+    fixture.host.set_now(1_000);
+    let first = fixture.load("ear", Some("ear-1")).expect("loaded");
+    assert_eq!(fixture.last_used("ear"), Some(1_000));
+
+    fixture.host.set_now(2_000);
+    let shared = fixture.load("ear", Some("ear-1")).expect("loaded again");
+    assert_eq!(Fixture::count(&fixture.counters.loaded), 1, "one model");
+    assert_eq!(
+        fixture.last_used("ear"),
+        Some(2_000),
+        "a shared load counts"
+    );
+
+    fixture.host.set_now(3_000);
+    fixture.load("ear", Some("ear-2")).expect("another build");
+    assert_eq!(fixture.last_used("ear"), Some(3_000), "by model, any build");
+
+    fixture.install("voice", None).expect("installed");
+    assert_eq!(fixture.last_used("voice"), None, "installed, never loaded");
+    assert!(
+        fixture.load("broken", None).is_err(),
+        "a load that fails notes nothing"
+    );
+    assert_eq!(fixture.last_used("broken"), None);
+    drop((first, shared));
+}
+
+#[test]
+fn when_a_model_was_last_loaded_is_kept_in_the_hosts_storage_for_the_next_engine() {
+    let fixture = Fixture::new();
+    fixture.host.set_now(1_760_000_000_123);
+    drop(fixture.load("ear", None).expect("loaded"));
+    let stored = fixture.host.stored();
+    assert_eq!(
+        stored.get("last-used").map(Vec::as_slice),
+        Some(br#"{"ear":1760000000123}"#.as_slice())
+    );
+
+    let next = Fixture::over(fixture.host.sharing());
+    drop(fixture);
+    assert_eq!(next.last_used("ear"), Some(1_760_000_000_123));
+}
+
+#[test]
+fn the_listing_says_when_only_for_installed_models() {
+    let host = served();
+    host.store("last-used", br#"{"ear": 9, "voice": 7, "nobody": 5}"#);
+    let fixture = Fixture::over(host);
+    fixture.install("ear", Some("ear-2")).expect("installed");
+    assert_eq!(fixture.last_used("ear"), Some(9));
+    assert_eq!(fixture.last_used("voice"), None, "not installed");
+}
+
+#[test]
+fn uninstalling_forgets_when_a_model_was_last_loaded_once_no_build_of_it_is_left() {
+    let fixture = Fixture::new();
+    fixture.host.set_now(1_000);
+    fixture.install("ear", Some("ear-2")).expect("installed");
+    drop(fixture.load("ear", Some("ear-1")).expect("loaded"));
+    drop(fixture.load("voice", None).expect("loaded"));
+    let uninstall = |model, build| block_on(fixture.engine.uninstall(model, build));
+
+    uninstall("ear", Some("ear-2")).expect("uninstalled");
+    assert_eq!(
+        fixture.last_used("ear"),
+        Some(1_000),
+        "ear-1 is still installed"
+    );
+    uninstall("ear", Some("ear-1")).expect("uninstalled");
+    fixture
+        .install("ear", Some("ear-1"))
+        .expect("installed again");
+    assert_eq!(
+        fixture.last_used("ear"),
+        None,
+        "forgotten with its last build"
+    );
+
+    uninstall("voice", None).expect("uninstalled");
+    fixture.install("voice", None).expect("installed again");
+    assert_eq!(fixture.last_used("voice"), None, "forgotten with the model");
+}
+
+#[test]
+fn a_record_that_cannot_be_read_is_no_data_and_the_next_load_replaces_it() {
+    let host = served();
+    host.store("last-used", b"{ not json");
+    let fixture = Fixture::over(host);
+    fixture.install("ear", None).expect("installed");
+    assert_eq!(fixture.last_used("ear"), None);
+    fixture.host.set_now(5);
+    drop(fixture.load("ear", None).expect("loads all the same"));
+    assert_eq!(fixture.last_used("ear"), Some(5));
+}
+
+#[test]
 fn transcribing_brings_the_audio_to_the_models_rate() {
     let fixture = Fixture::new();
     let ear = fixture.load("ear", None).expect("loaded");
@@ -863,4 +985,126 @@ fn installs_and_loads_run_side_by_side() {
         .expect("installed alongside");
     fixture.load("other", None).expect("loaded alongside");
     drop(installing);
+}
+
+/// Polls every future, in turn, until all are done; as [`both`], only for futures that wake themselves.
+#[cfg(native)]
+fn all(mut futures: Vec<std::pin::Pin<Box<dyn Future<Output = ()> + '_>>>) {
+    let mut context = Context::from_waker(std::task::Waker::noop());
+    while !futures.is_empty() {
+        futures.retain_mut(|future| future.as_mut().poll(&mut context).is_pending());
+    }
+}
+
+/// Waits, yielding, until `ready` holds.
+#[cfg(native)]
+async fn until(ready: impl Fn() -> bool) {
+    while !ready() {
+        YieldOnce(false).await;
+    }
+}
+
+/// Yields `times` times: lets the other futures [`all`] polls run on.
+#[cfg(native)]
+async fn yields(times: usize) {
+    for _ in 0..times {
+        YieldOnce(false).await;
+    }
+}
+
+#[test]
+fn a_record_the_storage_cannot_read_is_left_whole_and_the_load_still_succeeds() {
+    let fixture = Fixture::new();
+    fixture.host.set_now(1);
+    drop(fixture.load("ear", None).expect("loaded"));
+    fixture.host.fail_reads("last-used", true);
+    fixture.host.set_now(2);
+    drop(fixture.load("voice", None).expect("loads all the same"));
+    assert_eq!(
+        fixture.last_used("ear"),
+        None,
+        "listed without: it cannot be read"
+    );
+    fixture.host.fail_reads("last-used", false);
+    assert_eq!(
+        (fixture.last_used("ear"), fixture.last_used("voice")),
+        (Some(1), None),
+        "ear's time kept, voice's change skipped"
+    );
+}
+
+/// Two loads that finish together: the second waits for the first's change, then takes the time and makes its own, so
+/// neither is lost and the later time is the one kept.
+#[cfg(native)]
+#[test]
+fn changes_to_the_record_wait_for_one_another_and_take_the_time_in_turn() {
+    let fixture = Fixture::new();
+    let (host, engine, cancel) = (&fixture.host, &fixture.engine, Cancel::new());
+    host.set_now(1);
+    drop(fixture.load("ear", None).expect("loaded"));
+    host.set_now(10);
+    let paused = host.pause_reads("last-used");
+    let voice = async {
+        let voice = engine.load("voice", None, &|_| {}, &cancel).await;
+        drop(voice.expect("loaded"));
+    };
+    let ear = async {
+        // Voice's change holds the record, waiting in its read.
+        until(|| host.waiting_reads() >= 1).await;
+        host.set_now(20);
+        drop(
+            engine
+                .load("ear", None, &|_| {}, &cancel)
+                .await
+                .expect("loaded"),
+        );
+    };
+    let release = async {
+        until(|| host.waiting_reads() >= 1).await;
+        yields(100).await;
+        assert_eq!(host.waiting_reads(), 1, "ear's change waits for voice's");
+        host.set_now(30);
+        drop(paused);
+    };
+    all(vec![Box::pin(voice), Box::pin(ear), Box::pin(release)]);
+    assert_eq!(
+        (fixture.last_used("voice"), fixture.last_used("ear")),
+        (Some(10), Some(30))
+    );
+}
+
+/// A load that finishes while another model is uninstalled: the uninstall's forgetting waits for the load's change.
+#[cfg(native)]
+#[test]
+fn forgetting_a_model_waits_for_the_change_of_a_load_in_progress() {
+    let fixture = Fixture::new();
+    let (host, engine, cancel) = (&fixture.host, &fixture.engine, Cancel::new());
+    host.set_now(1);
+    drop(fixture.load("ear", None).expect("loaded"));
+    drop(fixture.load("voice", None).expect("loaded"));
+    host.set_now(10);
+    let paused = host.pause_reads("last-used");
+    let ear = async {
+        drop(
+            engine
+                .load("ear", None, &|_| {}, &cancel)
+                .await
+                .expect("loaded"),
+        );
+    };
+    let uninstall = async {
+        until(|| host.waiting_reads() >= 1).await;
+        engine.uninstall("voice", None).await.expect("uninstalled");
+    };
+    let release = async {
+        until(|| host.waiting_reads() >= 1).await;
+        yields(100).await;
+        assert_eq!(host.waiting_reads(), 1, "the uninstall's change waits");
+        drop(paused);
+    };
+    all(vec![Box::pin(ear), Box::pin(uninstall), Box::pin(release)]);
+    assert_eq!(
+        fixture.host.stored().get("last-used").map(Vec::as_slice),
+        Some(br#"{"ear":10}"#.as_slice())
+    );
 }

@@ -1,12 +1,12 @@
 //! Test doubles shared by the tests of every module: a host (CPU and Wasm everywhere, Metal on Apple silicon, 8 GB,
-//! 8 cores) with nothing stored and no network, the same host with files in memory and a few to download, a small
-//! catalogue with a build for each backend, one that needs too much memory and one for a backend no build has, the
-//! builders it is made with, a provider's side of remote calls (keys, scripted answers, the requests made), and a way
-//! to run a future to its end.
+//! 8 cores) with nothing stored and no network, the same host with files in memory, a few to download and a clock a
+//! test sets, a small catalogue with a build for each backend, one that needs too much memory and one for a backend no
+//! build has, the builders it is made with, a provider's side of remote calls (keys, scripted answers, the requests
+//! made), and a way to run a future to its end.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use sha2::Digest;
@@ -126,7 +126,8 @@ impl HttpClient for FakeHost {
 }
 
 /// [`FakeHost`]'s capabilities, a storage in memory (files, trees, and build folders of links), and a fetcher that
-/// serves some URLs, a few bytes at a time.
+/// serves some URLs, a few bytes at a time; its clock stands still (at 0 until a test sets it), and a test may make the
+/// reads of a stored file fail or wait.
 #[derive(Default)]
 pub(crate) struct MemoryHost {
     served: BTreeMap<String, Vec<u8>>,
@@ -135,7 +136,17 @@ pub(crate) struct MemoryHost {
     folders: Arc<Mutex<BTreeMap<String, MemoryFolder>>>,
     fetches: AtomicUsize,
     remote: Arc<FakeProvider>,
+    /// Its clock: milliseconds since the epoch, fixed until a test moves it.
+    now: Arc<AtomicU64>,
+    /// Reads that fail, by name.
+    failing: Arc<Mutex<BTreeSet<String>>>,
+    /// Reads that wait, by name, while a test holds the lock; and how many have started waiting.
+    gate: Arc<Mutex<Option<Gate>>>,
+    waiting: Arc<AtomicUsize>,
 }
+
+/// The reads of one stored file that wait, and the lock they wait for.
+type Gate = (String, Arc<async_lock::Mutex<()>>);
 
 /// A build folder's links: each path, and the blob (and member of it) it links.
 pub(crate) type MemoryFolder = BTreeMap<String, (String, Option<String>)>;
@@ -153,6 +164,53 @@ impl MemoryHost {
                 .collect(),
             ..Self::default()
         }
+    }
+
+    /// Another host over the same storage, clock and providers, as the app's next run would have; serving the same
+    /// URLs.
+    pub(crate) fn sharing(&self) -> Self {
+        Self {
+            served: self.served.clone(),
+            stored: Arc::clone(&self.stored),
+            trees: Arc::clone(&self.trees),
+            folders: Arc::clone(&self.folders),
+            fetches: AtomicUsize::new(0),
+            remote: Arc::clone(&self.remote),
+            now: Arc::clone(&self.now),
+            failing: Arc::clone(&self.failing),
+            gate: Arc::clone(&self.gate),
+            waiting: Arc::clone(&self.waiting),
+        }
+    }
+
+    /// Makes every read of `name` fail with `storage-failed`, or, with `fail` false, succeed again.
+    pub(crate) fn fail_reads(&self, name: &str, fail: bool) {
+        let mut failing = lock(&self.failing);
+        if fail {
+            failing.insert(name.to_owned());
+        } else {
+            failing.remove(name);
+        }
+    }
+
+    /// Makes every read of `name` wait until the guard returned is dropped.
+    #[cfg(native)]
+    pub(crate) fn pause_reads(&self, name: &str) -> async_lock::MutexGuardArc<()> {
+        let gate = Arc::new(async_lock::Mutex::new(()));
+        let guard = gate.try_lock_arc().expect("a new lock");
+        *lock(&self.gate) = Some((name.to_owned(), gate));
+        guard
+    }
+
+    /// How many reads have waited, or are waiting, since [`MemoryHost::pause_reads`].
+    #[cfg(native)]
+    pub(crate) fn waiting_reads(&self) -> usize {
+        self.waiting.load(Ordering::Relaxed)
+    }
+
+    /// Sets its clock to `ms` since the epoch.
+    pub(crate) fn set_now(&self, ms: u64) {
+        self.now.store(ms, Ordering::Relaxed);
     }
 
     /// Stores `bytes` as `name`, as if installed before.
@@ -207,6 +265,10 @@ impl Host for MemoryHost {
     fn credentials(&self) -> &dyn Credentials {
         self.remote.as_ref()
     }
+
+    fn now_ms(&self) -> u64 {
+        self.now.load(Ordering::Relaxed)
+    }
 }
 
 #[cfg_attr(native, async_trait)]
@@ -234,6 +296,17 @@ impl Storage for MemoryHost {
     }
 
     async fn read(&self, name: &str) -> Result<Box<dyn Download>> {
+        if lock(&self.failing).contains(name) {
+            return Err(Error::new("storage-failed"));
+        }
+        let gate = lock(&self.gate)
+            .as_ref()
+            .filter(|(gated, _)| gated == name)
+            .map(|(_, gate)| Arc::clone(gate));
+        if let Some(gate) = gate {
+            self.waiting.fetch_add(1, Ordering::Relaxed);
+            drop(gate.lock().await);
+        }
         let bytes = lock(&self.stored).get(name).cloned();
         Ok(Box::new(MemoryDownload(
             bytes.ok_or(Error::new("storage-failed"))?,

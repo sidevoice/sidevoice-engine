@@ -25,7 +25,7 @@ const engine = await WebEngine.create({
   },
 });
 const local = engine.localCatalog();
-const models = await local.models(); // LocalModelInfo[]: each with its builds ranked, whether it is installed
+const models = await local.models(); // LocalModelInfo[]: each with its builds ranked, whether it is installed, lastUsedAt
 const whisper = await engine.load("whisper-small", undefined, (progress) => show(progress), abort.signal);
 const stt = whisper.asStt();
 const text = await stt.transcribe(samples, 48000, "es"); // any rate: the engine resamples

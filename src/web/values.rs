@@ -12,7 +12,8 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
-/// `{ id, family, capabilities, parametersM, languages, license, voices, speed?, installed, builds, recommendedBuild? }`.
+/// `{ id, family, capabilities, parametersM, languages, license, voices, speed?, installed, lastUsedAt?, builds,
+/// recommendedBuild? }`.
 pub(super) fn model(model: &LocalModelInfo) -> JsValue {
     let capabilities: Array = model
         .capabilities
@@ -32,6 +33,11 @@ pub(super) fn model(model: &LocalModelInfo) -> JsValue {
         ),
         ("speed", model.speed.map(speed)),
         ("installed", Some(model.installed.into())),
+        // A number: milliseconds since the epoch are far below 2^53.
+        (
+            "lastUsedAt",
+            model.last_used_at.map(|ms| (ms as f64).into()),
+        ),
         (
             "builds",
             Some(model.builds.iter().map(build).collect::<Array>().into()),
