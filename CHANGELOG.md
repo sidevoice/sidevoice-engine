@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.3.1...v0.4.0) (2026-10-12)
+
+
+### Features
+
+* **engine:** when each downloaded model was last used ([#90](https://github.com/sidevoice/sidevoice-engine/issues/90)) ([78b5314](https://github.com/sidevoice/sidevoice-engine/commit/78b5314e064b116fd5ac0f9cdf9b00886d2d732c))
+
 ## [0.3.1](https://github.com/sidevoice/sidevoice-engine/compare/v0.3.0...v0.3.1) (2026-10-10)
 
 
