@@ -22,9 +22,9 @@
 //! # Accelerators
 //!
 //! Metal on Apple silicon, the only build that compiles ggml's Metal backend in (the `metal` feature of whisper-rs, in
-//! Cargo.toml), and the CPU everywhere. On Metal the model asks whisper.cpp for its GPU; should Metal not start,
-//! whisper.cpp says so in its log and runs on the CPU. Windows is not built in CI: it should compile with a C++
-//! toolchain and CMake, and is untested. CUDA and Vulkan are features of whisper-rs that are not turned on.
+//! Cargo.toml), and the CPU everywhere. On Metal the model asks whisper.cpp for its GPU, with flash attention; should
+//! Metal not start, whisper.cpp says so in its log and runs on the CPU. Windows is not built in CI: it should compile
+//! with a C++ toolchain and CMake, and is untested. CUDA and Vulkan are features of whisper-rs that are not turned on.
 //!
 //! # Languages
 //!
@@ -115,16 +115,10 @@ impl Whisper {
         let path = files
             .file("model")
             .ok_or(Error::new("file-not-installed"))?;
-        let use_gpu = match accelerator {
-            Accelerator::Metal if cfg!(apple_silicon) => true,
-            Accelerator::Cpu => false,
-            _ => return Err(Error::new("unsupported-accelerator")),
-        };
+        let context = context_params(accelerator)?;
         if path.contains('\0') {
             return Err(Error::new("model-load-failed"));
         }
-        let mut context = WhisperContextParameters::default();
-        context.use_gpu(use_gpu);
         let context = WhisperContext::new_with_params(path, context)
             .map_err(|_| Error::new("model-load-failed"))?;
         let state = context
@@ -155,6 +149,22 @@ impl Whisper {
         });
         Ok(params.clone())
     }
+}
+
+/// How whisper.cpp is asked to run a model on `accelerator`, or `unsupported-accelerator`: on the GPU (Metal, where it
+/// is compiled in) with flash attention, on the CPU with neither. whisper-rs turns flash attention off by default,
+/// though the whisper.cpp it bundles turns it on; on the GPU it shortens the encoder (whisper.cpp's own benchmarks on
+/// Apple silicon), and all it rules out is DTW token timestamps, which the engine does not ask for. On the CPU it stays
+/// off, as it always was.
+fn context_params(accelerator: Accelerator) -> Result<WhisperContextParameters<'static>> {
+    let on_gpu = match accelerator {
+        Accelerator::Metal if cfg!(apple_silicon) => true,
+        Accelerator::Cpu => false,
+        _ => return Err(Error::new("unsupported-accelerator")),
+    };
+    let mut params = WhisperContextParameters::default();
+    params.use_gpu(on_gpu).flash_attn(on_gpu);
+    Ok(params)
 }
 
 /// whisper.cpp's id for the language of the BCP 47 tag `tag`, by its primary subtag, lower-cased (`es-ES` → `es`), or
