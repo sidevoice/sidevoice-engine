@@ -1,10 +1,10 @@
-//! What whisper.cpp's backend checks before a model runs: the accelerators it declares, how it fails without a model
-//! file or with one that is not a model, and how a language reaches whisper.cpp. Running a real model is the voice loop
-//! of `cargo xtask e2e`.
+//! What whisper.cpp's backend checks before a model runs: the accelerators it declares, what it asks whisper.cpp for on
+//! each (the GPU and flash attention, or neither), how it fails without a model file or with one that is not a model,
+//! and how a language reaches whisper.cpp. Running a real model is the voice loop of `cargo xtask e2e`.
 
-use super::{language_id, WhisperCpp, SPEC};
+use super::{context_params, language_id, WhisperCpp, SPEC};
 use crate::backend::{Backend, BackendModel};
-use crate::host::Accelerator;
+use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
 use crate::test_support::{block_on, build};
 use crate::Result;
@@ -83,6 +83,45 @@ fn a_language_reaches_whisper_cpp_as_its_primary_subtag() {
             language_id(unknown).unwrap_err().code,
             "unsupported-language",
             "{unknown:?}"
+        );
+    }
+}
+
+/// On the GPU whisper.cpp runs with flash attention; on the CPU with neither the GPU nor flash attention. What it does
+/// not run on is refused before any parameter is set.
+#[test]
+fn flash_attention_is_on_with_the_gpu_and_off_on_the_cpu() {
+    let on =
+        |accelerator| context_params(accelerator).map(|params| (params.use_gpu, params.flash_attn));
+    assert_eq!(on(Accelerator::Cpu), Ok((false, false)));
+    if cfg!(apple_silicon) {
+        assert_eq!(on(Accelerator::Metal), Ok((true, true)));
+    } else {
+        assert_eq!(
+            on(Accelerator::Metal).unwrap_err().code,
+            "unsupported-accelerator"
+        );
+    }
+    for other in [Accelerator::CoreMl, Accelerator::Wasm] {
+        assert_eq!(
+            on(other).unwrap_err().code,
+            "unsupported-accelerator",
+            "{other:?}"
+        );
+    }
+}
+
+/// Being a GPU is not enough: a GPU this build of the backend was not built for (CUDA and WebGPU, which whisper-rs is
+/// not compiled with here) is refused, and is never asked for with the GPU or flash attention.
+#[test]
+fn a_gpu_the_backend_was_not_built_for_is_refused() {
+    for gpu in [Accelerator::Cuda, Accelerator::WebGpu] {
+        assert_eq!(gpu.class(), AcceleratorClass::Gpu, "{gpu:?}");
+        assert!(!SPEC.accelerators.contains(&gpu), "{gpu:?}");
+        assert_eq!(
+            context_params(gpu).map(drop).unwrap_err().code,
+            "unsupported-accelerator",
+            "{gpu:?}"
         );
     }
 }
