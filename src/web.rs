@@ -46,10 +46,16 @@ export interface EngineError extends Error { code: string; params: Record<string
 /** Why a build does not run here: a stable code and its numbers (`needs`, `has`) when there are any. */
 export interface Reason { code: string; params: { needs?: number; has?: number }; }
 export interface Voice { id: string; name?: string; languages: string[]; gender?: "female" | "male"; }
+/** One build of a model, here. `accelerator` and `acceleratorClass` are present when it runs here: the accelerator it
+ * would run on (`cpu`, `cuda`, `coreml`, `metal`, `webgpu`, `wasm`) and that accelerator's class, which the engine
+ * ranks the builds that run by first (a GPU, then a neural engine, then a CPU). Show the class as it is: do not derive
+ * it from `accelerator`. */
 export interface ModelBuild {
-  id: string; backend: string; accelerator?: string; precision: string; downloadBytes: number; memoryMb: number;
-  available: boolean; reasons: Reason[]; installed: boolean;
+  id: string; backend: string; accelerator?: string; acceleratorClass?: AcceleratorClass; precision: string;
+  downloadBytes: number; memoryMb: number; available: boolean; reasons: Reason[]; installed: boolean;
 }
+/** The kind of hardware an accelerator is. */
+export type AcceleratorClass = "gpu" | "neural-engine" | "cpu";
 /** The speeds a model takes, 1 being its normal pace. A model with no `speed` takes none. */
 export interface SpeedRange { min: number; max: number; }
 /** A model as a catalogue lists it, whichever: what every model has. */

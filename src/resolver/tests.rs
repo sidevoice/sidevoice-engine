@@ -379,3 +379,192 @@ fn a_stub_backends_builds_do_not_run_here_and_say_why() {
         )))
     );
 }
+
+/// A backend `id` that runs on `accelerators`, in that order of preference, all of which its probe confirms.
+fn running_on(id: &'static str, accelerators: &'static [Accelerator]) -> Box<dyn Backend> {
+    Box::new(FixedProbeBackend {
+        spec: BackendSpec {
+            id,
+            name: "a backend that runs where it is told",
+            description: "A test double.",
+            upstream: "https://example.com",
+            accelerators,
+            requirements: &[],
+        },
+        probe: accelerators,
+    })
+}
+
+/// A catalogue of one model whose builds are, in catalogue order: `(id, backend, required accelerators)`.
+struct ManyBuildsCatalog(&'static [(&'static str, &'static str, &'static [Accelerator])]);
+
+impl CatalogSource for ManyBuildsCatalog {
+    fn load(&self) -> Result<CatalogFragment> {
+        let builds = self
+            .0
+            .iter()
+            .map(|(id, backend, accelerators)| {
+                let mut build = build(id, backend, 1_024);
+                build.requires.accelerators = accelerators.to_vec();
+                build
+            })
+            .collect();
+        Ok(CatalogFragment {
+            families: vec![family(
+                "family",
+                vec![model("model", Capability::Stt, builds)],
+            )],
+        })
+    }
+}
+
+/// The builds of [`ManyBuildsCatalog`] as the resolver ranks them on `caps`: each id, with its accelerator or `None`.
+fn order(
+    builds: &'static [(&'static str, &'static str, &'static [Accelerator])],
+    backends: &[Box<dyn Backend>],
+    caps: &Capabilities,
+) -> Vec<(String, Option<Accelerator>)> {
+    let source = ManyBuildsCatalog(builds);
+    let catalog =
+        MergedCatalog::merge(&[Box::new(source) as Box<dyn CatalogSource>]).expect("catalogue");
+    ranked(&catalog, backends, caps, Capability::Stt)
+        .into_iter()
+        .map(|(_, build, fit)| (build.id, fit.ok()))
+        .collect()
+}
+
+/// Native builds in an order no ranking would pick: a CPU-only backend, a build its backend could run on Core ML but
+/// that requires the CPU, a stub's, one that runs on Core ML, and one that runs on Metal.
+const NATIVE: &[(&str, &str, &[Accelerator])] = &[
+    ("model/onnxruntime", "onnxruntime", &[]),
+    ("model/sherpa-onnx-cpu", "sherpa-onnx", &[Accelerator::Cpu]),
+    ("model/mlx", "mlx", &[]),
+    ("model/sherpa-onnx", "sherpa-onnx", &[]),
+    ("model/whisper-cpp", "whisper-cpp", &[]),
+];
+
+fn native_backends() -> Vec<Box<dyn Backend>> {
+    vec![
+        running_on("onnxruntime", &[Accelerator::Cpu]),
+        running_on("sherpa-onnx", COREML_AND_CPU),
+        Box::new(StubBackend(running_on("mlx", &[Accelerator::Metal]))),
+        running_on("whisper-cpp", &[Accelerator::Metal, Accelerator::Cpu]),
+    ]
+}
+
+/// sidevoice-engine#4: the builds that run rank by the class of the accelerator each would run on here, a GPU, then a
+/// neural engine, then a CPU; within a class in catalogue order; then the builds that do not run, in catalogue order.
+#[test]
+fn the_builds_that_run_rank_gpu_then_neural_engine_then_cpu() {
+    let apple_silicon = caps(
+        &[Accelerator::Metal, Accelerator::CoreMl, Accelerator::Cpu],
+        Some(16_384),
+        Some(8),
+    );
+    let at = |id: &str, accelerator| (id.to_owned(), accelerator);
+    assert_eq!(
+        order(NATIVE, &native_backends(), &apple_silicon),
+        [
+            at("model/whisper-cpp", Some(Accelerator::Metal)),
+            at("model/sherpa-onnx", Some(Accelerator::CoreMl)),
+            at("model/onnxruntime", Some(Accelerator::Cpu)),
+            at("model/sherpa-onnx-cpu", Some(Accelerator::Cpu)),
+            at("model/mlx", None),
+        ]
+    );
+}
+
+/// The fallback: where every build that runs is on the CPU (a host with no GPU and no neural engine, as Linux and
+/// Windows are to whisper.cpp today), catalogue order stands.
+#[test]
+fn where_every_build_runs_on_the_cpu_catalogue_order_stands() {
+    let cpu_only = caps(&[Accelerator::Cpu], Some(16_384), Some(8));
+    let at = |id: &str| (id.to_owned(), Some(Accelerator::Cpu));
+    assert_eq!(
+        order(NATIVE, &native_backends(), &cpu_only),
+        [
+            at("model/onnxruntime"),
+            at("model/sherpa-onnx-cpu"),
+            at("model/sherpa-onnx"),
+            at("model/whisper-cpp"),
+            ("model/mlx".to_owned(), None),
+        ]
+    );
+}
+
+/// In a page, a build on WebGPU comes before one in WebAssembly, whatever the catalogue's order; without WebGPU, the
+/// build that requires it does not run.
+#[test]
+fn in_a_page_webgpu_ranks_before_webassembly() {
+    const PAGE: &[(&str, &str, &[Accelerator])] = &[
+        (
+            "model/transformers-js-q8",
+            "transformers-js",
+            &[Accelerator::Wasm],
+        ),
+        (
+            "model/transformers-js-fp16",
+            "transformers-js",
+            &[Accelerator::WebGpu],
+        ),
+    ];
+    let backends = || {
+        vec![running_on(
+            "transformers-js",
+            &[Accelerator::WebGpu, Accelerator::Wasm],
+        )]
+    };
+    let page = |accelerators: &[Accelerator]| Capabilities {
+        runs: Runs::Page,
+        os: "web".to_owned(),
+        arch: "wasm32".to_owned(),
+        accelerators: accelerators.to_vec(),
+        memory_mb: Some(16_384),
+        cores: Some(8),
+    };
+    let at = |id: &str, accelerator| (id.to_owned(), accelerator);
+    assert_eq!(
+        order(
+            PAGE,
+            &backends(),
+            &page(&[Accelerator::Wasm, Accelerator::WebGpu])
+        ),
+        [
+            at("model/transformers-js-fp16", Some(Accelerator::WebGpu)),
+            at("model/transformers-js-q8", Some(Accelerator::Wasm)),
+        ]
+    );
+    assert_eq!(
+        order(PAGE, &backends(), &page(&[Accelerator::Wasm])),
+        [
+            at("model/transformers-js-q8", Some(Accelerator::Wasm)),
+            at("model/transformers-js-fp16", None),
+        ]
+    );
+}
+
+/// A CUDA build ranks with the GPUs: before a CPU build listed ahead of it.
+#[test]
+fn cuda_ranks_as_a_gpu() {
+    const LINUX: &[(&str, &str, &[Accelerator])] = &[
+        ("model/sherpa-onnx", "sherpa-onnx", &[]),
+        ("model/whisper-cpp", "whisper-cpp", &[]),
+    ];
+    let backends = vec![
+        running_on("sherpa-onnx", &[Accelerator::Cpu]),
+        running_on("whisper-cpp", &[Accelerator::Cuda, Accelerator::Cpu]),
+    ];
+    let with_cuda = caps(
+        &[Accelerator::Cuda, Accelerator::Cpu],
+        Some(16_384),
+        Some(8),
+    );
+    let at = |id: &str, accelerator| (id.to_owned(), Some(accelerator));
+    assert_eq!(
+        order(LINUX, &backends, &with_cuda),
+        [
+            at("model/whisper-cpp", Accelerator::Cuda),
+            at("model/sherpa-onnx", Accelerator::Cpu),
+        ]
+    );
+}
