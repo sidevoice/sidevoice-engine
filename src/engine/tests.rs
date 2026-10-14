@@ -21,8 +21,8 @@ use crate::test_support::{
     block_on, build, family, model, sha256, FakeCatalog, FakeHost, MemoryHost,
 };
 use crate::{
-    async_trait, Accelerator, BuildEntry, BundledCatalog, Cancel, Capability, Engine, Error,
-    Gender, LocalModel, ModelFile, Reason, Result, Voice,
+    async_trait, Accelerator, AcceleratorClass, BuildEntry, BundledCatalog, Cancel, Capability,
+    Engine, Error, Gender, LocalModel, ModelFile, Reason, Result, Voice,
 };
 #[cfg(native)]
 use crate::{VadOptions, VadStream};
@@ -52,6 +52,23 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     assert_eq!(small.recommended_build.as_deref(), Some(recommended));
     assert_eq!(small.builds[0].id, recommended);
     assert!(small.builds[0].available && small.builds[0].accelerator.is_some());
+    // Each build that runs says its accelerator's class; one that does not, none.
+    let class = if cfg!(apple_silicon) {
+        AcceleratorClass::Gpu
+    } else {
+        AcceleratorClass::Cpu
+    };
+    assert_eq!(small.builds[0].accelerator_class(), Some(class));
+    for build in &small.builds {
+        assert_eq!(
+            build.accelerator_class(),
+            build.accelerator.map(Accelerator::class),
+            "{}",
+            build.id
+        );
+    }
+    let last = small.builds.last().expect("builds");
+    assert!(!last.available && last.accelerator_class().is_none());
     assert!(small.builds[0].reasons.is_empty());
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         let mlx = small

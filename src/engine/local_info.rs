@@ -3,7 +3,7 @@
 //! runs here and why not, and the build the engine recommends.
 
 use crate::catalog::{Capability, SpeedRange, Voice};
-use crate::host::Accelerator;
+use crate::host::{Accelerator, AcceleratorClass};
 use crate::resolver::Reason;
 
 /// A model of the local catalogue, here: what [`ModelInfo`](crate::ModelInfo) says of every model, and the local
@@ -47,7 +47,7 @@ pub struct ModelBuild {
     pub id: String,
     /// The backend that runs it.
     pub backend: String,
-    /// The accelerator it would run on here, when it runs here.
+    /// The accelerator it would run on here, when it runs here; its class is [`ModelBuild::accelerator_class`].
     pub accelerator: Option<Accelerator>,
     /// The format's own name for its precision ("int8", "fp16", ...): informational.
     pub precision: String,
@@ -61,4 +61,14 @@ pub struct ModelBuild {
     pub reasons: Vec<Reason>,
     /// Whether all its files are installed.
     pub installed: bool,
+}
+
+impl ModelBuild {
+    /// The class of the accelerator it would run on here (a GPU, a neural engine, a CPU), when it runs here: what the
+    /// builds that run are ranked by first ([`Accelerator::class`]). Derived from `accelerator` each time it is asked,
+    /// so the two never disagree; JavaScript gets it as `acceleratorClass`.
+    #[must_use]
+    pub fn accelerator_class(&self) -> Option<AcceleratorClass> {
+        self.accelerator.map(Accelerator::class)
+    }
 }
