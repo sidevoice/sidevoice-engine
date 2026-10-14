@@ -4,7 +4,7 @@
 
 use super::{context_params, language_id, WhisperCpp, SPEC};
 use crate::backend::{Backend, BackendModel};
-use crate::host::Accelerator;
+use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
 use crate::test_support::{block_on, build};
 use crate::Result;
@@ -102,16 +102,26 @@ fn flash_attention_is_on_with_the_gpu_and_off_on_the_cpu() {
             "unsupported-accelerator"
         );
     }
-    for other in [
-        Accelerator::Cuda,
-        Accelerator::CoreMl,
-        Accelerator::WebGpu,
-        Accelerator::Wasm,
-    ] {
+    for other in [Accelerator::CoreMl, Accelerator::Wasm] {
         assert_eq!(
             on(other).unwrap_err().code,
             "unsupported-accelerator",
             "{other:?}"
+        );
+    }
+}
+
+/// Being a GPU is not enough: a GPU this build of the backend was not built for (CUDA and WebGPU, which whisper-rs is
+/// not compiled with here) is refused, and is never asked for with the GPU or flash attention.
+#[test]
+fn a_gpu_the_backend_was_not_built_for_is_refused() {
+    for gpu in [Accelerator::Cuda, Accelerator::WebGpu] {
+        assert_eq!(gpu.class(), AcceleratorClass::Gpu, "{gpu:?}");
+        assert!(!SPEC.accelerators.contains(&gpu), "{gpu:?}");
+        assert_eq!(
+            context_params(gpu).map(drop).unwrap_err().code,
+            "unsupported-accelerator",
+            "{gpu:?}"
         );
     }
 }

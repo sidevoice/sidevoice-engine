@@ -43,7 +43,7 @@ use crate::backend::loaded_model::SttModel;
 use crate::backend::registry::BackendFactory;
 use crate::backend::{Backend, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
-use crate::host::Accelerator;
+use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
 use crate::{Error, Result};
 
@@ -151,20 +151,28 @@ impl Whisper {
     }
 }
 
-/// How whisper.cpp is asked to run a model on `accelerator`, or `unsupported-accelerator`: on the GPU (Metal, where it
-/// is compiled in) with flash attention, on the CPU with neither. whisper-rs turns flash attention off by default,
-/// though the whisper.cpp it bundles turns it on; on the GPU it shortens the encoder (whisper.cpp's own benchmarks on
-/// Apple silicon), and all it rules out is DTW token timestamps, which the engine does not ask for. On the CPU it stays
-/// off, as it always was.
+/// How whisper.cpp is asked to run a model on `accelerator`, or `unsupported-accelerator`. Two questions, asked apart:
+/// whether this build of the backend runs on it at all ([`supported`]), then whether it is a GPU
+/// ([`Accelerator::class`]). On a GPU it runs there with flash attention, on a CPU with neither. whisper-rs turns flash
+/// attention off by default, though the whisper.cpp it bundles turns it on; on the GPU it shortens the encoder
+/// (whisper.cpp's own benchmarks on Apple silicon), and all it rules out is DTW token timestamps, which the engine does
+/// not ask for. On the CPU it stays off, as it always was.
 fn context_params(accelerator: Accelerator) -> Result<WhisperContextParameters<'static>> {
-    let on_gpu = match accelerator {
-        Accelerator::Metal if cfg!(apple_silicon) => true,
-        Accelerator::Cpu => false,
-        _ => return Err(Error::new("unsupported-accelerator")),
-    };
+    supported(accelerator)?;
+    let on_gpu = accelerator.class() == AcceleratorClass::Gpu;
     let mut params = WhisperContextParameters::default();
     params.use_gpu(on_gpu).flash_attn(on_gpu);
     Ok(params)
+}
+
+/// Whether this build of the backend runs on `accelerator`: one its spec declares (Metal only where it is compiled in,
+/// see *Accelerators*; the CPU everywhere), else `unsupported-accelerator`.
+fn supported(accelerator: Accelerator) -> Result<()> {
+    if ACCELERATORS.contains(&accelerator) {
+        Ok(())
+    } else {
+        Err(Error::new("unsupported-accelerator"))
+    }
 }
 
 /// whisper.cpp's id for the language of the BCP 47 tag `tag`, by its primary subtag, lower-cased (`es-ES` → `es`), or
