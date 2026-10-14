@@ -66,6 +66,10 @@ async fn the_local_catalogue_lists_every_model_with_its_web_builds_first() {
         get(&first, "accelerator").as_string().as_deref(),
         Some("wasm")
     );
+    assert_eq!(
+        get(&first, "acceleratorClass").as_string().as_deref(),
+        Some("cpu")
+    );
     assert_eq!(get(&first, "available"), JsValue::TRUE);
     assert_eq!(get(&whisper, "recommendedBuild"), get(&first, "id"));
     // The others say why not, by code.

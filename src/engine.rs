@@ -134,7 +134,7 @@ impl Engine {
 
     /// Every model of the local catalogue, in catalogue order, each with its builds ranked (those that run here first,
     /// with the accelerator each would use; the rest with why not), whether it is installed, when it was last loaded
-    /// (if it is installed), and the build the engine recommends: the first that runs here.
+    /// (if it is installed), and the build the engine recommends: the best ranked of those that run here.
     ///
     /// # Errors
     ///
@@ -345,7 +345,7 @@ impl Engine {
     }
 
     /// The build to install or load and the accelerator it runs on: `build` if it is one of `model`'s and runs here,
-    /// else the first build that runs here and is installed, else the first that runs here.
+    /// else the best ranked build that runs here and is installed, else the best ranked that runs here.
     async fn choose(
         &self,
         model: &str,

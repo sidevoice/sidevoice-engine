@@ -49,7 +49,8 @@ pub(super) fn model(model: &LocalModelInfo) -> JsValue {
     ])
 }
 
-/// `{ id, backend, accelerator?, precision, downloadBytes, memoryMb, available, reasons, installed }`.
+/// `{ id, backend, accelerator?, acceleratorClass?, precision, downloadBytes, memoryMb, available, reasons,
+/// installed }`.
 fn build(build: &ModelBuild) -> JsValue {
     object(&[
         ("id", Some(build.id.as_str().into())),
@@ -57,6 +58,10 @@ fn build(build: &ModelBuild) -> JsValue {
         (
             "accelerator",
             build.accelerator.map(|a| accelerator(a).into()),
+        ),
+        (
+            "acceleratorClass",
+            build.accelerator_class().map(|class| class.id().into()),
         ),
         ("precision", Some(build.precision.as_str().into())),
         // A number: a download is far below 2^53 bytes.

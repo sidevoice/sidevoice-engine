@@ -21,8 +21,8 @@ use crate::test_support::{
     block_on, build, family, model, sha256, FakeCatalog, FakeHost, MemoryHost,
 };
 use crate::{
-    async_trait, Accelerator, BuildEntry, BundledCatalog, Cancel, Capability, Engine, Error,
-    Gender, LocalModel, ModelFile, Reason, Result, Voice,
+    async_trait, Accelerator, AcceleratorClass, BuildEntry, BundledCatalog, Cancel, Capability,
+    Engine, Error, Gender, LocalModel, ModelFile, Reason, Result, Voice,
 };
 #[cfg(native)]
 use crate::{VadOptions, VadStream};
@@ -40,15 +40,35 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .expect("small");
     assert_eq!(small.family, "whisper", "its family, from the catalogue");
 
-    // Not MLX on Apple silicon: the stub runs nothing yet (ENG-08).
-    let recommended = if cfg!(target_arch = "wasm32") {
+    // Not MLX on Apple silicon: the stub runs nothing yet (ENG-08). whisper.cpp on Metal there, a GPU, before
+    // sherpa-onnx on the CPU (sidevoice-engine#4); elsewhere both are on the CPU, and catalogue order stands.
+    let recommended = if cfg!(web) {
         "whisper-small-web"
+    } else if cfg!(apple_silicon) {
+        "whisper-small-gguf"
     } else {
         "whisper-small-onnx"
     };
     assert_eq!(small.recommended_build.as_deref(), Some(recommended));
     assert_eq!(small.builds[0].id, recommended);
     assert!(small.builds[0].available && small.builds[0].accelerator.is_some());
+    // Each build that runs says its accelerator's class; one that does not, none.
+    let class = if cfg!(apple_silicon) {
+        AcceleratorClass::Gpu
+    } else {
+        AcceleratorClass::Cpu
+    };
+    assert_eq!(small.builds[0].accelerator_class(), Some(class));
+    for build in &small.builds {
+        assert_eq!(
+            build.accelerator_class(),
+            build.accelerator.map(Accelerator::class),
+            "{}",
+            build.id
+        );
+    }
+    let last = small.builds.last().expect("builds");
+    assert!(!last.available && last.accelerator_class().is_none());
     assert!(small.builds[0].reasons.is_empty());
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         let mlx = small
@@ -64,8 +84,10 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .iter()
         .find(|b| b.id == "whisper-small-gguf")
         .expect("gguf");
-    if cfg!(not(target_arch = "wasm32")) {
-        assert!(gguf.available && gguf.accelerator.is_some());
+    if cfg!(apple_silicon) {
+        assert_eq!(gguf.accelerator, Some(Accelerator::Metal));
+    } else if cfg!(not(target_arch = "wasm32")) {
+        assert_eq!(gguf.accelerator, Some(Accelerator::Cpu));
     } else {
         assert!(!gguf.available && gguf.accelerator.is_none());
         assert_eq!(gguf.reasons, [Reason::new("backend-not-in-this-build")]);
@@ -141,7 +163,7 @@ fn a_loaded_models_futures_are_send(loaded: &LocalModel, stream: &mut VadStream)
 }
 
 /// What each CI platform offers with the catalogue this repository ships: every bundled model of a capability, each
-/// on a backend this platform compiles. Which of a model's builds wins is the ranking's (sidevoice-engine#4).
+/// on a backend this platform compiles, and which of a model's builds the ranking makes win (sidevoice-engine#4).
 #[test]
 fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     let engine = Engine::new(Box::new(FakeHost), vec![Box::new(BundledCatalog)]).expect("engine");
@@ -200,6 +222,21 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     for (model, backend) in &stt {
         assert!(backends.contains(&backend.as_str()), "{model} on {backend}");
     }
+    // Whisper: on Apple silicon whisper.cpp runs on Metal, a GPU, so it wins every model over sherpa-onnx on the CPU
+    // (sidevoice-engine#4); natively elsewhere both run on the CPU and catalogue order keeps sherpa-onnx.
+    let whisper = if cfg!(web) {
+        "transformers-js"
+    } else if cfg!(apple_silicon) {
+        "whisper-cpp"
+    } else {
+        "sherpa-onnx"
+    };
+    for (model, backend) in stt
+        .iter()
+        .filter(|(model, _)| model.starts_with("whisper-"))
+    {
+        assert_eq!(backend, whisper, "{model}");
+    }
 
     let tts = offered(Capability::Tts);
     if cfg!(target_arch = "wasm32") {
@@ -245,7 +282,7 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
         end_of_turn,
         [("smart-turn-v3.2".to_owned(), backend.to_owned())]
     );
-    // Ranked by catalogue order until sidevoice-engine#4: fp32 first, where it fits.
+    // Every build of it runs on the CPU, or every one in a page on the same accelerator: catalogue order, fp32 first.
     let all = block_on(engine.models()).expect("models");
     let smart_turn = all
         .iter()

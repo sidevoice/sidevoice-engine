@@ -2,10 +2,10 @@ use js_sys::Reflect;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::wasm_bindgen_test;
 
-use super::{audio, model, progress, reason, vad_options, vad_output, voice};
+use super::{audio, build, model, progress, reason, vad_options, vad_output, voice};
 use crate::{
-    Audio, Capability, Gender, LocalModelInfo, Progress, Reason, VadEvent, VadFrame, VadOptions,
-    VadOutput, Voice,
+    Accelerator, Audio, Capability, Gender, LocalModelInfo, ModelBuild, Progress, Reason, VadEvent,
+    VadFrame, VadOptions, VadOutput, Voice,
 };
 
 fn get(value: &JsValue, key: &str) -> JsValue {
@@ -158,4 +158,34 @@ fn a_local_model_says_when_it_was_last_loaded_only_when_it_is_known() {
     );
     ear.last_used_at = None;
     assert!(!Reflect::has(&model(&ear), &"lastUsedAt".into()).unwrap());
+}
+
+#[wasm_bindgen_test]
+fn a_build_that_runs_here_carries_its_accelerator_and_that_accelerators_class() {
+    let mut gguf = ModelBuild {
+        id: "ear/whisper-cpp".into(),
+        backend: "whisper-cpp".into(),
+        accelerator: Some(Accelerator::Metal),
+        precision: "q5_0".into(),
+        download_bytes: 1,
+        memory_mb: 1,
+        available: true,
+        reasons: Vec::new(),
+        installed: false,
+    };
+    let class = |model_build: &ModelBuild| get(&build(model_build), "acceleratorClass").as_string();
+    assert_eq!(
+        get(&build(&gguf), "accelerator").as_string().as_deref(),
+        Some("metal")
+    );
+    assert_eq!(class(&gguf).as_deref(), Some("gpu"));
+    gguf.accelerator = Some(Accelerator::CoreMl);
+    assert_eq!(class(&gguf).as_deref(), Some("neural-engine"));
+    gguf.accelerator = Some(Accelerator::Wasm);
+    assert_eq!(class(&gguf).as_deref(), Some("cpu"));
+    // A build that does not run here has neither.
+    gguf.accelerator = None;
+    gguf.available = false;
+    assert!(!Reflect::has(&build(&gguf), &"accelerator".into()).unwrap());
+    assert!(!Reflect::has(&build(&gguf), &"acceleratorClass".into()).unwrap());
 }

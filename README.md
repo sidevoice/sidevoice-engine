@@ -70,6 +70,10 @@ anything, gathered once when the host is built:
   on a guess; loading is what finds out. A host that is unsure of a number says `None` rather than guessing low.
 - **The accelerator list is fixed.** `Accelerator` is an enum of the engine (adding one is a change here, since it
   needs backend code anyway), marked `#[non_exhaustive]`.
+- **Each accelerator has a class**, the kind of hardware it is: `Accelerator::class()` gives an `AcceleratorClass`,
+  `Gpu` (`metal`, `cuda`, `webgpu`), `NeuralEngine` (`coreml`) or `Cpu` (`cpu`, `wasm`), whose stable ids are `gpu`,
+  `neural-engine` and `cpu` (`AcceleratorClass::id`). The mapping lives there alone, matched exhaustively, so a new
+  accelerator does not compile without its class; an app shows the class the engine gives and never derives it.
 - **A JavaScript host** resolves `capabilities()` to `{ os, arch, accelerators: string[], memoryMb?, cores? }`, the
   accelerators by their stable ids: `cpu`, `cuda`, `coreml`, `metal`, `webgpu`, `wasm`. It is checked strictly: a
   missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
@@ -78,6 +82,13 @@ anything, gathered once when the host is built:
 A build is offered on the first accelerator in its backend's order of preference that the host reports, the probe
 confirms and the build allows: which accelerators a build runs on is its backend's to know, unless the build cannot
 take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
+
+The builds of a model that run here are ranked by the class of the accelerator each would run on (sidevoice-engine#4):
+a GPU first, then a neural engine, then a CPU, the order of `AcceleratorClass`. Within a class
+they keep catalogue order, the documented fallback until measured speed and quality rank them (sidevoice-engine#16).
+The first is the recommended build. So on Apple silicon whisper.cpp on Metal is recommended for every Whisper model,
+ahead of sherpa-onnx on the CPU; on Linux and Windows, where whisper.cpp runs on the CPU too, catalogue order keeps
+sherpa-onnx.
 
 ## Using a model, and what stays in memory
 
@@ -104,9 +115,10 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 ```
 
 - **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, when it was last loaded,
-  every build ranked (those that run here first; each with its backend, the accelerator it would use, its precision, what
-  it downloads, its memory, whether it runs here and why not, and whether it is installed) and the build the engine
-  recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
+  every build ranked (those that run here first; each with its backend, the accelerator it would use and that
+  accelerator's class (`ModelBuild::accelerator_class()`; `acceleratorClass` on the web: `"gpu"`, `"neural-engine"`,
+  `"cpu"`), its precision, what it downloads, its memory, whether it runs here and why not, and whether it is
+  installed) and the build the engine recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
   removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
   refuses a build that is loaded (`model-in-use`). When a model was last loaded (`last_used_at`; `lastUsedAt` on the
   web) is in milliseconds since the Unix epoch, by the host's clock (`Host::now_ms`): every load that succeeds notes it
