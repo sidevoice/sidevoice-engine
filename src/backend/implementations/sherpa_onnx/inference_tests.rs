@@ -2,6 +2,8 @@
 //! Kokoro says Whisper hears back. And each catalogue build `inference_tests.json` names under `transcribe` is installed
 //! from the bundled catalogue, as an app installs it, and transcribes the shared clips it names (LibriSpeech in
 //! English, FLEURS in Spanish, both CC-BY-4.0) within the word error rate `max_wer`: adding such a test is one entry.
+//! Each named under `speak` is installed the same way, has exactly the voices its model declares, and says a sentence
+//! with each of them that Whisper hears back within `max_wer`: one entry too.
 //!
 //! They download the models they need (Whisper tiny.en and Kokoro, about 150 MB, then each build named; several GB),
 //! so they are ignored by default and CI's inference job runs them, with the plain tests beside them:
@@ -46,6 +48,19 @@ struct Fixtures {
     clips: BTreeMap<String, NamedClip>,
     /// Catalogue builds, each with the clips it must transcribe.
     transcribe: Vec<Transcribe>,
+    /// Catalogue text-to-speech builds, each to speak a sentence with every voice its model declares.
+    speak: Vec<Speak>,
+}
+
+/// A text-to-speech build of the bundled catalogue, installed as an app installs it: its model must have exactly the
+/// voices the catalogue declares, and each must say `sentence` in `language` so that Whisper (tiny.en, so in English)
+/// hears it back within `max_wer`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Speak {
+    build: String,
+    language: String,
+    sentence: String,
 }
 
 /// A clip of known text, and where it comes from.
@@ -474,6 +489,90 @@ fn catalogue_builds_transcribe_the_clips_they_name() {
             clip.url
         );
     }
+    assert!(failed.is_empty(), "{failed:#?}");
+}
+
+/// Each catalogue build `inference_tests.json` names under `speak`, installed from the bundled catalogue as an app
+/// installs it: the model has exactly the voices its catalogue entry declares, in order (a declared id it lacks would
+/// fail with `unknown-voice`; a voice it has and the catalogue does not declare would be listed undescribed), and each
+/// says the entry's sentence audibly, which Whisper hears back within `max_wer`. A row per voice is printed before the
+/// verdict.
+#[test]
+#[ignore = "downloads every build it names: cargo test --lib sherpa_onnx::inference_tests -- --ignored"]
+fn catalogue_builds_speak_with_every_voice_their_model_declares() {
+    use crate::catalog::{BundledCatalog, CatalogSource, ModelFile};
+    use crate::host::NativeHost;
+    use crate::install::{Cancel, Installer};
+    use crate::test_support::block_on;
+
+    let fixtures: Fixtures =
+        serde_json::from_str(include_str!("inference_tests.json")).expect("inference_tests.json");
+    let catalogue = BundledCatalog.load().expect("the bundled catalogue");
+    let data = std::env::temp_dir().join(format!("sidevoice-speak-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&data);
+    let host = NativeHost::new(&data).expect("a host");
+    let mut whisper = load(&prepared().whisper);
+    let stt = whisper.as_stt().expect("Whisper transcribes");
+
+    let mut failed = Vec::new();
+    println!("| build | voice | name | seconds | RMS | WER | heard |");
+    for entry in &fixtures.speak {
+        let (model, build) = catalogue
+            .families
+            .iter()
+            .flat_map(|family| &family.models)
+            .find_map(|model| {
+                let build = model.builds.iter().find(|build| build.id == entry.build)?;
+                Some((model, build))
+            })
+            .unwrap_or_else(|| panic!("{}: not in the bundled catalogue", entry.build));
+        let artifacts: Vec<_> = build.files.iter().map(ModelFile::artifact).collect();
+        let installed =
+            block_on(Installer.install(&build.id, &artifacts, &host, &|_| {}, &Cancel::new()))
+                .unwrap_or_else(|error| panic!("{}: not installed: {}", build.id, error.code));
+        let library = ready(SherpaOnnx.open(&installed)).expect("the linked library");
+        let mut loaded = ready(library.load(build, Accelerator::Cpu, &installed))
+            .unwrap_or_else(|error| panic!("{}: not loaded: {}", build.id, error.code));
+        let tts = loaded.as_tts().expect("text to speech");
+        let declared: Vec<_> = model.voices.iter().map(|voice| voice.id.clone()).collect();
+        assert!(!declared.is_empty(), "{}: declares no voice", model.id);
+        assert_eq!(tts.voices(), declared, "{}: its voices", build.id);
+        for voice in &model.voices {
+            let said = ready(tts.speak(&entry.sentence, voice, Some(entry.language.as_str()), 1.0));
+            let audio = match said {
+                Ok(audio) if !audio.is_empty() => audio,
+                Ok(_) => {
+                    failed.push(format!("{} {}: no audio", build.id, voice.id));
+                    continue;
+                }
+                Err(error) => {
+                    failed.push(format!("{} {}: {}", build.id, voice.id, error.code));
+                    continue;
+                }
+            };
+            let seconds = audio.len() as f32 / tts.sample_rate() as f32;
+            let rms = (audio.iter().map(|s| s * s).sum::<f32>() / audio.len() as f32).sqrt();
+            let heard = ready(stt.transcribe(&to_16k(&audio, tts.sample_rate()), Some("en")))
+                .unwrap_or_else(|error| format!("<{}>", error.code));
+            let rate = wer(&entry.sentence, &heard);
+            let name = voice.name.as_deref().unwrap_or_default();
+            println!(
+                "| {} | {} | {name} | {seconds:.2} | {rms:.3} | {rate:.2} | {heard} |",
+                build.id, voice.id
+            );
+            if !(0.5..10.0).contains(&seconds) || rms <= 0.01 || rate > fixtures.max_wer {
+                failed.push(format!(
+                    "{} {} ({name}): {seconds:.2} s, RMS {rms:.3}, WER {rate:.2}",
+                    build.id, voice.id
+                ));
+            }
+        }
+        drop(loaded);
+        drop(library);
+        block_on(Installer.uninstall(&build.id, &artifacts, crate::host::Host::storage(&host)))
+            .expect("uninstalled");
+    }
+    let _ = fs::remove_dir_all(&data);
     assert!(failed.is_empty(), "{failed:#?}");
 }
 
