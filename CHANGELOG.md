@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.4.0...v0.5.0) (2026-10-14)
+
+
+### Features
+
+* **engine:** rank the builds that run by accelerator class: GPU, then Neural Engine, then CPU ([#94](https://github.com/sidevoice/sidevoice-engine/issues/94)) ([a5421ca](https://github.com/sidevoice/sidevoice-engine/commit/a5421ca782e0db9fc517ca2ffbb243c846fbff2f)), closes [#4](https://github.com/sidevoice/sidevoice-engine/issues/4)
+
+
+### Bug Fixes
+
+* **catalog:** declare Supertonic's ten voices, with upstream's names and genders ([#96](https://github.com/sidevoice/sidevoice-engine/issues/96)) ([f9cd6a4](https://github.com/sidevoice/sidevoice-engine/commit/f9cd6a412c059d46634d465624ad3900460441ac))
+
+
+### Performance Improvements
+
+* **engine:** flash attention for whisper.cpp on the GPU ([#100](https://github.com/sidevoice/sidevoice-engine/issues/100)) ([8e3c2a5](https://github.com/sidevoice/sidevoice-engine/commit/8e3c2a5ee2e250ec1b8638b769ed83dbc693746b))
+
 ## [0.4.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.3.1...v0.4.0) (2026-10-12)
 
 
