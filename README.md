@@ -79,6 +79,13 @@ A build is offered on the first accelerator in its backend's order of preference
 confirms and the build allows: which accelerators a build runs on is its backend's to know, unless the build cannot
 take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
 
+The builds of a model that run here are ranked by the class of the accelerator each would run on (sidevoice-engine#4):
+a GPU (`metal`, `cuda`, `webgpu`) first, then a neural engine (`coreml`), then a CPU (`cpu`, `wasm`). Within a class
+they keep catalogue order, the documented fallback until measured speed and quality rank them (sidevoice-engine#16).
+The first is the recommended build. So on Apple silicon whisper.cpp on Metal is recommended for every Whisper model,
+ahead of sherpa-onnx on the CPU; on Linux and Windows, where whisper.cpp runs on the CPU too, catalogue order keeps
+sherpa-onnx.
+
 ## Using a model, and what stays in memory
 
 A native app builds its host on a directory of its own and hands it to the engine. The native engine's futures expect a

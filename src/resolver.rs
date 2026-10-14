@@ -3,8 +3,13 @@
 //! host reports, narrowed by `probe`, cached), is one of them an accelerator the build can take (its `requires`), in a
 //! page does the build fit in what WebAssembly hands it (`requires.wasm_max_mb`), does the machine meet the build's and
 //! the backend's requirements (a value the host cannot tell passes). The builds of a model are listed with those that
-//! run first, each on its backend's preferred accelerator, and every one that does not with its reason (`rejection`);
-//! ranking the builds that run is still to come (sidevoice-engine#4).
+//! run first, each on its backend's preferred accelerator, and every one that does not with its reason (`rejection`).
+//!
+//! The builds that run are ranked by the class of the accelerator each would run on here (sidevoice-engine#4): a GPU
+//! (Metal, CUDA, WebGPU) first, then a neural engine (Core ML), then a CPU (natively or in WebAssembly). Within a class
+//! they keep catalogue order: that is the documented fallback until measured speed and quality rank them
+//! (sidevoice-engine#16). So on Apple silicon whisper.cpp on Metal comes before sherpa-onnx on the CPU, and where both
+//! run on the CPU the catalogue's order stands.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
@@ -28,15 +33,15 @@ pub(crate) struct Resolver {
 
 impl Resolver {
     /// Every build of `model`, ranked, each with the accelerator it runs on here or why it cannot run here: the builds
-    /// that fit first, then the rest, each group in catalogue order. Ranking is still the first that fits
-    /// (sidevoice-engine#4).
+    /// that fit first, by the class of their accelerator ([`Class`]), then the rest; each class, and the rest, in
+    /// catalogue order.
     pub(crate) fn builds<'a>(
         &self,
         model: &'a ModelEntry,
         backends: &[Box<dyn Backend>],
         caps: &Capabilities,
     ) -> Vec<(&'a BuildEntry, Result<Accelerator, Rejection>)> {
-        let (fitting, rejected): (Vec<_>, Vec<_>) = model
+        let (mut fitting, rejected): (Vec<_>, Vec<_>) = model
             .builds
             .iter()
             .map(|build| {
@@ -47,6 +52,8 @@ impl Resolver {
                 (build, fit)
             })
             .partition(|(_, fit)| fit.is_ok());
+        // A stable sort: within a class, catalogue order stands.
+        fitting.sort_by_key(|(_, fit)| fit.as_ref().ok().copied().map(Class::of));
         fitting.into_iter().chain(rejected).collect()
     }
 
@@ -109,5 +116,24 @@ impl Resolver {
             .entry(backend.spec().id)
             .or_insert_with(|| backend.probe(caps))
             .clone()
+    }
+}
+
+/// The class of an accelerator, the first key of the ranking: the earlier, the better (sidevoice-engine#4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Class {
+    Gpu,
+    NeuralEngine,
+    Cpu,
+}
+
+impl Class {
+    /// Every accelerator has one: a new accelerator does not compile until it is given its class.
+    fn of(accelerator: Accelerator) -> Self {
+        match accelerator {
+            Accelerator::Metal | Accelerator::Cuda | Accelerator::WebGpu => Self::Gpu,
+            Accelerator::CoreMl => Self::NeuralEngine,
+            Accelerator::Cpu | Accelerator::Wasm => Self::Cpu,
+        }
     }
 }
