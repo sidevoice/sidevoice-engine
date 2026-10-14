@@ -83,5 +83,12 @@
         "es"
       ]
     }
+  ],
+  "speak": [
+    {
+      "build": "supertonic-3/sherpa-onnx-int8",
+      "language": "en",
+      "sentence": "The quick brown fox jumps over the lazy dog."
+    }
   ]
 }

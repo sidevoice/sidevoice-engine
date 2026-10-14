@@ -263,3 +263,42 @@ fn only_sherpa_onnx_builds_set_config_numbers() {
     assert_eq!(silero.config.get("silero_vad.window_size"), Some(&512));
     assert_eq!(silero.config.get("sample_rate"), Some(&16_000));
 }
+
+/// A transformers.js build speaks with the voices its `voices/<id>` files are (`transformers_js.rs`). Each is a voice
+/// its model declares, so the catalogue describes every voice such a build speaks; and where every build of a model is
+/// a transformers.js one (Supertonic 2), each voice the model declares is one of those files, so each can be spoken.
+#[test]
+fn a_transformers_js_builds_voice_files_are_voices_its_model_declares() {
+    use std::collections::BTreeSet;
+
+    let fragment = BundledCatalog.load().expect("bundled catalogue");
+    let mut spoken = 0;
+    for model in fragment.families.iter().flat_map(|family| &family.models) {
+        let declared: BTreeSet<&str> = model.voices.iter().map(|voice| voice.id.as_str()).collect();
+        let web = || {
+            model
+                .builds
+                .iter()
+                .filter(|build| build.backend == "transformers-js")
+        };
+        for build in web() {
+            let files: BTreeSet<&str> = build
+                .files
+                .iter()
+                .filter_map(|file| file.key.strip_prefix("voices/"))
+                .collect();
+            let undeclared: Vec<_> = files.difference(&declared).collect();
+            assert!(
+                undeclared.is_empty(),
+                "{}: {undeclared:?} not declared",
+                build.id
+            );
+            if web().count() == model.builds.len() {
+                let missing: Vec<_> = declared.difference(&files).collect();
+                assert!(missing.is_empty(), "{}: no file for {missing:?}", build.id);
+            }
+            spoken += files.len();
+        }
+    }
+    assert!(spoken > 0, "some transformers.js build has voice files");
+}
