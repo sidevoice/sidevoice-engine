@@ -40,7 +40,7 @@ jobs:
         include:
           - { target: linux-x86_64, runner: ubuntu-24.04 }
           - { target: linux-aarch64, runner: ubuntu-24.04-arm }
-          - { target: macos-aarch64, runner: macos-14 }
+          - { target: macos-aarch64, runner: macos-15 }
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/setup
