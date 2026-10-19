@@ -176,6 +176,174 @@ fn a_listing_refused_reads_as_the_providers_status() {
     assert_eq!(listed, Err("provider-unreachable"), "no answer");
 }
 
+/// What OpenAI answers a refused call with (`{"error": {"message", "type", "code"}}`): a spent quota is a 429 like a
+/// rate limit, and only its `code` (or, with a null code, its `type`) tells them apart. Speech to text, text to speech
+/// and a listing read it alike.
+#[test]
+fn a_refusal_is_told_by_what_openai_says_and_not_by_its_429() {
+    let body = |code: &str, kind: &str| {
+        let code = if code.is_empty() {
+            "null".to_owned()
+        } else {
+            format!("\"{code}\"")
+        };
+        format!(
+            r#"{{"error": {{"message": "m", "type": "{kind}", "param": null, "code": {code}}}}}"#
+        )
+    };
+    // (http, code, type, stt, tts, listing)
+    for (http, code, kind, stt, tts, listing) in [
+        (
+            429,
+            "insufficient_quota",
+            "insufficient_quota",
+            "provider-quota",
+            "provider-quota",
+            "provider-quota",
+        ),
+        (
+            429,
+            "",
+            "insufficient_quota",
+            "provider-quota",
+            "provider-quota",
+            "provider-quota",
+        ),
+        (
+            429,
+            "credit_balance_exhausted",
+            "",
+            "provider-quota",
+            "provider-quota",
+            "provider-quota",
+        ),
+        (
+            429,
+            "project_spend_limit_exceeded",
+            "",
+            "provider-quota",
+            "provider-quota",
+            "provider-quota",
+        ),
+        (
+            429,
+            "organization_spend_limit_exceeded",
+            "",
+            "provider-quota",
+            "provider-quota",
+            "provider-quota",
+        ),
+        (
+            429,
+            "organization_usage_limit_exceeded",
+            "",
+            "provider-quota",
+            "provider-quota",
+            "provider-quota",
+        ),
+        (
+            429,
+            "rate_limit_exceeded",
+            "requests",
+            "rate-limited",
+            "rate-limited",
+            "provider-quota",
+        ),
+        (
+            429,
+            "slow_down",
+            "rate_limit_error",
+            "rate-limited",
+            "rate-limited",
+            "provider-quota",
+        ),
+        (
+            401,
+            "invalid_api_key",
+            "invalid_request_error",
+            "credential-rejected",
+            "credential-rejected",
+            "credential-rejected",
+        ),
+        (
+            404,
+            "model_not_found",
+            "invalid_request_error",
+            "plan-not-allowed",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            403,
+            "model_not_found",
+            "invalid_request_error",
+            "plan-not-allowed",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            403,
+            "unsupported_country_region_territory",
+            "request_forbidden",
+            "plan-not-allowed",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            403,
+            "insufficient_permissions",
+            "invalid_request_error",
+            "permission-missing",
+            "permission-missing",
+            "listing-not-permitted",
+        ),
+        (
+            400,
+            "invalid_value",
+            "invalid_request_error",
+            "transcription-failed",
+            "speech-failed",
+            "listing-failed",
+        ),
+        (
+            403,
+            "something_new",
+            "invalid_request_error",
+            "credential-rejected",
+            "credential-rejected",
+            "listing-not-permitted",
+        ),
+    ] {
+        let said = body(code, kind);
+        let (mut model, provider) = open(&transcriber());
+        provider.key("openai", "sk-test");
+        provider.answer("https://api.openai.com/", http, said.as_bytes());
+        let heard = block_on(model.as_stt().expect("stt").transcribe(&[0.0; 160], None))
+            .unwrap_err()
+            .code;
+        assert_eq!(heard, stt, "stt {http} {code} {kind}");
+
+        let (mut model, provider) = open(&speaker());
+        provider.key("openai", "sk-test");
+        provider.answer("https://api.openai.com/", http, said.as_bytes());
+        let spoken = block_on(model.as_tts().expect("tts").speak(
+            "Hola",
+            &voice("alloy"),
+            None,
+            1.0,
+        ))
+        .unwrap_err()
+        .code;
+        assert_eq!(spoken, tts, "tts {http} {code} {kind}");
+
+        let (api, provider) = remote_api("openai");
+        provider.key("openai", "sk-test");
+        provider.answer("https://api.openai.com/", http, said.as_bytes());
+        let listed = block_on(OpenAi.models(&api, &facts())).map_err(|e| e.code);
+        assert_eq!(listed, Err(listing), "listing {http} {code} {kind}");
+    }
+}
+
 fn open(
     model: &RemoteModelInfo,
 ) -> (

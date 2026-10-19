@@ -246,7 +246,8 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
   Loading a remote model makes no call. Speech comes back as 16-bit PCM at 24 kHz; a turn is sent as a 16-bit WAV at
   16 kHz. Streaming is not used (sidevoice-engine#35).
 - **What a call fails with** has its codes: `credential-missing`, `credential-rejected` (a key the provider does not
-  know), `provider-quota` (an account or key out of credit: a 402, or the provider saying `quota_exceeded`),
+  know), `provider-quota` (an account or key out of credit: a 402, or the provider saying `quota_exceeded`, or
+  OpenAI `insufficient_quota`, which it answers with a 429),
   `permission-missing` (a scoped key without the permission the call needs), `plan-not-allowed` (the plan does not
   allow the voice or the model, or has the free tier blocked), `rate-limited` (429), the shared
   `transcription-failed`, `speech-failed`, `unknown-voice`, and the host's `request-failed` (no answer) and
