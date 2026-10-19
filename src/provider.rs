@@ -66,7 +66,8 @@ pub(crate) struct ProviderSpec {
 
 /// A provider's adapter: its record, what it reads from its spec, its live listing, and the models it makes. A listing
 /// fails with `credential-missing`, `credential-rejected`, `listing-not-permitted`, `provider-quota`,
-/// `provider-unreachable` and `listing-failed` (an answer that does not parse); see [`Api::list`].
+/// `plan-not-allowed` (the provider says the plan does not allow it), `provider-unreachable` and `listing-failed` (an
+/// answer that does not parse); see [`Api::list`].
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 pub(crate) trait Adapter: MaybeSend + MaybeSync {

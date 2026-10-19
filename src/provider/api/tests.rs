@@ -92,3 +92,94 @@ fn an_answers_text_is_trimmed_and_its_absence_fails() {
     assert_eq!(text(b"{}", "text", "x").map_err(|e| e.code), Err("x"));
     assert_eq!(text(b"nope", "text", "x").map_err(|e| e.code), Err("x"));
 }
+
+/// ElevenLabs answers a key whose credit is spent, a scoped key without a permission and a plan that does not allow a
+/// voice or a model with a 401, 402 or 403 that names what it is in `detail.status`; the engine tells a call and a
+/// listing by that, and only an answer that names nothing it knows is told by its HTTP status.
+#[test]
+fn a_provider_that_names_a_refusal_is_read_by_what_it_names_on_a_call_and_on_a_listing() {
+    let request = || HttpRequest {
+        method: "GET",
+        url: "https://api.example/v1/x".into(),
+        headers: Vec::new(),
+        body: Vec::new(),
+    };
+    let named = |status: &str| format!(r#"{{"detail": {{"status": "{status}", "message": "m"}}}}"#);
+    for (http, said, call, listing) in [
+        (
+            401,
+            "invalid_api_key",
+            "credential-rejected",
+            "credential-rejected",
+        ),
+        (401, "quota_exceeded", "provider-quota", "provider-quota"),
+        (
+            401,
+            "missing_permissions",
+            "permission-missing",
+            "listing-not-permitted",
+        ),
+        (
+            403,
+            "insufficient_permissions",
+            "permission-missing",
+            "listing-not-permitted",
+        ),
+        (
+            402,
+            "insufficient_credits",
+            "provider-quota",
+            "provider-quota",
+        ),
+        (
+            401,
+            "detected_unusual_activity",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            403,
+            "voice_access_denied",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            403,
+            "model_access_denied",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            403,
+            "feature_not_available",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            403,
+            "subscription_required",
+            "plan-not-allowed",
+            "plan-not-allowed",
+        ),
+        (
+            429,
+            "too_many_concurrent_requests",
+            "rate-limited",
+            "provider-quota",
+        ),
+        (429, "system_busy", "rate-limited", "provider-quota"),
+        (400, "invalid_voice_id", "speech-failed", "listing-failed"),
+        (
+            403,
+            "something_new",
+            "credential-rejected",
+            "listing-not-permitted",
+        ),
+    ] {
+        let (api, provider) = remote_api("example");
+        provider.answer("https://api.example/", http, named(said).as_bytes());
+        let called = block_on(api.call(request(), "speech-failed")).map_err(|e| e.code);
+        let listed = block_on(api.list(request())).map_err(|e| e.code);
+        assert_eq!((called, listed), (Err(call), Err(listing)), "{http} {said}");
+    }
+}
