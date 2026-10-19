@@ -222,9 +222,9 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
 - **No key, no listing.** Without a key (`credential-missing`) nothing is asked. A key the provider refuses
   (`credential-rejected`), or one it does not let list (`listing-not-permitted`: a 403, or ElevenLabs' 401 for a scoped
   key that lacks a permission), leaves the provider with no models: there is no fallback, the key must be allowed to
-  list. A provider that could not be asked (`provider-unreachable`, `provider-quota`, `listing-failed`) keeps its last
-  listing, `stale`. The status's `detail` is what the provider said (its own status and message, such as the missing
-  permission), for a developer to read.
+  list. A provider that could not be asked (`provider-unreachable`, `provider-quota`, `plan-not-allowed`,
+  `listing-failed`) keeps its last listing, `stale`. The status's `detail` is what the provider said (its own status
+  and message, such as the missing permission), for a developer to read.
 - **The listing decides for what it reports; the spec, read at run time, for what it never does, and enriches the
   rest.** Every model ElevenLabs' `/v1/models` says speaks is offered, with its languages; that listing never reports
   speech to text (it lists no Scribe), so ElevenLabs' speech-to-text models are its spec's. OpenAI's lists ids alone,
@@ -245,11 +245,16 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
 - **Calls go through the host's HTTP** (`Host::http`, the `HttpClient` trait): `reqwest` natively, `fetch` on the web.
   Loading a remote model makes no call. Speech comes back as 16-bit PCM at 24 kHz; a turn is sent as a 16-bit WAV at
   16 kHz. Streaming is not used (sidevoice-engine#35).
-- **What a call fails with** has its codes: `credential-missing`, `credential-rejected`, `provider-quota` (402),
-  `rate-limited` (429), the shared `transcription-failed`, `speech-failed`, `unknown-voice`, and the host's
-  `request-failed` (no answer) and `credentials-failed` (the keys could not be read). An error the provider caused
-  also carries what it said, its own code and message (`Error::detail`; `detail` on the npm package's errors), for the
-  app to show as it is (a toast); the engine neither interprets nor remembers it.
+- **What a call fails with** has its codes: `credential-missing`, `credential-rejected` (a key the provider does not
+  know), `provider-quota` (an account or key out of credit: a 402, or the provider saying `quota_exceeded`),
+  `permission-missing` (a scoped key without the permission the call needs), `plan-not-allowed` (the plan does not
+  allow the voice or the model, or has the free tier blocked), `rate-limited` (429), the shared
+  `transcription-failed`, `speech-failed`, `unknown-voice`, and the host's `request-failed` (no answer) and
+  `credentials-failed` (the keys could not be read). What the provider says of a refusal (ElevenLabs' `detail.status`
+  or `detail.code`, OpenAI's `error.code`) decides among them before the HTTP status does: ElevenLabs answers a spent
+  quota, a missing permission and a blocked free tier with a 401, which is not a key it rejects. An error the provider
+  caused also carries what it said, its own code and message (`Error::detail`; `detail` on the npm package's errors),
+  for the app to show as it is (a toast).
 - **The provider decides what it takes.** Every voice OpenAI's spec lists is offered on each of its text-to-speech
   models; a voice the provider refuses for a model fails with `speech-failed` and the provider's own words.
 - **Real calls in CI** are `remote-live.yml`, by hand and before each release, never on a pull request: per provider,

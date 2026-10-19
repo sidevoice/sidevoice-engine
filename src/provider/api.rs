@@ -59,9 +59,10 @@ impl Api {
             .ok_or(Error::new("credential-missing"))
     }
 
-    /// Sends `request` and returns the body of a success. A refused key (401, 403) is `credential-rejected`, a request
-    /// to slow down `rate-limited`, an account out of credit `provider-quota`, any other failure `failure` (`transcription-failed`, `speech-failed`, ...); no
-    /// answer is the host's `request-failed`.
+    /// Sends `request` and returns the body of a success. What the provider says of a refusal decides its code first
+    /// (see [`Said::named`]); else a refused key (401, 403) is `credential-rejected`, a request to slow down
+    /// `rate-limited`, an account out of credit `provider-quota`, any other failure `failure` (`transcription-failed`,
+    /// `speech-failed`, ...); no answer is the host's `request-failed`.
     pub(crate) async fn call(
         &self,
         request: HttpRequest,
@@ -71,10 +72,9 @@ impl Api {
     }
 
     /// Sends `request`, a listing, and returns the body of a success: as [`Api::call`], but a key the provider
-    /// knows and does not let list (403, or a 401 that says a permission is missing: ElevenLabs answers a scoped key
-    /// that lacks one so) is `listing-not-permitted`, an account out of credit or asking to slow down
-    /// (402, 429) `provider-quota`, a server failing (5xx) or no answer at all `provider-unreachable`, and any other
-    /// failure `listing-failed`.
+    /// knows and does not let list (403, or a permission the provider says is missing) is `listing-not-permitted`, an
+    /// account out of credit or asking to slow down (402, 429) `provider-quota`, a server failing (5xx) or no answer
+    /// at all `provider-unreachable`, and any other failure `listing-failed`.
     pub(crate) async fn list(&self, request: HttpRequest) -> Result<Vec<u8>> {
         match self.send(request, Listing).await {
             Err(error) if error.code == "request-failed" => Err(Error::new("provider-unreachable")),
@@ -117,12 +117,28 @@ impl Said {
         }
     }
 
-    /// Whether it says the key lacks a permission.
-    fn lacks_permission(&self) -> bool {
-        matches!(
-            self.status.as_deref(),
-            Some("missing_permissions" | "insufficient_permissions")
-        )
+    /// The code its own status fixes, whatever HTTP status came with it: ElevenLabs answers an account or a key out of
+    /// credit, a scoped key without a permission and a plan that does not allow a voice or a model with 401, 402 or
+    /// 403 alike, and none of them is a key it does not know (`credential-rejected`). `None` for any other status,
+    /// which the HTTP status then decides. The statuses are ElevenLabs' (`detail.status`, `detail.code` in its errors
+    /// reference) and OpenAI's (`error.code`).
+    fn named(&self, kind: Kind) -> Option<&'static str> {
+        Some(match (self.status.as_deref()?, kind) {
+            ("quota_exceeded" | "insufficient_credits", _) => "provider-quota",
+            ("missing_permissions" | "insufficient_permissions", Listing) => {
+                "listing-not-permitted"
+            }
+            ("missing_permissions" | "insufficient_permissions", Call(_)) => "permission-missing",
+            (
+                "voice_access_denied"
+                | "model_access_denied"
+                | "feature_not_available"
+                | "subscription_required"
+                | "detected_unusual_activity",
+                _,
+            ) => "plan-not-allowed",
+            _ => return None,
+        })
     }
 }
 
@@ -155,7 +171,6 @@ fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: K
     );
     #[cfg(not(web))]
     let _ = provider;
-    let lacks_permission = said.is_some_and(Said::lacks_permission);
     let detail = match said {
         Some(said) => Some(said.text()),
         None => {
@@ -164,17 +179,18 @@ fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: K
             (!text.is_empty()).then(|| text.to_owned())
         }
     };
-    let code = match (status, kind) {
-        (401 | 403, Listing) if lacks_permission => "listing-not-permitted",
-        (401, _) => "credential-rejected",
-        (402, _) | (429, Listing) => "provider-quota",
-        (403, Call(_)) => "credential-rejected",
-        (403, Listing) => "listing-not-permitted",
-        (429, Call(_)) => "rate-limited",
-        (500..=599, Listing) => "provider-unreachable",
-        (_, Listing) => "listing-failed",
-        (_, Call(failure)) => failure,
-    };
+    let code = said
+        .and_then(|said| said.named(kind))
+        .unwrap_or(match (status, kind) {
+            (401, _) => "credential-rejected",
+            (402, _) | (429, Listing) => "provider-quota",
+            (403, Call(_)) => "credential-rejected",
+            (403, Listing) => "listing-not-permitted",
+            (429, Call(_)) => "rate-limited",
+            (500..=599, Listing) => "provider-unreachable",
+            (_, Listing) => "listing-failed",
+            (_, Call(failure)) => failure,
+        });
     Error::with_detail(code, detail)
 }
 

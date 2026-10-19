@@ -58,7 +58,7 @@ pub use resolver::Reason;
 
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it. One that a
 /// remote provider caused also carries what the provider said, its own code and message (`detail`), for the app to
-/// show as it is (a toast, say): the engine neither interprets nor remembers it.
+/// show as it is (a toast, say): the engine remembers none of it, and reads only its status, to pick the code.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Error {
     /// The stable code, such as `"not-implemented"`.

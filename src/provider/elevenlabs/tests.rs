@@ -382,3 +382,47 @@ fn a_listing_without_scribe_still_offers_the_specs_speech_to_text() {
         "from the spec: the listing reports no speech to text"
     );
 }
+
+/// What ElevenLabs answers a refused speech with, as its errors reference and real keys have it (`detail.status`, or
+/// `detail.code` in the newer shape): a person is told what it names, not what the HTTP status alone suggests. A spent
+/// quota (a 401), a scoped key without a permission (a 401) and a plan without the voice or the model are not "the
+/// provider did not accept the key"; and what it said stays with the error.
+#[test]
+fn a_refused_speech_is_told_by_what_elevenlabs_says_and_not_by_its_http_status_alone() {
+    let invalid = r#"{"detail": {"status": "invalid_api_key", "message": "Invalid API key"}}"#;
+    let quota = r#"{"detail": {"status": "quota_exceeded", "message": "This request exceeds your quota of 10000. You have 4 credits remaining, while 70 credits are required for this request."}}"#;
+    let permission = r#"{"detail": {"status": "missing_permissions", "message": "The API key you used is missing the permission text_to_speech to execute this operation."}}"#;
+    let unusual = r#"{"detail": {"status": "detected_unusual_activity", "message": "Unusual activity detected. Free Tier usage disabled."}}"#;
+    let voice_denied = r#"{"detail": {"type": "authorization_error", "code": "voice_access_denied", "message": "You have no access to this voice."}}"#;
+    let model_denied = r#"{"detail": {"status": "model_access_denied", "message": "Your plan does not include this model."}}"#;
+    let credits = r#"{"detail": {"type": "payment_required", "code": "insufficient_credits", "message": "Not enough credits."}}"#;
+    let concurrent = r#"{"detail": {"status": "too_many_concurrent_requests", "message": "Too many concurrent requests."}}"#;
+    let busy =
+        r#"{"detail": {"status": "system_busy", "message": "We are experiencing high traffic."}}"#;
+    let voice_id =
+        r#"{"detail": {"status": "invalid_voice_id", "message": "The voice id is not valid."}}"#;
+    for (status, body, expected, said) in [
+        (401, invalid, "credential-rejected", "invalid_api_key: Invalid API key"),
+        (401, quota, "provider-quota", "quota_exceeded: This request exceeds your quota of 10000. You have 4 credits remaining, while 70 credits are required for this request."),
+        (401, permission, "permission-missing", "missing_permissions: The API key you used is missing the permission text_to_speech to execute this operation."),
+        (401, unusual, "plan-not-allowed", "detected_unusual_activity: Unusual activity detected. Free Tier usage disabled."),
+        (403, voice_denied, "plan-not-allowed", "voice_access_denied: You have no access to this voice."),
+        (403, model_denied, "plan-not-allowed", "model_access_denied: Your plan does not include this model."),
+        (402, credits, "provider-quota", "insufficient_credits: Not enough credits."),
+        (429, concurrent, "rate-limited", "too_many_concurrent_requests: Too many concurrent requests."),
+        (429, busy, "rate-limited", "system_busy: We are experiencing high traffic."),
+        (400, voice_id, "speech-failed", "invalid_voice_id: The voice id is not valid."),
+        (403, "{}", "credential-rejected", "{}"),
+    ] {
+        let (mut model, provider) = open(&model("eleven_flash_v2_5", Capability::Tts, None));
+        provider.answer(
+            "https://api.elevenlabs.io/v1/text-to-speech/",
+            status,
+            body.as_bytes(),
+        );
+        let tts = model.as_tts().expect("text to speech");
+        let refused = block_on(tts.speak("Hola", &voice("21m00Tcm4TlvDq8ikWAM"), None, 1.0))
+            .expect_err("refused");
+        assert_eq!((refused.code, refused.detail.as_deref()), (expected, Some(said)), "{status} {body}");
+    }
+}

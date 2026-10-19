@@ -75,8 +75,9 @@ pub struct CatalogStatus {
     /// Why it is not current, as a stable code the app translates; `None` when it is. The local catalogue always is. A
     /// provider without a usable key (`credential-missing`, `credential-rejected`, `listing-not-permitted`: a key the
     /// provider does not let list, with no fallback) has no models; one that could not be asked
-    /// (`provider-unreachable`, `provider-quota`, `listing-failed`) keeps its last listing, [`CatalogStatus::stale`];
-    /// one whose spec could not be read (`provider-spec-unreadable`) keeps its last facts, and with none has no models.
+    /// (`provider-unreachable`, `provider-quota`, `plan-not-allowed`, `listing-failed`) keeps its last listing,
+    /// [`CatalogStatus::stale`]; one whose spec could not be read (`provider-spec-unreadable`) keeps its last facts, and
+    /// with none has no models.
     pub reason: Option<Reason>,
     /// Whether its models are the last listing kept after a refresh failed.
     pub stale: bool,
