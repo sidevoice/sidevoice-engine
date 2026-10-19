@@ -1,5 +1,6 @@
-use super::WebFetcher;
+use super::{StreamDownload, WebFetcher};
 use crate::{Download, Fetcher, HttpClient, HttpRequest};
+use std::time::Duration;
 use wasm_bindgen_test::wasm_bindgen_test;
 
 /// Every part of `download`, in order.
@@ -99,4 +100,30 @@ async fn an_http_error_status_is_an_answer_for_an_api_call() {
         .await
         .expect("answered");
     assert_eq!(response.status, 404);
+}
+
+/// A stream built in JavaScript from `source`, the options of `new ReadableStream(...)`.
+fn stream(source: &str) -> web_sys::ReadableStream {
+    js_sys::Function::new_no_args(&format!("return new ReadableStream({source})"))
+        .call0(&wasm_bindgen::JsValue::UNDEFINED)
+        .expect("a stream")
+        .into()
+}
+
+#[wasm_bindgen_test]
+async fn a_download_that_goes_quiet_fails_with_download_failed() {
+    let mut download = StreamDownload::new(&stream("{}"), None, "download-failed");
+    download.idle = Duration::from_millis(50);
+    let failed = download.chunk().await.err();
+    assert_eq!(failed.map(|error| error.code), Some("download-failed"));
+}
+
+#[wasm_bindgen_test]
+async fn a_download_that_stalls_after_some_bytes_fails_too() {
+    let source = "{ start(c) { c.enqueue(new Uint8Array([1, 2, 3])); } }";
+    let mut download = StreamDownload::new(&stream(source), None, "download-failed");
+    download.idle = Duration::from_millis(50);
+    assert_eq!(download.chunk().await, Ok(Some(vec![1, 2, 3])));
+    let failed = download.chunk().await.err();
+    assert_eq!(failed.map(|error| error.code), Some("download-failed"));
 }

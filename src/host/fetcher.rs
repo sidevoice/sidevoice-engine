@@ -7,7 +7,7 @@ use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
 
 /// Where files are downloaded from. Implemented with [`async_trait`](crate::async_trait), as [`Host`](crate::Host)
-/// shows. Errors are stable codes: `download-failed` when the file cannot be had (no network, an HTTP error status).
+/// shows. Errors are stable codes: `download-failed` when the file cannot be had (no network, an HTTP error status, no bytes for a minute).
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 pub trait Fetcher: MaybeSend + MaybeSync {
