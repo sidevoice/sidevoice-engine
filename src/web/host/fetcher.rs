@@ -2,7 +2,10 @@
 //! `AbortController` when the download is dropped. Its API calls: `fetch` too, the whole body read at once. And what
 //! reads any such stream, a download or a stored file ([`StreamDownload`]).
 
+use std::time::Duration;
+
 use js_sys::{Reflect, Uint8Array};
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{AbortController, Blob, ReadableStream, ReadableStreamDefaultReader, Response};
@@ -11,6 +14,10 @@ use crate::{async_trait, Download, Error, Fetcher, HttpClient, HttpRequest, Http
 
 #[cfg(test)]
 mod tests;
+
+/// How long a download may go without a byte before it fails with `download-failed`: the same minute the native host's
+/// HTTP client waits (`read_timeout`, src/host/native/http.rs). The web app shows a stalled state well before.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Downloads through the global `fetch` (a window's, a worker's or Node's), following redirects. Fails with
 /// `download-failed` when the request fails or the server answers with anything but a success; the status or the
@@ -61,6 +68,8 @@ pub(super) struct StreamDownload {
     controller: Option<AbortController>,
     /// The code a failed read fails with: `download-failed`, or `storage-failed` for a stored file.
     failure: &'static str,
+    /// How long one read may wait for bytes.
+    idle: Duration,
 }
 
 impl StreamDownload {
@@ -70,6 +79,7 @@ impl StreamDownload {
             size,
             controller: None,
             failure,
+            idle: IDLE_TIMEOUT,
         }
     }
 
@@ -79,6 +89,7 @@ impl StreamDownload {
             size: Some(0),
             controller: None,
             failure: "download-failed",
+            idle: IDLE_TIMEOUT,
         }
     }
 
@@ -105,7 +116,7 @@ impl Download for StreamDownload {
             let Some(reader) = &self.reader else {
                 return Ok(None);
             };
-            let read = JsFuture::from(reader.read())
+            let read = read_within(reader.read(), self.idle)
                 .await
                 .map_err(|error| self.failed(&error))?;
             let done = Reflect::get(&read, &"done".into()).is_ok_and(|done| done.is_truthy());
@@ -124,6 +135,36 @@ impl Download for StreamDownload {
             }
         }
     }
+}
+
+/// `read`'s result, or an error if it has not settled within `idle`: a stream that goes quiet fails the download
+/// instead of waiting for ever.
+async fn read_within(read: js_sys::Promise, idle: Duration) -> Result<JsValue, JsValue> {
+    let global = js_sys::global();
+    let set_timeout: js_sys::Function = Reflect::get(&global, &"setTimeout".into())?.dyn_into()?;
+    let mut timer = JsValue::UNDEFINED;
+    let timeout = js_sys::Promise::new(&mut |_, reject| {
+        let expire = Closure::once_into_js(move || {
+            let _ = reject.call1(
+                &JsValue::UNDEFINED,
+                &format!("no bytes for {} ms", idle.as_millis()).into(),
+            );
+        });
+        timer = set_timeout
+            .call2(
+                &JsValue::UNDEFINED,
+                &expire,
+                &(idle.as_millis() as f64).into(),
+            )
+            .unwrap_or(JsValue::UNDEFINED);
+    });
+    let raced = JsFuture::from(js_sys::Promise::race(&js_sys::Array::of2(&read, &timeout))).await;
+    if let Ok(clear) = Reflect::get(&global, &"clearTimeout".into())
+        .and_then(|clear| clear.dyn_into::<js_sys::Function>())
+    {
+        let _ = clear.call1(&JsValue::UNDEFINED, &timer);
+    }
+    raced
 }
 
 impl Drop for StreamDownload {
