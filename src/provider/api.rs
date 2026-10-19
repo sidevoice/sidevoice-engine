@@ -121,10 +121,21 @@ impl Said {
     /// credit, a scoped key without a permission and a plan that does not allow a voice or a model with 401, 402 or
     /// 403 alike, and none of them is a key it does not know (`credential-rejected`). `None` for any other status,
     /// which the HTTP status then decides. The statuses are ElevenLabs' (`detail.status`, `detail.code` in its errors
-    /// reference) and OpenAI's (`error.code`).
+    /// reference) and OpenAI's (`error.code`, else `error.type`: a spent quota is `insufficient_quota` in both, and
+    /// answers 429 like a rate limit does; `rate_limit_exceeded` and `slow_down` are the rate limit, which the HTTP
+    /// status already tells).
     fn named(&self, kind: Kind) -> Option<&'static str> {
         Some(match (self.status.as_deref()?, kind) {
-            ("quota_exceeded" | "insufficient_credits", _) => "provider-quota",
+            (
+                "quota_exceeded"
+                | "insufficient_credits"
+                | "insufficient_quota"
+                | "credit_balance_exhausted"
+                | "organization_spend_limit_exceeded"
+                | "project_spend_limit_exceeded"
+                | "organization_usage_limit_exceeded",
+                _,
+            ) => "provider-quota",
             ("missing_permissions" | "insufficient_permissions", Listing) => {
                 "listing-not-permitted"
             }
@@ -134,7 +145,9 @@ impl Said {
                 | "model_access_denied"
                 | "feature_not_available"
                 | "subscription_required"
-                | "detected_unusual_activity",
+                | "detected_unusual_activity"
+                | "model_not_found"
+                | "unsupported_country_region_territory",
                 _,
             ) => "plan-not-allowed",
             _ => return None,
