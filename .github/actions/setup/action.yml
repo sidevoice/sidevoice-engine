@@ -22,20 +22,9 @@ runs:
         rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy --component rustfmt
         if [ "$WASM" = true ]; then rustup target add --toolchain "$RUST_VERSION" wasm32-unknown-unknown; fi
         echo "RUSTUP_TOOLCHAIN=$RUST_VERSION" >> "$GITHUB_ENV"
-        # whisper.cpp tunes ggml for the building machine's CPU unless told not to (README, "Build and test"). The build
-        # cache is restored on runners of other CPUs, where those instructions are illegal (SIGILL), so CI builds it
-        # portable. whisper-rs-sys reads GGML_* from the environment but does not rebuild when it changes: the cache key
-        # names it, so that no cache built otherwise is restored.
-        echo "GGML_NATIVE=OFF" >> "$GITHUB_ENV"
-        # sherpa-onnx's Windows libraries use the static C runtime (/MT; .cargo/config.toml makes Rust and cc-rs follow).
-        # whisper.cpp's CMake (minimum 3.5) predates the policy that honours CMAKE_MSVC_RUNTIME_LIBRARY, and would keep
-        # its own /MD, which the linker refuses to mix with /MT (LNK2038): whisper-rs-sys passes CMAKE_* variables on.
-        if [ "$RUNNER_OS" = Windows ]; then
-          echo "CMAKE_POLICY_DEFAULT_CMP0091=NEW" >> "$GITHUB_ENV"
-          echo "CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded" >> "$GITHUB_ENV"
-        fi
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
+        # GGML_NATIVE=OFF lives in .cargo/config.toml; never restore a CPU-specific ggml cache.
         key: ggml-portable-${{ inputs.wasm == 'true' && 'wasm' || 'native' }}
     # sherpa-onnx's prebuilt static libraries, which the `sherpa-onnx` crate links: fetched once by `cargo xtask
     # sherpa-libs`, checked against the digests in xtask/sherpa-onnx-libs.json, and kept outside target/, which

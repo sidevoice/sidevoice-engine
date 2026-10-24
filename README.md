@@ -339,7 +339,7 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
 - **whisper.cpp** is compiled, with ggml, from the sources `whisper-rs-sys` bundles, so the build needs CMake, a C++
   compiler and libclang (for `bindgen`, which writes the bindings). whisper.cpp tunes ggml for the building machine's
   CPU unless `GGML_NATIVE=OFF` is set in the build's environment, which an app that ships its binary to other machines
-  should set.
+  should set. This repository sets it in `.cargo/config.toml` for local builds and CI.
 - **sherpa-onnx** comes as prebuilt static libraries, which need the C++ standard library the platform's C++ toolchain
   provides (libstdc++ on Linux). On Linux x86_64 they use libstdc++'s old string ABI, so whisper.cpp must be compiled
   with it too, or the two copies of `std::regex`'s internals the linker merges disagree and ONNX Runtime aborts
@@ -348,7 +348,10 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
   the same in its own. On Windows they use the static C runtime (`/MT`), so everything links it too: this repository's
   `.cargo/config.toml` sets `-C target-feature=+crt-static` for the MSVC targets, and an app needs the same, plus
   `CMAKE_POLICY_DEFAULT_CMP0091=NEW` and `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` in the build's environment, for
-  whisper.cpp's CMake (CI sets them in `.github/actions/setup`).
+  whisper.cpp's CMake. All three are set in this repository's `.cargo/config.toml`. Consumers (including core and
+  desktop) do not inherit dependency Cargo configuration: set `GGML_NATIVE="OFF"`,
+  `CMAKE_POLICY_DEFAULT_CMP0091="NEW"` and `CMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded"` in their own `[env]`, and
+  `rustflags = ["-C", "target-feature=+crt-static"]` under each supported MSVC target table.
 
 Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
 script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in

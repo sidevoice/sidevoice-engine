@@ -184,21 +184,41 @@ impl Storage for Directory {
 
     async fn is_linked(&self, name: &str) -> Result<bool> {
         let path = self.path(name)?;
-        Ok(path.exists() && linked(&path))
+        Ok(linked::<Files>(&path))
     }
 }
 
-/// Whether a file at or below `path` has another hard link: a build folder's.
-fn linked(path: &Path) -> bool {
-    if path.is_dir() {
-        return fs::read_dir(path)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .any(|entry| linked(&entry.path()));
-    }
-    Files::count(path).is_ok_and(|count| count > 1)
+/// Whether a file at or below `path` has another hard link, conservatively keeping blobs when inspection fails.
+fn linked<L: Links>(path: &Path) -> bool {
+    let inspect = || -> std::io::Result<bool> {
+        let metadata = match fs::metadata(path) {
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+            result => result?,
+        };
+        if metadata.is_dir() {
+            for entry in fs::read_dir(path)? {
+                if linked::<L>(&entry?.path()) {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+        match L::count(path)? {
+            0 => Err(std::io::Error::other("inconclusive hard-link count: zero")),
+            count => Ok(count > 1),
+        }
+    };
+    inspect().unwrap_or_else(|error| {
+        eprintln!(
+            "Keeping blob at {}: cannot inspect hard links: {error}",
+            path.display()
+        );
+        true
+    })
 }
+
+#[cfg(test)]
+mod tests;
 
 /// What a writer stores, staged in `partial/` until it is committed: renamed into place, or, when the same name was
 /// stored first (the same content: blobs are named by digest, folders by build), left as it is. Dropped uncommitted, or
