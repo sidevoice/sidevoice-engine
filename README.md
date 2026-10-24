@@ -346,7 +346,9 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
   (`free(): invalid pointer`): this repository's `.cargo/config.toml` sets
   `CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"`, and an app that links both backends there needs
   the same in its own. On Windows they use the static C runtime (`/MT`), so everything links it too: this repository's
-  `.cargo/config.toml` sets `-C target-feature=+crt-static` for the MSVC targets, and an app needs the same.
+  `.cargo/config.toml` sets `-C target-feature=+crt-static` for the MSVC targets, and an app needs the same, plus
+  `CMAKE_POLICY_DEFAULT_CMP0091=NEW` and `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` in the build's environment, for
+  whisper.cpp's CMake (CI sets them in `.github/actions/setup`).
 
 Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
 script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in
