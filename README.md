@@ -172,8 +172,8 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   blobs each stored folder holds (writing it is what commits a folder, and it says whether a blob is still needed). A
   build is installed when its folder is stored, which happens only once every file is in it; its files stay when its
   model leaves memory. Uninstalling (`Engine::uninstall`) removes the folder, then each of its blobs no other folder
-  links (natively, a blob whose link count is back to 1; where the platform does not tell the count, Windows in
-  stable Rust, blobs are kept; on the web, a blob no folder in `folders.json` lists).
+  links (natively, a blob whose link count is back to 1, on Windows too; on the web, a blob no folder in
+  `folders.json` lists).
 - **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
   `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
   one archive (Kokoro: `kokoro.model` and `kokoro.data_dir`, espeak-ng's data, from one tarball). Each distinct
@@ -270,7 +270,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows too, built and tested in CI), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
@@ -339,13 +339,19 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
 - **whisper.cpp** is compiled, with ggml, from the sources `whisper-rs-sys` bundles, so the build needs CMake, a C++
   compiler and libclang (for `bindgen`, which writes the bindings). whisper.cpp tunes ggml for the building machine's
   CPU unless `GGML_NATIVE=OFF` is set in the build's environment, which an app that ships its binary to other machines
-  should set.
+  should set. This repository sets it in `.cargo/config.toml` for local builds and CI.
 - **sherpa-onnx** comes as prebuilt static libraries, which need the C++ standard library the platform's C++ toolchain
   provides (libstdc++ on Linux). On Linux x86_64 they use libstdc++'s old string ABI, so whisper.cpp must be compiled
   with it too, or the two copies of `std::regex`'s internals the linker merges disagree and ONNX Runtime aborts
   (`free(): invalid pointer`): this repository's `.cargo/config.toml` sets
   `CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"`, and an app that links both backends there needs
-  the same in its own.
+  the same in its own. On Windows they use the static C runtime (`/MT`), so everything links it too: this repository's
+  `.cargo/config.toml` sets `-C target-feature=+crt-static` for the MSVC targets, and an app needs the same, plus
+  `CMAKE_POLICY_DEFAULT_CMP0091=NEW` and `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` in the build's environment, for
+  whisper.cpp's CMake. All three are set in this repository's `.cargo/config.toml`. Consumers (including core and
+  desktop) do not inherit dependency Cargo configuration: set `GGML_NATIVE="OFF"`,
+  `CMAKE_POLICY_DEFAULT_CMP0091="NEW"` and `CMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded"` in their own `[env]`, and
+  `rustflags = ["-C", "target-feature=+crt-static"]` under each supported MSVC target table.
 
 Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
 script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in

@@ -14,4 +14,17 @@ runner = "wasm-bindgen-test-runner"
 # compiled with the old ABI there too, so both copies agree. An app that links both backends on Linux x86_64 needs
 # the same line in its own `.cargo/config.toml` (README, "Build and test").
 [env]
+# Portable ggml builds, shared by local builds and CI.
+GGML_NATIVE = "OFF"
+# whisper.cpp predates CMP0091; enable the policy so it honours the static MSVC runtime.
+CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
+CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"
 CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"
+
+# sherpa-onnx's Windows static libraries are built against the static C runtime (/MT); Rust and whisper.cpp default to
+# the dynamic one (/MD), and the linker refuses to mix them (LNK2038). An app that links both backends on Windows needs
+# the same lines in its own `.cargo/config.toml`, and then needs no Visual C++ Redistributable on the machine.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
