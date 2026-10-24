@@ -172,8 +172,8 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   blobs each stored folder holds (writing it is what commits a folder, and it says whether a blob is still needed). A
   build is installed when its folder is stored, which happens only once every file is in it; its files stay when its
   model leaves memory. Uninstalling (`Engine::uninstall`) removes the folder, then each of its blobs no other folder
-  links (natively, a blob whose link count is back to 1; where the platform does not tell the count, Windows in
-  stable Rust, blobs are kept; on the web, a blob no folder in `folders.json` lists).
+  links (natively, a blob whose link count is back to 1, on Windows too; on the web, a blob no folder in
+  `folders.json` lists).
 - **Archives.** A file entry may carry an `archive_path`: it is then a member of the archive at its `url` and
   `sha256` (a tar, bzip2-compressed or not, told apart by its bytes), a file or a directory. Several keys may share
   one archive (Kokoro: `kokoro.model` and `kokoro.data_dir`, espeak-ng's data, from one tarball). Each distinct
@@ -270,7 +270,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows compiles in principle, untested), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows too, built and tested in CI), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 

@@ -9,6 +9,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::platform::links::{Files, Links};
 use crate::{
     async_trait, Download, Error, FolderWriter, Result, Storage, StorageWriter, TreeWriter,
 };
@@ -187,8 +188,7 @@ impl Storage for Directory {
     }
 }
 
-/// Whether a file at or below `path` has another hard link: a build folder's. Where the platform does not say (only
-/// Unix exposes the count in stable Rust), it is taken as linked, so that a blob is kept rather than lost.
+/// Whether a file at or below `path` has another hard link: a build folder's.
 fn linked(path: &Path) -> bool {
     if path.is_dir() {
         return fs::read_dir(path)
@@ -197,15 +197,7 @@ fn linked(path: &Path) -> bool {
             .flatten()
             .any(|entry| linked(&entry.path()));
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        fs::metadata(path).is_ok_and(|meta| meta.nlink() > 1)
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    Files::count(path).is_ok_and(|count| count > 1)
 }
 
 /// What a writer stores, staged in `partial/` until it is committed: renamed into place, or, when the same name was

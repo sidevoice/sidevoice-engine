@@ -1824,6 +1824,7 @@ dependencies = [
  "web-sys",
  "web-time",
  "whisper-rs",
+ "winapi-util",
 ]
 
 [[package]]

@@ -23,8 +23,9 @@
 //!
 //! Metal on Apple silicon, the only build that compiles ggml's Metal backend in (the `metal` feature of whisper-rs, in
 //! Cargo.toml), and the CPU everywhere. On Metal the model asks whisper.cpp for its GPU, with flash attention; should
-//! Metal not start, whisper.cpp says so in its log and runs on the CPU. Windows is not built in CI: it should compile
-//! with a C++ toolchain and CMake, and is untested. CUDA and Vulkan are features of whisper-rs that are not turned on.
+//! Metal not start, whisper.cpp says so in its log and runs on the CPU. Windows is built and tested in CI: the CPU,
+//! through whisper.cpp built with
+//! `GGML_NATIVE=OFF`. CUDA and Vulkan are features of whisper-rs that are not turned on.
 //!
 //! # Languages
 //!
