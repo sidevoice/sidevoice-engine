@@ -15,3 +15,11 @@ runner = "wasm-bindgen-test-runner"
 # the same line in its own `.cargo/config.toml` (README, "Build and test").
 [env]
 CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"
+
+# sherpa-onnx's Windows static libraries are built against the static C runtime (/MT); Rust and whisper.cpp default to
+# the dynamic one (/MD), and the linker refuses to mix them (LNK2038). An app that links both backends on Windows needs
+# the same lines in its own `.cargo/config.toml`, and then needs no Visual C++ Redistributable on the machine.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

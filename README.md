@@ -345,7 +345,8 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
   with it too, or the two copies of `std::regex`'s internals the linker merges disagree and ONNX Runtime aborts
   (`free(): invalid pointer`): this repository's `.cargo/config.toml` sets
   `CXXFLAGS_x86_64_unknown_linux_gnu = "-D_GLIBCXX_USE_CXX11_ABI=0"`, and an app that links both backends there needs
-  the same in its own.
+  the same in its own. On Windows they use the static C runtime (`/MT`), so everything links it too: this repository's
+  `.cargo/config.toml` sets `-C target-feature=+crt-static` for the MSVC targets, and an app needs the same.
 
 Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
 script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in
