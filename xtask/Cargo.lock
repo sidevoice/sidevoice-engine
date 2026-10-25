@@ -259,6 +259,7 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "bzip2",
+ "proc-macro2",
  "serde",
  "serde_json",
  "sha1",
