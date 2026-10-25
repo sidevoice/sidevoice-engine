@@ -38,8 +38,8 @@ The repository is Rust only: one crate (`src/`), and the build tooling `cargo xt
   `src/web/host.rs`), and the interface stays replaceable: the tests bring fake hosts. Only a host touches the file system, the
   network or the browser; the rest of the engine goes through `Host`.
 - **Backends are internal, optional and lazy.** Which exist in a build is a compile-time decision (the cfg aliases
-  `web`, `native`, `apple_silicon` from `build.rs`); a backend file carries a single `#![cfg(alias)]` only when its
-  library cannot compile elsewhere, and registers itself with `inventory`. A backend describes itself as data
+  `web`, `native` from `build.rs`; OS-dependent selection belongs in `platform`); a backend file carries a single
+  `#![cfg(alias)]` only when its library cannot compile elsewhere, and registers itself with `inventory`. A backend describes itself as data
   (`BackendSpec`: accelerators in order of preference, requirements as checks); the engine matches, ranks, selects
   and installs for every backend alike. Which models a backend runs is the catalogue's to say, and what it downloads
   is data too, never code. A backend's code only checks its accelerators for real when the default `probe()` is not
@@ -75,8 +75,9 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
   shared between modules are in `src/test_support.rs`, compiled in test builds only. Tests that must run on wasm32 are
   unit tests: an rlib linked into an integration test loses its `inventory` registrations there
   (`src/backend/registry.rs`).
-- **Platform conditions use the crate's aliases** (`web`, `native`, `apple_silicon`, from `build.rs`), except in a test
-  that checks the aliases themselves. A crate-level module's condition goes on its declaration (`#[cfg(web)] mod web;`);
+- **Host selection uses the crate's aliases** (`web`, `native`, from `build.rs`), except in a test
+  that checks the aliases themselves. OS conditions, including the `apple_silicon` alias, belong only in `platform`
+  as specified below. A crate-level module's condition goes on its declaration (`#[cfg(web)] mod web;`);
   a backend file carries its own `#![cfg]`.
 - **Closed by default**, as above.
 - **What is data stays data**: versions, URLs and digests live in the catalogue, not in code, and are validated strictly
@@ -90,3 +91,29 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
 - Logic lives in `cargo xtask`, not in workflow YAML: a workflow sets up the machine and calls one `cargo xtask`
   command, which runs the same on a laptop.
 - Third-party actions are pinned by commit SHA, with the version in a comment.
+
+## Platform code
+
+Operator rule (2026-10-25). Applies to product code, tests, xtask and build scripts.
+
+- **Only `platform` touches the operating system.** Each crate has one `platform` module. It is the only place with
+  `cfg(target_os | unix | windows | target_family)`, `cfg!` on those, `std::os::*`, `libc`, `rustix`, `windows-sys`,
+  `objc2`/AppKit, OS commands, local sockets/pipes or OS-specific paths. Everything else is host-agnostic.
+- **One file per concern:** `platform/<concern>.rs`. When the behaviour differs per OS, that file declares a
+  documented trait, and its `cfg` picks `platform/<concern>/<os>.rs`, each implementing the trait with the minimum
+  code. The concern file holds only the trait, the shared types and that selection, never an OS body.
+- **An OS that cannot do something still implements the method**, returning a documented fallback (`None`,
+  "unknown", a coarser value) that callers handle. Callers never ask which OS they run on.
+- **Only a value differs** (a folder name, a shortcut label): a plain module with that value is enough, no trait.
+- **Callers import the trait and its type**; no forwarding wrappers or free functions repeating the trait.
+- **Tests are written against the interface** and run on every OS; no per-OS test modules unless it cannot be
+  phrased generically (say why in the PR).
+- **Maintained crates first**; own `unsafe` only where nothing maintained exists, justified in the PR.
+- **Enforced in CI** by its own `platform-boundary` check (next to Clippy's `disallowed-*`): any OS-specific code
+  outside `platform` fails it. It stays red until the existing debt is fixed; there is no allowlist.
+
+Reference: sidevoice-connector `connector/src/platform/user.rs` and `user/{unix,windows}.rs`.
+
+The web (wasm) versus native host split is not an operating-system difference. Host selection with
+`target_arch = "wasm32"` / `target_family = "wasm"` is outside this rule for now; its design remains an open
+question for the operator.
