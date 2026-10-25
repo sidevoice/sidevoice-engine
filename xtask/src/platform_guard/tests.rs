@@ -21,31 +21,6 @@ fn scans_multiline_cfgs_and_apis_but_ignores_literals_and_wasm() {
 }
 
 #[test]
-fn debt_requires_exact_counts_and_rejects_growth_and_new_files() {
-    let debt = BTreeMap::from([("old.rs".into(), 2)]);
-    assert!(compare(&BTreeMap::from([("old.rs".into(), 2)]), &debt).is_empty());
-    assert_eq!(
-        compare(&BTreeMap::from([("old.rs".into(), 1)]), &debt).len(),
-        1
-    );
-    assert_eq!(compare(&BTreeMap::new(), &debt).len(), 1);
-    let errors = compare(
-        &BTreeMap::from([("old.rs".into(), 3), ("new.rs".into(), 1)]),
-        &debt,
-    );
-    assert_eq!(errors.len(), 2);
-}
-
-#[test]
-fn debt_file_itself_cannot_add_files_or_raise_allowances() {
-    let base = parse_debt("old.rs 2\nremoved.rs 1\n").unwrap();
-    assert!(compare_debt(&parse_debt("old.rs 1\n").unwrap(), &base).is_empty());
-    assert!(compare_debt(&base, &base).is_empty());
-    let debt = parse_debt("old.rs 3\nnew.rs 1\nzero.rs 0\n").unwrap();
-    assert_eq!(compare_debt(&debt, &base).len(), 3);
-}
-
-#[test]
 fn grouped_and_renamed_imports_keep_the_os_path_segments() {
     let source = "use std::{os::unix::fs::MetadataExt}; use std::os as host_os; use libc as c;";
     assert_eq!(occurrences(source.parse().unwrap()), 3);

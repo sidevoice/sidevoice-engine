@@ -2,7 +2,7 @@
 //! `cargo`, `wasm-bindgen`, `npm`, `node` and `gh` from the `PATH`. The wasm32 tests need no xtask: `cargo test
 //! --target wasm32-unknown-unknown --lib` (its runner is set in `.cargo/config.toml`).
 //!
-//! - `platform-guard`: OS-specific Rust stays in platform modules; existing counts are capped by platform-debt.txt.
+//! - `platform-guard`: fails on any OS-specific Rust outside platform modules.
 //! - `npm`: the npm package `@sidevoice/engine` packed into `target/npm/` (xtask/src/npm.rs).
 //! - `npm-smoke`: that tarball installed as a consumer installs it, and run in Node.
 //! - `manifest DIR [--tag vX.Y.Z]`: the npm tarball in DIR renamed as published (`sidevoice-engine-nightly.tgz` for
