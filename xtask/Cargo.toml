@@ -19,3 +19,5 @@ bzip2 = "=0.6.1"
 tar = { version = "0.4.46", default-features = false }
 # `sherpa-libs --pin` reads the pinned sherpa-onnx crate's config structs to generate the fields a build's files fill.
 syn = { version = "2", default-features = false, features = ["full", "parsing"] }
+# Token scanning keeps comments and string contents out of the platform boundary check.
+proc-macro2 = "1"

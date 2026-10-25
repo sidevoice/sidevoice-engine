@@ -2,6 +2,7 @@
 //! `cargo`, `wasm-bindgen`, `npm`, `node` and `gh` from the `PATH`. The wasm32 tests need no xtask: `cargo test
 //! --target wasm32-unknown-unknown --lib` (its runner is set in `.cargo/config.toml`).
 //!
+//! - `platform-guard`: fails on any OS-specific Rust outside platform modules.
 //! - `npm`: the npm package `@sidevoice/engine` packed into `target/npm/` (xtask/src/npm.rs).
 //! - `npm-smoke`: that tarball installed as a consumer installs it, and run in Node.
 //! - `manifest DIR [--tag vX.Y.Z]`: the npm tarball in DIR renamed as published (`sidevoice-engine-nightly.tgz` for
@@ -29,6 +30,7 @@ mod catalog;
 mod e2e;
 mod link_size;
 mod npm;
+mod platform_guard;
 mod release;
 mod remote_live;
 mod sherpa_fields;
@@ -49,12 +51,13 @@ type Result<T> = std::result::Result<T, String>;
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
      | pin-catalog [--check] | e2e [DIR] | link-size | remote-live | test-browser | web-e2e [DIR] \
-     | sherpa-libs [DIR | --linked | --pin | --check]";
+     | sherpa-libs [DIR | --linked | --pin | --check] | platform-guard";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let result = match args.as_slice() {
+        ["platform-guard"] => platform_guard::check(),
         ["npm"] => npm::package(),
         ["npm-smoke"] => npm::smoke(),
         ["manifest", dir] => release::manifest(Path::new(dir), None),
