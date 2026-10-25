@@ -10,19 +10,8 @@ pub fn check() -> Result<()> {
     let root = repo();
     let text = String::from_utf8(read(&root.join("platform-debt.txt"))?)
         .map_err(|error| error.to_string())?;
-    let mut debt = BTreeMap::new();
-    for line in text
-        .lines()
-        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
-    {
-        let (path, count) = line
-            .split_once(' ')
-            .ok_or("invalid platform-debt.txt entry")?;
-        let count: usize = count.parse().map_err(|_| "invalid platform debt count")?;
-        if debt.insert(path.to_owned(), count).is_some() {
-            return Err(format!("duplicate platform debt: {path}"));
-        }
-    }
+    let debt = parse_debt(&text)?;
+    let mut errors = check_base(&root, &debt)?;
     // Include untracked sources locally too; ignored build output is never scanned.
     let files = run_in(
         &root,
@@ -42,7 +31,7 @@ pub fn check() -> Result<()> {
             actual.insert(path.to_owned(), count);
         }
     }
-    let errors = compare(&actual, &debt);
+    errors.extend(compare(&actual, &debt));
     if !errors.is_empty() {
         return Err(errors.join("\n"));
     }
@@ -52,6 +41,83 @@ pub fn check() -> Result<()> {
         actual.len()
     );
     Ok(())
+}
+
+fn parse_debt(text: &str) -> Result<BTreeMap<String, usize>> {
+    let mut debt = BTreeMap::new();
+    for line in text
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+    {
+        let (path, count) = line
+            .split_once(' ')
+            .ok_or("invalid platform-debt.txt entry")?;
+        let count = count.parse().map_err(|_| "invalid platform debt count")?;
+        if debt.insert(path.to_owned(), count).is_some() {
+            return Err(format!("duplicate platform debt: {path}"));
+        }
+    }
+    Ok(debt)
+}
+
+fn check_base(root: &Path, debt: &BTreeMap<String, usize>) -> Result<Vec<String>> {
+    let branch = std::env::var("GITHUB_BASE_REF")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "main".into());
+    let base = format!("refs/remotes/origin/{branch}");
+    if run_in(
+        root,
+        "git rev-parse --verify",
+        &[&format!("{base}^{{commit}}")],
+    )
+    .is_err()
+    {
+        if std::env::var_os("CI").is_some() {
+            return Err(format!(
+                "platform debt: missing {base}; fetch the base branch before checking"
+            ));
+        }
+        println!("note: no {base}; skipping base-branch debt comparison locally");
+        return Ok(Vec::new());
+    }
+    let files = run_in(root, "git ls-tree -r --name-only -z", &[&base])?;
+    let base_debt = if files.split('\0').any(|path| path == "platform-debt.txt") {
+        parse_debt(&run_in(
+            root,
+            "git show",
+            &[&format!("{base}:platform-debt.txt")],
+        )?)?
+    } else {
+        // Bootstrap this first guard PR from the base's source, never from the PR's allowance.
+        let mut baseline = BTreeMap::new();
+        for path in files
+            .split('\0')
+            .filter(|path| path.ends_with(".rs") && !exempt(Path::new(path)))
+        {
+            let source = run_in(root, "git show", &[&format!("{base}:{path}")])?;
+            let tokens = source
+                .parse()
+                .map_err(|error| format!("{base}:{path}: {error}"))?;
+            let count = occurrences(tokens);
+            if count > 0 {
+                baseline.insert(path.to_owned(), count);
+            }
+        }
+        baseline
+    };
+    Ok(compare_debt(debt, &base_debt))
+}
+
+fn compare_debt(debt: &BTreeMap<String, usize>, base: &BTreeMap<String, usize>) -> Vec<String> {
+    debt.iter()
+        .filter_map(|(path, count)| match base.get(path) {
+            Some(cap) if count <= cap => None,
+            _ => Some(format!(
+                "{path}: debt allowance {count} is new or increased against the base branch"
+            )),
+        })
+        .collect()
 }
 
 fn exempt(path: &Path) -> bool {
@@ -91,7 +157,25 @@ fn colon(token: Option<&TokenTree>) -> bool {
 fn occurrences(stream: TokenStream) -> usize {
     let tokens: Vec<_> = stream.into_iter().collect();
     let mut count = 0;
+    let mut skip_until = 0;
     for (i, token) in tokens.iter().enumerate() {
+        if i < skip_until {
+            continue;
+        }
+        if ident(Some(token), "use") {
+            if let Some(end) = tokens[i..]
+                .iter()
+                .position(|token| matches!(token, TokenTree::Punct(p) if p.as_char() == ';'))
+            {
+                let end = i + end + 1;
+                let item: TokenStream = tokens[i..end].iter().cloned().collect();
+                if let Ok(item) = syn::parse_str::<syn::ItemUse>(&item.to_string()) {
+                    count += use_occurrences(&item.tree, false);
+                    skip_until = end;
+                    continue;
+                }
+            }
+        }
         if let TokenTree::Group(group) = token {
             count += occurrences(group.stream());
         }
@@ -108,12 +192,9 @@ fn occurrences(stream: TokenStream) -> usize {
                 }
             }
         }
-        let path = colon(tokens.get(i + 1)) && colon(tokens.get(i + 2));
-        if (ident(Some(token), "std")
-            && path
-            && ident(tokens.get(i + 3), "os")
-            && colon(tokens.get(i + 4))
-            && colon(tokens.get(i + 5)))
+        let path = (colon(tokens.get(i + 1)) && colon(tokens.get(i + 2)))
+            || (i >= 2 && colon(tokens.get(i - 1)) && colon(tokens.get(i - 2)));
+        if (ident(Some(token), "std") && path && ident(tokens.get(i + 3), "os"))
             || (path
                 && ["libc", "rustix", "windows_sys", "windows"]
                     .iter()
@@ -126,6 +207,38 @@ fn occurrences(stream: TokenStream) -> usize {
         }
     }
     count
+}
+
+/// Keep the std prefix through grouped use trees; renames retain their original segment.
+fn use_occurrences(tree: &syn::UseTree, in_std: bool) -> usize {
+    let segment = |name: &syn::Ident| {
+        usize::from(
+            (in_std && name == "os")
+                || [
+                    "libc",
+                    "rustix",
+                    "windows_sys",
+                    "windows",
+                    "objc2",
+                    "core_foundation",
+                ]
+                .iter()
+                .any(|value| name == value),
+        )
+    };
+    match tree {
+        syn::UseTree::Path(path) => {
+            segment(&path.ident) + use_occurrences(&path.tree, in_std || path.ident == "std")
+        }
+        syn::UseTree::Name(name) => segment(&name.ident),
+        syn::UseTree::Rename(rename) => segment(&rename.ident),
+        syn::UseTree::Group(group) => group
+            .items
+            .iter()
+            .map(|tree| use_occurrences(tree, in_std))
+            .sum(),
+        syn::UseTree::Glob(_) => 0,
+    }
 }
 
 fn os_condition(stream: TokenStream) -> bool {
