@@ -156,3 +156,44 @@ fn exempts_only_the_platform_module() {
 fn rejects_unreadable_source() {
     assert!(scan("fn f() { \"unterminated }", &Shared::default()).is_err());
 }
+
+#[test]
+fn imports_are_followed_through_renames_and_chains_in_any_order() {
+    assert_eq!(
+        n("use s::os::unix::fs::symlink;\nuse std as s;\nfn f() { let _ = symlink(\"a\", \"b\"); }"),
+        1
+    );
+    assert_eq!(n("use std as s;\nuse s::path::Path;\nfn f(_: &Path) {}"), 0);
+    let aliases = "use cfg_aliases::cfg_aliases as aliases;\nfn main() { aliases! { apple_silicon: { all(target_os = \"macos\", target_arch = \"aarch64\") }, web: { target_family = \"wasm\" } } }";
+    let report = scan(aliases, &Shared::default()).unwrap();
+    assert_eq!(report.count, 1);
+    assert!(report.shared.cfg_aliases.contains("apple_silicon"));
+    assert!(!report.shared.cfg_aliases.contains("web"));
+    let shared = Shared {
+        cfg_aliases: HashSet::from(["apple_silicon".to_string()]),
+        ..Shared::default()
+    };
+    assert_eq!(
+        scan("#[cfg(apple_silicon)] fn f() {}", &shared)
+            .unwrap()
+            .count,
+        1
+    );
+}
+
+#[test]
+fn dead_code_suppressions_and_os_command_helpers_are_seen() {
+    assert_eq!(n("#[allow(dead_code)] fn unavailable() {}"), 1);
+    assert_eq!(n("#[expect(dead_code)] fn unavailable() {}"), 1);
+    assert_eq!(
+        n("#[cfg_attr(feature = \"x\", allow(dead_code))] fn f() {}"),
+        1
+    );
+    assert_eq!(n("#[allow(clippy::too_many_arguments)] fn f() {}"), 0);
+    assert_eq!(n("fn f() { let _ = sh(\"uname -a\"); }"), 1);
+    assert_eq!(
+        n("fn f() { let _ = run_in(&dir, \"powershell -c x\", &[]); }"),
+        1
+    );
+    assert_eq!(n("fn f() { let _ = sh(\"cargo metadata\"); }"), 0);
+}

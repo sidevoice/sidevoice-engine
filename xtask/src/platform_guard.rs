@@ -98,6 +98,23 @@ const OS_PROGRAMS: [&str; 45] = [
     "msiexec",
 ];
 
+/// Functions that run a command line given as one string (`xtask`'s `sh` and `run_in`).
+const COMMAND_HELPERS: [&str; 2] = ["sh", "run_in"];
+
+/// Whether a program (a name or a path, with or without `.exe`/`.cmd`) exists on one OS only.
+fn os_program(program: &str) -> bool {
+    let file = program
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    let stem = file
+        .strip_suffix(".exe")
+        .or_else(|| file.strip_suffix(".cmd"))
+        .unwrap_or(&file);
+    OS_PROGRAMS.contains(&stem)
+}
+
 fn is_os_crate(name: &str) -> bool {
     OS_CRATES.contains(&name)
         || OS_CRATE_PREFIXES
@@ -180,6 +197,26 @@ fn os_attr_tokens(body: &[TokenTree], aliases: &HashSet<String>) -> bool {
     let name = body.first().and_then(ident).unwrap_or_default();
     let args = group(body.get(1), Delimiter::Parenthesis).unwrap_or_default();
     os_attr(&name, &args, aliases)
+}
+
+/// Whether an attribute body hides unused code: `allow(dead_code)` or `expect(dead_code)`, also inside `cfg_attr`.
+fn suppresses_dead_code(body: &[TokenTree]) -> bool {
+    body.iter().enumerate().any(|(i, tree)| match tree {
+        TokenTree::Group(g) => suppresses_dead_code(&flat(g.stream())),
+        TokenTree::Ident(id) if id == "allow" || id == "expect" => {
+            group(body.get(i + 1), Delimiter::Parenthesis)
+                .is_some_and(|args| mentions_ident(args, "dead_code"))
+        }
+        _ => false,
+    })
+}
+
+fn mentions_ident(stream: TokenStream, name: &str) -> bool {
+    stream.into_iter().any(|tree| match tree {
+        TokenTree::Ident(id) => id == name,
+        TokenTree::Group(g) => mentions_ident(g.stream(), name),
+        _ => false,
+    })
 }
 
 fn string_value(literal: &proc_macro2::Literal) -> Option<String> {
@@ -425,7 +462,7 @@ impl Scan {
 
     fn bind(&mut self, at: &TokenTree, leaves: Vec<(Vec<String>, Option<String>)>) {
         for (path, rename) in leaves {
-            if os_path(&path) {
+            if self.expand(&path, 3).iter().any(|full| os_path(full)) {
                 self.found(at);
             }
             let name = rename.or_else(|| path.last().cloned());
@@ -467,10 +504,12 @@ impl Scan {
                         let body = flat(inner.clone());
                         let name = body.first().and_then(ident);
                         let cfg = matches!(name.as_deref(), Some("cfg" | "cfg_attr"));
-                        if name.as_deref() == Some("windows_subsystem") || native_os_link(&body) {
-                            self.found(&trees[i]);
-                        }
-                        if cfg && os_attr_tokens(&body, &self.shared.cfg_aliases) {
+                        // One attribute is one occurrence, however many rules it breaks.
+                        if name.as_deref() == Some("windows_subsystem")
+                            || native_os_link(&body)
+                            || suppresses_dead_code(&body)
+                            || (cfg && os_attr_tokens(&body, &self.shared.cfg_aliases))
+                        {
                             self.found(&trees[i]);
                         }
                         // Other attributes can carry paths and strings (`doc`): scan them like any tokens.
@@ -548,7 +587,12 @@ impl Scan {
                 return i + 3;
             }
         }
-        if bang && name == "cfg_aliases" {
+        let macro_is_cfg_aliases = bang
+            && self
+                .expand(std::slice::from_ref(&name), 3)
+                .iter()
+                .any(|path| path.last().is_some_and(|last| last == "cfg_aliases"));
+        if macro_is_cfg_aliases {
             if let Some(TokenTree::Group(body)) = trees.get(i + 2) {
                 self.define_cfg_aliases(&flat(body.stream()));
                 return i + 3;
@@ -594,6 +638,21 @@ impl Scan {
         let Some(args) = group(trees.get(end), Delimiter::Parenthesis) else {
             return;
         };
+        // The repository's own subprocess helpers take the command line as one string: `sh("uname -a")`.
+        if let [helper] = segments.as_slice() {
+            if COMMAND_HELPERS.contains(&helper.as_str()) && !self.imports.contains_key(helper) {
+                let line = flat(args.clone()).iter().find_map(|tree| match tree {
+                    TokenTree::Literal(lit) => string_value(lit),
+                    _ => None,
+                });
+                let word = line
+                    .as_deref()
+                    .and_then(|line| line.split_whitespace().next());
+                if word.is_some_and(os_program) {
+                    self.found(&trees[at]);
+                }
+            }
+        }
         let (mut program, mut cargo_var, mut fs_path) = (None, false, false);
         for path in &options {
             let [.., prev, last] = path.as_slice() else {
@@ -615,16 +674,7 @@ impl Scan {
                     && matches!(last.as_str(), "new" | "from"));
         }
         if let Some(program) = program {
-            let file = program
-                .rsplit(['/', '\\'])
-                .next()
-                .unwrap_or_default()
-                .to_lowercase();
-            let stem = file
-                .strip_suffix(".exe")
-                .or_else(|| file.strip_suffix(".cmd"))
-                .unwrap_or(&file);
-            if OS_PROGRAMS.contains(&stem) {
+            if os_program(&program) {
                 self.found(&trees[at]);
             }
         }
@@ -677,6 +727,8 @@ fn scan(source: &str, shared: &Shared) -> Result<Report> {
         collecting: true,
         ..Scan::default()
     };
+    // Twice: the second pass sees imports declared after their use, and chains of them.
+    scan.walk(&trees);
     scan.walk(&trees);
     scan.collecting = false;
     scan.walk(&trees);
