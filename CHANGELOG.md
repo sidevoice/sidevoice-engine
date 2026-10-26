@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.5.0...v0.6.0) (2026-10-26)
+
+
+### Features
+
+* **windows:** build and test on Windows; CPU backends; uninstall frees disk ([#117](https://github.com/sidevoice/sidevoice-engine/issues/117)) ([2335e39](https://github.com/sidevoice/sidevoice-engine/commit/2335e39491aff9841f28d019e73f019dedd4d4eb))
+
+
+### Bug Fixes
+
+* **catalog:** re-pin kokoro-82m-v1.0 sherpa-onnx archive digest ([#122](https://github.com/sidevoice/sidevoice-engine/issues/122)) ([bea2a37](https://github.com/sidevoice/sidevoice-engine/commit/bea2a37a89ce5deab24331cceffc312cdb84d90b))
+* **provider:** tell a provider's refusal by what it says, not by its HTTP status alone ([#104](https://github.com/sidevoice/sidevoice-engine/issues/104)) ([417febf](https://github.com/sidevoice/sidevoice-engine/commit/417febf3e6e557dafa1d1f988235aeeacbe4bd02))
+* **provider:** tell OpenAI's quota from its rate limit ([#107](https://github.com/sidevoice/sidevoice-engine/issues/107)) ([795371a](https://github.com/sidevoice/sidevoice-engine/commit/795371aa6e2bd14d3edf3652e61501976959d432)), closes [#106](https://github.com/sidevoice/sidevoice-engine/issues/106)
+* **web:** fail a download that receives no bytes for a minute ([#109](https://github.com/sidevoice/sidevoice-engine/issues/109)) ([270b5ff](https://github.com/sidevoice/sidevoice-engine/commit/270b5ffafaa463a7aee7fb6a5afe18fac9ca863a))
+
 ## [0.5.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.4.0...v0.5.0) (2026-10-14)
 
 
