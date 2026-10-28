@@ -1,0 +1,43 @@
+name: download-bench
+
+# How fast a large model file downloads into storage on a hosted runner, against `curl`: the engine's downloader with
+# the writer as the pull request leaves it, then as `main` has it. On demand only.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: The file to download
+        default: https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/onnx/encoder_model_fp16.onnx
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: Download (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest]
+    runs-on: ${{ matrix.runner }}
+    env:
+      DOWNLOAD_BENCH_URL: ${{ inputs.url }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - name: Defender
+        shell: pwsh
+        run: Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled, AMServiceEnabled | Format-List
+      - name: curl
+        shell: pwsh
+        run: curl.exe -sL -o "$env:RUNNER_TEMP\curl.bin" -w "curl: %{size_download} bytes, %{speed_download} B/s, HTTP %{http_version}\n" "$env:DOWNLOAD_BENCH_URL"
+      - name: Downloader, this branch
+        shell: bash
+        run: cargo test --locked --test download_bench -- --ignored --nocapture 2>&1 | grep -E "BENCH|test result|error"
+      - name: Downloader, writer as on main
+        shell: bash
+        run: |
+          git checkout origin/main -- src/host/native/directory.rs
+          cargo test --locked --test download_bench -- --ignored --nocapture 2>&1 | grep -E "BENCH|test result|error"
