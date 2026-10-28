@@ -3,6 +3,9 @@ name: download-bench
 # How fast a large model file downloads into storage on a hosted runner, against `curl`: the engine's downloader with
 # the writer as the pull request leaves it, then as `main` has it. On demand only.
 on:
+  # Also when this file changes, so that a new version of it runs from its pull request before it is on main.
+  pull_request:
+    paths: [.github/workflows/download-bench.yml]
   workflow_dispatch:
     inputs:
       url:
@@ -21,7 +24,7 @@ jobs:
         runner: [windows-latest]
     runs-on: ${{ matrix.runner }}
     env:
-      DOWNLOAD_BENCH_URL: ${{ inputs.url }}
+      DOWNLOAD_BENCH_URL: ${{ inputs.url || 'https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/360ebcde2559d60bb474678be3c1de9ef347d01a/onnx/encoder_model_fp16.onnx' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
