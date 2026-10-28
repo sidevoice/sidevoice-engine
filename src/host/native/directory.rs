@@ -5,7 +5,7 @@
 //! short and blocking; the long wait, the network, is elsewhere.
 
 use std::fs::{self, File};
-use std::io::{ErrorKind, Read, Write};
+use std::io::{BufWriter, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -105,7 +105,7 @@ impl Storage for Directory {
         let partial = self.partial(name);
         let file = File::create(&partial).map_err(|_| failed())?;
         Ok(Box::new(Writer {
-            file: Some(file),
+            file: Some(BufWriter::with_capacity(WRITE_BUFFER, file)),
             staged: Staged::new(partial, target),
         }))
     }
@@ -317,10 +317,14 @@ fn place(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
+/// How much of a download is gathered before it is written: the network hands over a few KiB at a time, and a write
+/// per part is slow on Windows, where each one goes through the antivirus scan.
+const WRITE_BUFFER: usize = 8 << 20;
+
 /// A file being written into `partial/`.
 struct Writer {
     /// `None` once committed. Declared before `staged`, so that it is closed before its partial file is removed.
-    file: Option<File>,
+    file: Option<BufWriter<File>>,
     staged: Staged,
 }
 
@@ -333,8 +337,10 @@ impl StorageWriter for Writer {
 
     async fn commit(mut self: Box<Self>) -> Result<String> {
         let file = self.file.take().ok_or_else(failed)?;
-        let synced = file.sync_all();
-        drop(file);
+        let synced = file
+            .into_inner()
+            .map_err(std::io::IntoInnerError::into_error)
+            .and_then(|file| file.sync_all());
         self.staged.commit(synced)
     }
 }
