@@ -35,7 +35,8 @@ jobs:
         run: Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled, AMServiceEnabled | Format-List
       - name: curl
         shell: pwsh
-        run: curl.exe -sL -o "$env:RUNNER_TEMP\curl.bin" -w "curl: %{size_download} bytes, %{speed_download} B/s, HTTP %{http_version}\n" "$env:DOWNLOAD_BENCH_URL"
+        run: |
+          curl.exe -sL -o "$env:RUNNER_TEMP\curl.bin" -w "curl: %{size_download} bytes, %{speed_download} B/s, HTTP %{http_version}\n" "$env:DOWNLOAD_BENCH_URL"
       - name: Downloader, this branch
         shell: bash
         run: cargo test --locked --test download_bench -- --ignored --nocapture 2>&1 | grep -E "BENCH|test result|error"
