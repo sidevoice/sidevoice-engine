@@ -26,20 +26,31 @@ fn download_into_storage() {
         let mut file = host.storage().create(&"0".repeat(64)).await.unwrap();
         let mut hasher = Sha256::new();
         let (mut bytes, mut parts) = (0u64, 0u64);
-        while let Some(part) = download.chunk().await.unwrap() {
+        let mut spent = [0f64; 3];
+        loop {
+            let at = Instant::now();
+            let Some(part) = download.chunk().await.unwrap() else { break };
+            spent[0] += at.elapsed().as_secs_f64();
+            let at = Instant::now();
             hasher.update(&part);
+            spent[1] += at.elapsed().as_secs_f64();
+            let at = Instant::now();
             file.write(&part).await.unwrap();
+            spent[2] += at.elapsed().as_secs_f64();
             bytes += part.len() as u64;
             parts += 1;
         }
         drop(hasher);
+        let at = Instant::now();
         file.commit().await.unwrap();
+        let commit = at.elapsed().as_secs_f64();
         let seconds = started.elapsed().as_secs_f64();
         println!(
             "BENCH {bytes} bytes in {seconds:.1} s = {:.1} MB/s ({parts} parts, {} B each)",
             bytes as f64 / 1e6 / seconds,
             bytes / parts.max(1)
         );
+        println!("BENCH network {:.1} s, hash {:.1} s, write {:.1} s, commit {commit:.1} s", spent[0], spent[1], spent[2]);
     });
     drop(host);
     let _ = std::fs::remove_dir_all(dir);

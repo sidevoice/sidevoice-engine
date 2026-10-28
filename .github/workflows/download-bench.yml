@@ -39,9 +39,9 @@ jobs:
           curl.exe -sL -o "$env:RUNNER_TEMP\curl.bin" -w "curl: %{size_download} bytes, %{speed_download} B/s, HTTP %{http_version}\n" "$env:DOWNLOAD_BENCH_URL"
       - name: Downloader, this branch
         shell: bash
-        run: cargo test --locked --test download_bench -- --ignored --nocapture 2>&1 | grep -E "BENCH|test result|error"
+        run: cargo test --release --locked --test download_bench -- --ignored --nocapture 2>&1 | grep -E "BENCH|test result|error"
       - name: Downloader, writer as on main
         shell: bash
         run: |
           git checkout origin/main -- src/host/native/directory.rs
-          cargo test --locked --test download_bench -- --ignored --nocapture 2>&1 | grep -E "BENCH|test result|error"
+          cargo test --release --locked --test download_bench -- --ignored --nocapture 2>&1 | grep -E "BENCH|test result|error"
