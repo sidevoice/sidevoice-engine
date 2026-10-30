@@ -3,6 +3,8 @@
 //!
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.
+//!
+//! And, on Windows, the manifest that makes UTF-8 the tests' ANSI code page.
 
 use std::path::Path;
 use std::{env, fs};
@@ -16,6 +18,13 @@ fn main() {
         apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
     }
     bundled_families();
+    // The engine's own tests, on Windows, run as an app must: UTF-8 is their ANSI code page (README, "Build and test"). A
+    // no-op for every other target.
+    println!("cargo:rerun-if-changed=tests/windows-utf8.rc");
+    println!("cargo:rerun-if-changed=tests/windows-utf8.manifest");
+    embed_resource::compile_for_tests("tests/windows-utf8.rc", embed_resource::NONE)
+        .manifest_required()
+        .expect("tests/windows-utf8.rc");
 }
 
 /// Writes `$OUT_DIR/bundled_families.rs`: a slice of `(name, include_str!(file))`, the name being the file's without

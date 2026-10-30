@@ -352,6 +352,12 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
   desktop) do not inherit dependency Cargo configuration: set `GGML_NATIVE="OFF"`,
   `CMAKE_POLICY_DEFAULT_CMP0091="NEW"` and `CMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded"` in their own `[env]`, and
   `rustflags = ["-C", "target-feature=+crt-static"]` under each supported MSVC target table.
+- **On Windows, the executable must declare UTF-8 as its ANSI code page.** espeak-ng (Kokoro and Piper, through sherpa-onnx)
+  takes its data directory as a narrow `char *`, which Windows reads in the ANSI code page: under a model directory with
+  non-ASCII characters (a profile named `C:\Users\Iñaki`) it cannot open its data and aborts the whole process. The
+  engine fails such a load with `model-load-failed` when the code page is not UTF-8 and the path is not ASCII, but it
+  can only work when the app's manifest has `<activeCodePage>UTF-8</activeCodePage>` (Windows 10 1903 and later;
+  `tests/windows-utf8.manifest` is an example, which `build.rs` embeds in this repository's tests).
 
 Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
 script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in

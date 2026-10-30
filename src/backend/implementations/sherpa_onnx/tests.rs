@@ -356,3 +356,13 @@ fn the_last_recognizers_used_are_kept_and_the_oldest_goes() {
     );
     assert_eq!(made.len(), KEPT, "a failure keeps what was kept");
 }
+
+#[test]
+fn espeak_data_a_library_cannot_open_fails_the_load_instead_of_aborting() {
+    let dir = "C:\\Users\\Iñaki\\models\\espeak-ng-data";
+    assert_eq!(
+        config::espeak_data_dir(dir, |_| false).unwrap_err().code,
+        "model-load-failed"
+    );
+    assert_eq!(config::espeak_data_dir(dir, |_| true).expect("opens"), dir);
+}

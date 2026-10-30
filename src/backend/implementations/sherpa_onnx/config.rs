@@ -59,7 +59,7 @@ pub(super) fn tts(files: &Installed, provider: &str) -> Result<OfflineTtsConfig>
     for (key, path) in &files.files {
         let field = tts_field(&mut config.model, key).ok_or(Error::new("unsupported-model"))?;
         *field = Some(if key.ends_with(".data_dir") {
-            espeak_data_dir(path)?
+            espeak_data_dir(path, Paths::opens)?
         } else {
             text(path)?
         });
@@ -69,12 +69,15 @@ pub(super) fn tts(files: &Installed, provider: &str) -> Result<OfflineTtsConfig>
     Ok(config)
 }
 
-/// espeak-ng's data directory as espeak-ng can open it: it takes the path as a narrow string, which Windows reads in
-/// the ANSI code page, and aborts the process when it cannot find its data (sidevoice-engine#130). `model-load-failed`
-/// where no name of the directory is one it can read.
-fn espeak_data_dir(path: &str) -> Result<String> {
-    let narrow = Paths::narrow(Path::new(path)).ok_or(Error::new("model-load-failed"))?;
-    text(narrow.to_str().ok_or(Error::new("model-load-failed"))?)
+/// espeak-ng's data directory, `path`, if espeak-ng can open it (`opens`: the platform's answer, `Paths::opens`): it takes
+/// the path as a narrow string, which Windows reads in the ANSI code page unless the executable's manifest asks for
+/// UTF-8, and it aborts the whole process when it cannot find its data (sidevoice-engine#130). `model-load-failed`
+/// instead, for the app to show.
+pub(super) fn espeak_data_dir(path: &str, opens: impl Fn(&Path) -> bool) -> Result<String> {
+    if !opens(Path::new(path)) {
+        return Err(Error::new("model-load-failed"));
+    }
+    text(path)
 }
 
 /// The voice activity detector's config: every file of `files` in the field its key names, and every number of the
