@@ -21,20 +21,23 @@ fn main() {
     test_manifest();
 }
 
-/// The engine's own tests, on Windows, run as an app must: UTF-8 is their ANSI code page (README, "Build and test").
-/// Only when `SIDEVOICE_TEST_MANIFEST` is set, which CI sets for the jobs that run tests: a consumer building the engine
-/// as a dependency never needs the resource compiler for a manifest only tests take. Set, it is required: the build
-/// fails when the manifest cannot be prepared. A no-op for every target but Windows.
+/// The engine's own tests, on Windows, run as an app must: UTF-8 is their ANSI code page (README, "Build and test"). The
+/// manifest goes to the linker (`/MANIFEST:EMBED /MANIFESTINPUT`), as the desktop app does for every executable it
+/// builds: through `rustc-link-arg`, not `-tests`, which leaves out the lib's own test binary, and with no resource
+/// compiler. Only when `SIDEVOICE_TEST_MANIFEST` is set, which CI sets for the jobs that run tests: a consumer building
+/// the engine as a dependency never has a manifest forced on its link. Nothing for any target but MSVC.
 fn test_manifest() {
     println!("cargo:rerun-if-env-changed=SIDEVOICE_TEST_MANIFEST");
-    if env::var_os("SIDEVOICE_TEST_MANIFEST").is_none() {
+    if env::var_os("SIDEVOICE_TEST_MANIFEST").is_none()
+        || env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc")
+    {
         return;
     }
-    println!("cargo:rerun-if-changed=tests/windows-utf8.rc");
-    println!("cargo:rerun-if-changed=tests/windows-utf8.manifest");
-    embed_resource::compile_for_tests("tests/windows-utf8.rc", embed_resource::NONE)
-        .manifest_required()
-        .expect("tests/windows-utf8.rc");
+    let manifest = Path::new(&env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"))
+        .join("tests/windows-utf8.manifest");
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
 }
 
 /// Writes `$OUT_DIR/bundled_families.rs`: a slice of `(name, include_str!(file))`, the name being the file's without

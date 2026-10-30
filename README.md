@@ -357,7 +357,7 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
   non-ASCII characters (a profile named `C:\Users\Iñaki`) it cannot open its data and aborts the whole process. The
   engine fails such a load with `model-load-failed` when the code page is not UTF-8 and the path is not ASCII, but it
   can only work when the app's manifest has `<activeCodePage>UTF-8</activeCodePage>` (Windows 10 1903 and later;
-  `tests/windows-utf8.manifest` is an example, which `build.rs` embeds in this repository's tests).
+  `tests/windows-utf8.manifest` is an example, which `build.rs` links into this repository's tests when CI sets `SIDEVOICE_TEST_MANIFEST`).
 
 Where sherpa-onnx's libraries come from: `cargo xtask sherpa-libs` downloads the archive the `sherpa-onnx-sys` build
 script would fetch for this machine (about 21 MB on Linux and macOS), checks it against the digest pinned in

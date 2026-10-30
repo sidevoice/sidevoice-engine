@@ -119,4 +119,4 @@ wasm-bindgen-test = "0.3.79"
 
 [build-dependencies]
 cfg_aliases = "0.2.2"
-embed-resource = "3.0.12"
+

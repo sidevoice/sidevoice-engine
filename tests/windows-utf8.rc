@@ -1,3 +1,0 @@
-// The manifest the engine's own tests run under (build.rs): UTF-8 as the ANSI code page, which espeak-ng needs to open a
-// model directory with non-ASCII characters in its path (sidevoice-engine#130).
-1 24 "windows-utf8.manifest"
