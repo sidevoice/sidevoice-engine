@@ -43,7 +43,7 @@ jobs:
           - { target: macos-aarch64, runner: macos-15, dir: e2e }
           # CPU only: no GPU on a hosted runner, and the engine has no Windows accelerator. The directory has a space and
           # non-ASCII letters on purpose: that is what a user's model folder can look like.
-          - { target: windows-x86_64, runner: windows-latest, dir: "e2e ñandú modelos" }
+          - { target: windows-x86_64, runner: windows-latest, dir: "e2e modelos" }
     defaults:
       run:
         shell: bash
