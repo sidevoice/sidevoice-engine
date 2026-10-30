@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.6.0...v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **platform:** move accelerator discovery behind platform and report requested vs actual accelerator ([#129](https://github.com/sidevoice/sidevoice-engine/issues/129)) ([21c513a](https://github.com/sidevoice/sidevoice-engine/commit/21c513a33cdcb35bb1fc6fad34f421f1bb07e5f2))
+
+
+### Bug Fixes
+
+* **sherpa-onnx:** fail cleanly, and test under UTF-8, for non-ASCII espeak-ng data on Windows ([#131](https://github.com/sidevoice/sidevoice-engine/issues/131)) ([38a4912](https://github.com/sidevoice/sidevoice-engine/commit/38a4912a8e36296eef3e03bdad622ff101799723))
+* **xtask:** platform guard sees framework families, OS aliases and OS commands ([#121](https://github.com/sidevoice/sidevoice-engine/issues/121)) ([93b9202](https://github.com/sidevoice/sidevoice-engine/commit/93b9202eb6be1dcdbf22df7e45e4c7ddfa703406))
+
+
+### Performance Improvements
+
+* **download:** write a download in 8 MiB parts, not as each network part arrives ([#125](https://github.com/sidevoice/sidevoice-engine/issues/125)) ([7fed220](https://github.com/sidevoice/sidevoice-engine/commit/7fed22064ffb26c471d526d246a6a64985a7a09e))
+
 ## [0.6.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.5.0...v0.6.0) (2026-10-26)
 
 
