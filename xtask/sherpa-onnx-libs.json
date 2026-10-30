@@ -1,29 +1,29 @@
 {
-  "version": "1.13.8",
+  "version": "2.0.1",
   "archives": {
     "linux-aarch64": {
-      "name": "sherpa-onnx-v1.13.8-linux-aarch64-static-lib.tar.bz2",
-      "sha256": "77983e3cf29aa60f2e531d249dbd01d15596530550c8db2e9e02fc6a655da6bb"
+      "name": "sherpa-onnx-v2.0.1-linux-aarch64-static-lib.tar.bz2",
+      "sha256": "b6c6090e40fd18d6812f04fe21260602cd1223d7b5e83ad39dab87ad7c1c031d"
     },
     "linux-x86_64": {
-      "name": "sherpa-onnx-v1.13.8-linux-x64-static-lib.tar.bz2",
-      "sha256": "e1fdc5b67530e15741ef897fa5ffff297056f3bf0c6d829a27af9225a4c4b5a6"
+      "name": "sherpa-onnx-v2.0.1-linux-x64-static-lib.tar.bz2",
+      "sha256": "55cfadf65ba50d0afc1a802b7a337942819e51c94a5b5a384def1978f7c70871"
     },
     "macos-aarch64": {
-      "name": "sherpa-onnx-v1.13.8-osx-arm64-static-lib.tar.bz2",
-      "sha256": "9091bf160dc7fdacedbc906b212badf53c2993f4e5277a0e03998e96c31d60da"
+      "name": "sherpa-onnx-v2.0.1-osx-arm64-static-lib.tar.bz2",
+      "sha256": "d7a9b14f337958e7373c8c650f046df33d210bbaff2f33cb8322dda663ee5e1c"
     },
     "macos-x86_64": {
-      "name": "sherpa-onnx-v1.13.8-osx-x64-static-lib.tar.bz2",
-      "sha256": "a3f88da3e54c850a12d61431e73f8affcd1f13738b75b768847dd79541835b4b"
+      "name": "sherpa-onnx-v2.0.1-osx-x64-static-lib.tar.bz2",
+      "sha256": "6a3cb3c14104d3a02e7b2a6cd5621f590b14892cce7d0bc0935f7655ef518938"
     },
     "windows-aarch64": {
-      "name": "sherpa-onnx-v1.13.8-win-arm64-static-MT-Release-lib.tar.bz2",
-      "sha256": "609988769f805ca2a602622174ac737edf6dce8a50efa2da9da2d915947da31b"
+      "name": "sherpa-onnx-v2.0.1-win-arm64-static-MT-Release-lib.tar.bz2",
+      "sha256": "ef118817dcf0a585974159855ff8b2a0f4c8069a158766dfd92a5f702b0173be"
     },
     "windows-x86_64": {
-      "name": "sherpa-onnx-v1.13.8-win-x64-static-MT-Release-lib.tar.bz2",
-      "sha256": "56ffcf3c454c1f14f7bc9887286cc8143e7e542dc632804e1c447d5f8d534eaf"
+      "name": "sherpa-onnx-v2.0.1-win-x64-static-MT-Release-lib.tar.bz2",
+      "sha256": "23e7b986b197eda0bbc47ff3d7d5c87afd6ef2b9077214ba26b0f1ec52ef0e66"
     }
   }
 }
