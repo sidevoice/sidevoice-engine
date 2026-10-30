@@ -41,9 +41,10 @@ jobs:
           - { target: linux-x86_64, runner: ubuntu-24.04, dir: e2e }
           - { target: linux-aarch64, runner: ubuntu-24.04-arm, dir: e2e }
           - { target: macos-aarch64, runner: macos-15, dir: e2e }
-          # CPU only: no GPU on a hosted runner, and the engine has no Windows accelerator. The directory has a space, which
-          # is what a user's model folder can look like; non-ASCII letters wait for #130 (espeak-ng aborts on them).
-          - { target: windows-x86_64, runner: windows-latest, dir: "e2e modelos" }
+          # CPU only: no GPU on a hosted runner, and the engine has no Windows accelerator. The directory has a space
+          # and non-ASCII letters, which
+          # is what a user's model folder can look like (espeak-ng reads it as ANSI: src/platform/narrow_paths.rs).
+          - { target: windows-x86_64, runner: windows-latest, dir: "e2e modelos ñandú" }
     defaults:
       run:
         shell: bash

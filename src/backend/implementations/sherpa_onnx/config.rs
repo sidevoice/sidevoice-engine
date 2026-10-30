@@ -8,11 +8,13 @@
 //! a build's `call_params` maps its arguments to (`set_call`).
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use sherpa_onnx::{OfflineRecognizerConfig, OfflineTtsConfig, VadModelConfig};
 
 use super::{num_threads, text};
 use crate::install::Installed;
+use crate::platform::narrow_paths::{NarrowPaths, Paths};
 use crate::{Error, Result};
 
 mod fields;
@@ -56,11 +58,23 @@ pub(super) fn tts(files: &Installed, provider: &str) -> Result<OfflineTtsConfig>
     let mut config = OfflineTtsConfig::default();
     for (key, path) in &files.files {
         let field = tts_field(&mut config.model, key).ok_or(Error::new("unsupported-model"))?;
-        *field = Some(text(path)?);
+        *field = Some(if key.ends_with(".data_dir") {
+            espeak_data_dir(path)?
+        } else {
+            text(path)?
+        });
     }
     config.model.provider = Some(provider.to_owned());
     config.model.num_threads = num_threads();
     Ok(config)
+}
+
+/// espeak-ng's data directory as espeak-ng can open it: it takes the path as a narrow string, which Windows reads in
+/// the ANSI code page, and aborts the process when it cannot find its data (sidevoice-engine#130). `model-load-failed`
+/// where no name of the directory is one it can read.
+fn espeak_data_dir(path: &str) -> Result<String> {
+    let narrow = Paths::narrow(Path::new(path)).ok_or(Error::new("model-load-failed"))?;
+    text(narrow.to_str().ok_or(Error::new("model-load-failed"))?)
 }
 
 /// The voice activity detector's config: every file of `files` in the field its key names, and every number of the

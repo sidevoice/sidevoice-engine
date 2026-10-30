@@ -104,9 +104,11 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # (.cargo/config.toml, README).
 whisper-rs = "=0.16.0"
 
-# The hard-link count of a file on Windows (src/platform/links/windows.rs), which std exposes only on Unix.
+# The hard-link count of a file on Windows (src/platform/links/windows.rs), which std exposes only on Unix, and a path's
+# short name (src/platform/narrow_paths/windows.rs).
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1.11"
+windows-sys = { version = "0.61.2", default-features = false, features = ["Win32_Storage_FileSystem"] }
 
 # The native tests run the engine's futures on one multi-threaded Tokio runtime, as an app does (src/test_support.rs).
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
