@@ -6,6 +6,13 @@
 use crate::host::Accelerator;
 
 /// What an OS shows of an NVIDIA driver.
+#[cfg_attr(
+    target_os = "macos",
+    allow(
+        dead_code,
+        reason = "macOS ships no NVIDIA driver and only says `Absent`; the other systems build the rest"
+    )
+)]
 pub enum Nvidia {
     /// No driver: nothing to load, or one that does not start.
     Absent,
