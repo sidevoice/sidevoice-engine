@@ -6,6 +6,7 @@
 //! run, and must report both linked backends. `SHERPA_ONNX_LIB_DIR` comes from the environment, as in the build's setup.
 
 use std::env;
+use std::process::Command;
 
 use crate::{empty_dir, read, repo, run_in, write, Result};
 
@@ -33,10 +34,11 @@ pub(crate) fn run() -> Result<()> {
     empty_dir(&dir.join(".cargo"))?;
     // Not `canonicalize`: on Windows that gives a verbatim (`\\?\`) path, which Cargo does not take as a dependency path.
     let engine = std::path::absolute(repo()).map_err(|e| format!("the repository: {e}"))?;
-    let engine = engine.to_string_lossy().replace('\\', "/");
+    // A TOML basic string is a JSON string: quotes and backslashes in the path are escaped, and it keeps its separators.
+    let engine = serde_json::to_string(&engine.to_string_lossy()).map_err(|e| e.to_string())?;
     let manifest = format!(
         "[package]\nname = \"consumer\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
-         [dependencies]\nsidevoice-engine = {{ path = \"{engine}\" }}\n\n[workspace]\n"
+         [dependencies]\nsidevoice-engine = {{ path = {engine} }}\n\n[workspace]\n"
     );
     write(&dir.join("Cargo.toml"), manifest.as_bytes())?;
     write(&dir.join("src/main.rs"), CONSUMER.as_bytes())?;
@@ -52,7 +54,17 @@ pub(crate) fn run() -> Result<()> {
     let binary = target
         .join("debug")
         .join(format!("consumer{}", env::consts::EXE_SUFFIX));
-    let said = run_in(&dir, &binary.to_string_lossy(), &[])?;
+    // Not through `run_in`, which splits a command at spaces: the path may have some.
+    let out = Command::new(&binary)
+        .current_dir(&dir)
+        .output()
+        .map_err(|e| format!("{}: {e}", binary.display()))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("{}: {}\n{stderr}", binary.display(), out.status));
+    }
+    let said = String::from_utf8(out.stdout)
+        .map_err(|_| "the consumer's output is not UTF-8".to_owned())?;
     println!("{}", said.trim());
     for backend in ["sherpa-onnx", "whisper-cpp"] {
         if !said.split(',').any(|id| id.trim() == backend) {
