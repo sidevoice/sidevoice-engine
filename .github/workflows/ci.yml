@@ -99,6 +99,16 @@ jobs:
           SIDEVOICE_TEST_MODELS: ${{ runner.temp }}/test-models
       - run: cargo xtask sherpa-libs --linked
 
+  # What a downstream app does on Windows: a crate outside this repository, with only the configuration the README asks of
+  # a consumer (it inherits nothing from .cargo/config.toml), builds against the engine and runs (xtask/src/consumer_check.rs).
+  consumer:
+    name: Consumer build (windows-x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+      - run: cargo xtask consumer-check
+
   test-wasm:
     name: Test wasm (Node, npm package)
     runs-on: ubuntu-24.04
