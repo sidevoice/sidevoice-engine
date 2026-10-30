@@ -28,7 +28,7 @@ use http::Http;
 /// - `os` and `arch` from `std::env::consts`, `cores` from `std::thread::available_parallelism`, and `memory_mb`, the
 ///   machine's memory (or its cgroup's limit, if lower), from `sysinfo`;
 /// - accelerators, from the OS (the platform's `Accelerators`): `Cpu` always; `Metal` and `CoreMl` on macOS; `Cuda` where an NVIDIA driver
-///   lists a device (Linux's `/proc` entry, Windows' NVML). Candidates only: each backend's probe confirms what it can
+///   lists a device (Linux's `/proc` entry, Windows' DXGI adapters). Candidates only: each backend's probe confirms what it can
 ///   actually use.
 ///
 /// Downloads go through `reqwest`, with rustls: the HTTP client sidevoice-core and the desktop app use. **The engine's

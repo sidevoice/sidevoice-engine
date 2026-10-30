@@ -14,11 +14,11 @@ use crate::host::Accelerator;
     )
 )]
 pub enum Nvidia {
-    /// No driver: nothing to load, or one that does not start.
+    /// No driver, or the OS cannot list its devices.
     Absent,
-    /// A driver that starts but lists no NVIDIA device.
+    /// The OS lists no NVIDIA device.
     NoAdapter,
-    /// A driver that starts and lists at least one NVIDIA device.
+    /// The OS lists at least one NVIDIA device.
     Present,
 }
 

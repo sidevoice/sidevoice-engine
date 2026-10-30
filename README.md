@@ -157,7 +157,7 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   and `arch` from `std::env::consts`, `cores` from `available_parallelism`, the machine's memory (or its cgroup's
   limit) from `sysinfo`, and its accelerators from the OS (`src/platform/accelerators.rs`, one implementation per OS):
   `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver lists a device (`/proc/driver/nvidia` on
-  Linux, NVML on Windows). These are candidates, not proof: each backend's `probe` and `load` find out what works. A
+  Linux, the adapters DXGI lists on Windows). These are candidates, not proof: each backend's `probe` and `load` find out what works. A
   loaded model says which accelerator it was asked to run on and which it is known to run on
   (`LocalModel::accelerator()`, an `AcceleratorUse`; `acceleratorUse` on the web): a model that did not load on a GPU is
   loaded on the CPU and says so, and a GPU is reported as running only when the backend confirmed it. It downloads over HTTPS with `reqwest` and rustls, the HTTP client sidevoice-core and the desktop app

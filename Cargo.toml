@@ -105,9 +105,9 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 whisper-rs = "=0.16.0"
 
 # Windows only: the hard-link count of a file (src/platform/links/windows.rs), which std exposes only on Unix, and the
-# NVIDIA devices the driver shows (src/platform/accelerators/windows.rs): NVML, loaded at run time, so nothing is linked.
+# graphics adapters the system lists (src/platform/accelerators/windows.rs): DXGI, a system library, no vendor's.
 [target.'cfg(windows)'.dependencies]
-nvml-wrapper = "0.13.0"
+windows = { version = "0.62.2", features = ["Win32_Graphics_Dxgi"] }
 winapi-util = "0.1.11"
 
 # The native tests run the engine's futures on one multi-threaded Tokio runtime, as an app does (src/test_support.rs).
