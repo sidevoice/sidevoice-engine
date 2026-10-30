@@ -1198,8 +1198,12 @@ impl CatalogSource for GpuModels {
 struct GpuBehaviour {
     /// The accelerators its `load` was called with, in order.
     asked: Arc<std::sync::Mutex<Vec<Accelerator>>>,
-    /// Whether loading on the GPU fails.
-    gpu_fails: bool,
+    /// The code loading on the GPU fails with, if it does.
+    gpu_fails: Option<&'static str>,
+    /// The code loading on the CPU fails with, if it does.
+    cpu_fails: Option<&'static str>,
+    /// Cancelled when loading on the GPU fails.
+    cancel: Option<Cancel>,
     /// Whether the loaded model confirms the accelerator it runs on.
     confirms: bool,
 }
@@ -1239,8 +1243,16 @@ impl Library for GpuLibrary {
         _files: &Installed,
     ) -> Result<Box<dyn BackendModel>> {
         self.0.asked.lock().expect("asked").push(accelerator);
-        if self.0.gpu_fails && accelerator == Accelerator::Cuda {
-            return Err(Error::new("model-load-failed"));
+        let failure = if accelerator == Accelerator::Cuda {
+            self.0.gpu_fails
+        } else {
+            self.0.cpu_fails
+        };
+        if let Some(code) = failure {
+            if let Some(cancel) = &self.0.cancel {
+                cancel.cancel();
+            }
+            return Err(Error::new(code));
         }
         Ok(Box::new(GpuModel(self.0.confirms.then_some(accelerator))))
     }
@@ -1261,6 +1273,7 @@ impl BackendModel for GpuModel {
 
 /// `gpu-ear`, loaded over an engine whose host reports a GPU and the CPU; with what the library was asked for.
 fn load_on_gpu_host(behaviour: GpuBehaviour) -> (Result<LocalModel>, Vec<Accelerator>) {
+    let cancel = behaviour.cancel.clone().unwrap_or_default();
     let host = MemoryHost::serving(&[("https://models/gpu-1", b"gpu-1")]);
     let engine = Engine::with_backends(
         Box::new(GpuHost(host)),
@@ -1268,7 +1281,7 @@ fn load_on_gpu_host(behaviour: GpuBehaviour) -> (Result<LocalModel>, Vec<Acceler
         vec![Box::new(GpuBackend(behaviour.clone()))],
     )
     .expect("engine");
-    let loaded = block_on(engine.load("gpu-ear", None, &|_| {}, &Cancel::new()));
+    let loaded = block_on(engine.load("gpu-ear", None, &|_| {}, &cancel));
     let asked = behaviour.asked.lock().expect("asked").clone();
     (loaded, asked)
 }
@@ -1298,7 +1311,7 @@ fn a_gpu_the_backend_confirms_is_reported_as_running() {
 #[test]
 fn a_gpu_that_fails_to_load_falls_back_to_the_cpu_and_says_so() {
     let behaviour = GpuBehaviour {
-        gpu_fails: true,
+        gpu_fails: Some("model-load-failed"),
         ..GpuBehaviour::default()
     };
     let (loaded, asked) = load_on_gpu_host(behaviour);
@@ -1323,4 +1336,39 @@ fn a_cpu_that_fails_to_load_has_nothing_to_fall_back_to() {
     let fixture = Fixture::new();
     let error = fixture.load("broken", None).expect_err("fails");
     assert_eq!(error.code, "model-load-failed");
+}
+
+#[test]
+fn when_the_fallback_fails_too_the_error_is_the_first_attempts() {
+    let behaviour = GpuBehaviour {
+        gpu_fails: Some("model-load-failed"),
+        cpu_fails: Some("unsupported-model"),
+        ..GpuBehaviour::default()
+    };
+    let (loaded, asked) = load_on_gpu_host(behaviour);
+    assert_eq!(loaded.expect_err("fails").code, "model-load-failed");
+    assert_eq!(asked, [Accelerator::Cuda, Accelerator::Cpu]);
+}
+
+#[test]
+fn a_failure_the_cpu_would_share_is_not_retried() {
+    let behaviour = GpuBehaviour {
+        gpu_fails: Some("file-not-installed"),
+        ..GpuBehaviour::default()
+    };
+    let (loaded, asked) = load_on_gpu_host(behaviour);
+    assert_eq!(loaded.expect_err("fails").code, "file-not-installed");
+    assert_eq!(asked, [Accelerator::Cuda]);
+}
+
+#[test]
+fn a_cancelled_load_does_not_fall_back() {
+    let behaviour = GpuBehaviour {
+        gpu_fails: Some("model-load-failed"),
+        cancel: Some(Cancel::new()),
+        ..GpuBehaviour::default()
+    };
+    let (loaded, asked) = load_on_gpu_host(behaviour);
+    assert!(loaded.is_err());
+    assert_eq!(asked, [Accelerator::Cuda]);
 }

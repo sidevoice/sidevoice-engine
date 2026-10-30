@@ -15,8 +15,9 @@ impl super::Accelerators for Os {
         if !proc.join("version").exists() {
             return Nvidia::Absent;
         }
-        match fs::read_dir(proc.join("gpus")).map(|mut devices| devices.next().is_some()) {
-            Ok(true) => Nvidia::Present,
+        // A device read properly: an unreadable folder or entry shows nothing.
+        match fs::read_dir(proc.join("gpus")).map(|mut devices| devices.next()) {
+            Ok(Some(Ok(_))) => Nvidia::Present,
             _ => Nvidia::NoAdapter,
         }
     }
