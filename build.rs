@@ -4,7 +4,7 @@
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.
 //!
-//! And, on Windows, the manifest that makes UTF-8 the tests' ANSI code page.
+//! And, when CI asks, on Windows, the manifest that makes UTF-8 the tests' ANSI code page.
 
 use std::path::Path;
 use std::{env, fs};
@@ -18,8 +18,18 @@ fn main() {
         apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
     }
     bundled_families();
-    // The engine's own tests, on Windows, run as an app must: UTF-8 is their ANSI code page (README, "Build and test"). A
-    // no-op for every other target.
+    test_manifest();
+}
+
+/// The engine's own tests, on Windows, run as an app must: UTF-8 is their ANSI code page (README, "Build and test").
+/// Only when `SIDEVOICE_TEST_MANIFEST` is set, which CI sets for the jobs that run tests: a consumer building the engine
+/// as a dependency never needs the resource compiler for a manifest only tests take. Set, it is required: the build
+/// fails when the manifest cannot be prepared. A no-op for every target but Windows.
+fn test_manifest() {
+    println!("cargo:rerun-if-env-changed=SIDEVOICE_TEST_MANIFEST");
+    if env::var_os("SIDEVOICE_TEST_MANIFEST").is_none() {
+        return;
+    }
     println!("cargo:rerun-if-changed=tests/windows-utf8.rc");
     println!("cargo:rerun-if-changed=tests/windows-utf8.manifest");
     embed_resource::compile_for_tests("tests/windows-utf8.rc", embed_resource::NONE)

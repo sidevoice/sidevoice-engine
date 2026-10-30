@@ -1,4 +1,13 @@
-//! The voice loop for real, through the engine's public API only, as an app runs it: `NativeHost`, the bundled
+//! Th    block_on(engine.load(&model.id, Some(build), &progress, &Cancel::new())).map_err(|e| {
+        // On Windows a model directory with non-ASCII characters loads only if this binary has the UTF-8 manifest.
+        let hint = if e.code == "model-load-failed" {
+            " (a Windows test binary needs the UTF-8 manifest: build it with SIDEVOICE_TEST_MANIFEST=1)"
+        } else {
+            ""
+        };
+        format!("{build}: {e}{hint}")
+    })
+} voice loop for real, through the engine's public API only, as an app runs it: `NativeHost`, the bundled
 //! catalogue, the local catalogue's models (the build the plan names, which must run here), `Engine::load`, then the
 //! loaded model's `as_tts` (`voices`, `speak`) and `as_stt` (`transcribe`).
 //!
