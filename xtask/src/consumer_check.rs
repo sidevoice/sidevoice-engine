@@ -1,5 +1,4 @@
-//! `cargo xtask consum    // Not `canonicalize`: on Windows that gives a `\\?\` path, which Cargo does not take as a dependency path.
-    let engine = std::path::absolute(repo()).map_err(|e| format!("the repository: {e}"))?;r-check`: the engine built the way a downstream app builds it. A minimal crate
+//! `cargo xtask consumer-check`: the engine built the way a downstream app builds it. A minimal crate
 //! (`consumer_check/consumer.rs`) that depends on the engine is generated outside the repository, so it inherits none
 //! of this repository's `.cargo/config.toml`, and carries only the configuration the README ("Build and test") tells
 //! a consumer to set: `GGML_NATIVE=OFF`, the Windows static C runtime (`+crt-static`, `CMAKE_POLICY_DEFAULT_CMP0091`
@@ -32,9 +31,8 @@ pub(crate) fn run() -> Result<()> {
     empty_dir(&dir)?;
     empty_dir(&dir.join("src"))?;
     empty_dir(&dir.join(".cargo"))?;
-    let engine = repo()
-        .canonicalize()
-        .map_err(|e| format!("the repository: {e}"))?;
+    // Not `canonicalize`: on Windows that gives a verbatim (`\\?\`) path, which Cargo does not take as a dependency path.
+    let engine = std::path::absolute(repo()).map_err(|e| format!("the repository: {e}"))?;
     let engine = engine.to_string_lossy().replace('\\', "/");
     let manifest = format!(
         "[package]\nname = \"consumer\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
