@@ -77,15 +77,6 @@ whisper-rs = { version = "=0.16.0", features = ["metal"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bzip2 = "=0.6.1"
 futures-core = "0.3.31"
-# The ONNX Runtime backend (src/backend/implementations/onnx_runtime.rs): `ort`'s safe API over the ONNX Runtime
-# sherpa-onnx already links (below), never a runtime of its own. `ort-sys` is named only to switch its linking off
-# (`disable-linking`): it then links and downloads nothing, and `OrtGetApiBase` resolves to the runtime inside sherpa-onnx's
-# libraries. `ort` keeps its ordinary lazy initialization (no `alternative-backend`): the engine installs no process-wide
-# API, so an app's own use of `ort` works the same before and after the engine's. Cargo unifies features, so such an app's
-# `ort` also runs on that linked runtime (1.28) rather than link or download one: two static ONNX Runtimes could not be
-# linked into one binary anyway. API 17 is what it asks of a runtime (1.17 or later).
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17"] }
-ort-sys = { version = "=2.0.0-rc.13", default-features = false, features = ["disable-linking"] }
 reqwest = { version = "=0.13.1", default-features = false, features = ["rustls", "stream"] }
 sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
 tar = { version = "0.4.46", default-features = false }
@@ -107,6 +98,19 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # whisper.cpp must use libstdc++'s old string ABI, as sherpa's libraries do (.cargo/config.toml, README).
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android"), not(target_os = "ios")))'.dependencies]
 whisper-rs = "=0.16.0"
+
+# Every native build but iOS's: the ONNX Runtime backend (src/backend/implementations/onnx_runtime.rs). `ort`'s safe
+# API over the ONNX Runtime sherpa-onnx already links, never a runtime of its own. `ort-sys` is named only to switch
+# its linking off (`disable-linking`): it then links and downloads nothing, and `OrtGetApiBase` resolves to the
+# runtime inside sherpa-onnx's libraries. `ort` keeps its ordinary lazy initialization (no `alternative-backend`): the
+# engine installs no process-wide API, so an app's own use of `ort` works the same before and after the engine's.
+# Cargo unifies features, so such an app's `ort` also runs on that linked runtime (1.28) rather than link or download
+# one: two static ONNX Runtimes could not be linked into one binary anyway. API 17 is what it asks of a runtime (1.17
+# or later). Not on iOS, where sherpa-onnx's xcframework keeps its ONNX Runtime private and exports no
+# `OrtGetApiBase`: no local end of turn there for now (the build.rs alias `onnx_runtime` names this same condition).
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17"] }
+ort-sys = { version = "=2.0.0-rc.13", default-features = false, features = ["disable-linking"] }
 
 # Windows only: the hard-link count of a file (src/platform/links/windows.rs), which std exposes only on Unix, the
 # graphics adapters the system lists (src/platform/accelerators/windows.rs: DXGI, a system library, no vendor's) and the

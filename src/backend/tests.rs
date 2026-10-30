@@ -19,7 +19,9 @@ fn built_in_is_exactly_this_platforms_backends() {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             expected.push("mlx");
         }
-        expected.push("onnxruntime");
+        if cfg!(not(target_os = "ios")) {
+            expected.push("onnxruntime");
+        }
         expected.push("sherpa-onnx");
         if cfg!(not(any(target_os = "android", target_os = "ios"))) {
             expected.push("whisper-cpp");

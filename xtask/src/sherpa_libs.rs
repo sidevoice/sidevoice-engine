@@ -32,6 +32,8 @@ use crate::{metadata, read, repo, run_in, sha256, sherpa_fields, write, Result};
 /// The pinned archives, relative to the repository.
 const PINS: &str = "xtask/sherpa-onnx-libs.json";
 const RELEASES: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download";
+/// The release tag the iOS xcframeworks of every version are published under.
+const XCFRAMEWORKS: &str = "xcframework";
 
 /// `xtask/sherpa-onnx-libs.json`.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +41,7 @@ const RELEASES: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 struct Pins {
     /// sherpa-onnx's version: the one Cargo.toml pins the crate to.
     version: String,
-    /// Per platform (`<os>-<arch>`, Rust's names), its static archive; and `android`, the shared libraries of every ABI.
+    /// Per platform (`<os>-<arch>`, Rust's names), its static archive; and `android` and `ios`, the shared libraries.
     archives: BTreeMap<String, Archive>,
 }
 
@@ -88,7 +90,12 @@ fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(&archive.name);
     if !path.is_file() || sha256(&read(&path)?) != archive.sha256 {
-        let url = format!("{RELEASES}/v{}/{}", pins.version, archive.name);
+        let tag = if archive.name.ends_with(".xcframework.zip") {
+            XCFRAMEWORKS.to_owned()
+        } else {
+            format!("v{}", pins.version)
+        };
+        let url = format!("{RELEASES}/{tag}/{}", archive.name);
         let partial = dir.join(format!("{}.partial", archive.name));
         let partial_text = partial.to_string_lossy().into_owned();
         run_in(&dir, "curl -fsSL --retry 3 -o", &[&partial_text, &url])?;
@@ -107,6 +114,12 @@ fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf
 /// downloading what it does not check.
 pub(crate) fn android_archive(dir: Option<&str>) -> Result<PathBuf> {
     pinned_archive("android", dir).map(|(_, dir, _)| dir)
+}
+
+/// The iOS xcframework (`SherpaOnnxC.xcframework`, device and simulator slices) as a zip, checked against its pin and
+/// left in `dir` (default as `fetch`'s). Returns its path.
+pub(crate) fn ios_archive(dir: Option<&str>) -> Result<PathBuf> {
+    pinned_archive("ios", dir).map(|(_, _, path)| path)
 }
 
 /// Unpacks `archive` into `dir`, through a scratch directory so that a half-unpacked `stem/` never stands for a whole
@@ -199,10 +212,11 @@ fn has_files(dir: &Path) -> bool {
 /// `cargo xtask sherpa-libs --pin` (or `--check`).
 pub(crate) fn pin(check: bool) -> Result<()> {
     let version = crate_version(&String::from_utf8_lossy(&read(&repo().join("Cargo.toml"))?))?;
-    let release = release(&version)?;
+    let mut assets = release(&format!("v{version}"))?;
+    assets.extend(release(XCFRAMEWORKS)?);
     let mut archives = BTreeMap::new();
     for (platform, name) in archive_names(&version) {
-        let sha256 = release
+        let sha256 = assets
             .get(&name)
             .ok_or(format!("sherpa-onnx v{version}: no asset {name}"))?
             .clone();
@@ -255,7 +269,7 @@ fn crate_version(manifest: &str) -> Result<String> {
 }
 
 /// The archive of each platform, as `sherpa-onnx-sys`'s build script names it (`archive_name`: the static arms, and the
-/// Android one, where every target links the shared libraries).
+/// Android and iOS ones, where every target links the shared libraries).
 fn archive_names(version: &str) -> Vec<(String, String)> {
     [
         ("linux-x86_64", "linux-x64-static-lib"),
@@ -273,13 +287,17 @@ fn archive_names(version: &str) -> Vec<(String, String)> {
             format!("sherpa-onnx-v{version}-{kind}.tar.bz2"),
         )
     })
+    .chain([(
+        "ios".to_owned(),
+        format!("sherpa-onnx-v{version}-ios-shared-onnxruntime-static.xcframework.zip"),
+    )])
     .collect()
 }
 
-/// Each asset of the release `v<version>` and its SHA-256, as GitHub publishes it. Asked with `GITHUB_TOKEN` when it
-/// is set.
-fn release(version: &str) -> Result<BTreeMap<String, String>> {
-    let url = format!("https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/tags/v{version}");
+/// Each asset of the release tagged `tag` and its SHA-256, as GitHub publishes it. Asked with `GITHUB_TOKEN` when it is
+/// set.
+fn release(tag: &str) -> Result<BTreeMap<String, String>> {
+    let url = format!("https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/tags/{tag}");
     let auth = env::var("GITHUB_TOKEN").map(|token| format!("Authorization: Bearer {token}"));
     let mut args: Vec<&str> = auth
         .as_deref()

@@ -1,5 +1,6 @@
-// Native only: it runs on the ONNX Runtime that sherpa-onnx links into native builds.
-#![cfg(native)]
+// Native builds but iOS's: it runs on the ONNX Runtime that sherpa-onnx links, and the xcframework iOS gets exports none
+// for `ort` to find (its dependency is in Cargo.toml's table for the same condition).
+#![cfg(onnx_runtime)]
 //! ONNX Runtime: ONNX models that no other backend's library knows how to configure, run directly. Today smart-turn
 //! v3, end of turn.
 //!
