@@ -12,6 +12,8 @@
 //!   approve.
 //! - `pin-catalog [--check]`: every file of every catalogue build pinned to a Hugging Face commit, with its size and
 //!   `sha256`, and estimated memory written (or, with `--check`, checked) (xtask/src/catalog.rs).
+//! - `consumer-check`: the engine built as a downstream app builds it, with only the configuration the README asks of
+//!   a consumer (xtask/src/consumer_check.rs).
 //! - `e2e [DIR]`: the voice loop, the engine's ignored integration test `tests/voice_loop.rs`, run with its files kept in
 //!   DIR and its table appended to the job's summary (xtask/src/e2e.rs).
 //! - `remote-live`: the remote providers called for real, the engine's ignored integration test `tests/remote_live.rs`,
@@ -27,6 +29,7 @@
 //!   recorded clips, and hears Kokoro and Supertonic back (xtask/src/web_e2e.rs, plan in xtask/web-e2e.json).
 
 mod catalog;
+mod consumer_check;
 mod e2e;
 mod link_size;
 mod npm;
@@ -50,7 +53,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
-     | pin-catalog [--check] | e2e [DIR] | link-size | remote-live | test-browser | web-e2e [DIR] \
+     | pin-catalog [--check] | consumer-check | e2e [DIR] | link-size | remote-live | test-browser | web-e2e [DIR] \
      | sherpa-libs [DIR | --linked | --pin | --check] | platform-guard";
 
 fn main() -> ExitCode {
@@ -66,6 +69,7 @@ fn main() -> ExitCode {
         ["npm-publish", tag] => npm::publish(tag),
         ["pin-catalog"] => catalog::pin(false),
         ["pin-catalog", "--check"] => catalog::pin(true),
+        ["consumer-check"] => consumer_check::run(),
         ["e2e"] => e2e::run(None),
         ["e2e", dir] => e2e::run(Some(dir)),
         ["link-size"] => link_size::measure(),

@@ -38,9 +38,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x86_64, runner: ubuntu-24.04 }
-          - { target: linux-aarch64, runner: ubuntu-24.04-arm }
-          - { target: macos-aarch64, runner: macos-15 }
+          - { target: linux-x86_64, runner: ubuntu-24.04, dir: e2e }
+          - { target: linux-aarch64, runner: ubuntu-24.04-arm, dir: e2e }
+          - { target: macos-aarch64, runner: macos-15, dir: e2e }
+          # CPU only: no GPU on a hosted runner, and the engine has no Windows accelerator. The directory has a space and
+          # non-ASCII letters on purpose: that is what a user's model folder can look like.
+          - { target: windows-x86_64, runner: windows-latest, dir: "e2e ñandú modelos" }
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/setup
@@ -49,20 +55,22 @@ jobs:
       - id: models
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/e2e
+          path: ${{ runner.temp }}/${{ matrix.dir }}
           key: e2e-${{ matrix.target }}-${{ hashFiles('catalog/families/*.json', 'tests/voice_loop.json') }}
           restore-keys: e2e-${{ matrix.target }}-
-      - run: cargo xtask e2e "$RUNNER_TEMP/e2e"
+      - run: cargo xtask e2e "$RUNNER_TEMP/$E2E_DIR"
+        env:
+          E2E_DIR: ${{ matrix.dir }}
       - if: always() && steps.models.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/e2e
+          path: ${{ runner.temp }}/${{ matrix.dir }}
           key: ${{ steps.models.outputs.cache-primary-key }}
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: speech-${{ matrix.target }}
-          path: ${{ runner.temp }}/e2e/speech
+          path: ${{ runner.temp }}/${{ matrix.dir }}/speech
           if-no-files-found: ignore
 
   web:

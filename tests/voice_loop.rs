@@ -13,6 +13,10 @@
 //! else (`voice_loop/vad.rs`). Each end-of-turn model hears each clip whole and cut mid-phrase, each followed
 //! by a short pause, and must call the first a complete turn and the second not (`voice_loop/end_of_turn.rs`).
 //!
+//! Last, the model's life on disk, on the first voice activity detector (the smallest build): it is loaded again, an
+//! install that is cancelled stores nothing, uninstalling frees its files and leaves no empty one behind, and a fresh
+//! install loads (`lifecycle`).
+//!
 //! It downloads about 1.5 GB the first time, so it is ignored unless asked for; the `e2e` workflow asks, on each native
 //! platform, through `cargo xtask e2e`:
 //!
@@ -37,8 +41,8 @@ use std::{env, fs};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
-    Accelerator, BundledCatalog, Cancel, Engine, Host, LocalModel, NativeHost, Progress, Vad,
-    VadEvent, VadOptions,
+    Accelerator, BundledCatalog, Cancel, Engine, Host, LocalModel, NativeHost, Progress,
+    ProgressSink, Vad, VadEvent, VadOptions,
 };
 
 #[path = "voice_loop/audio.rs"]
@@ -261,6 +265,11 @@ fn run() -> Result<()> {
             });
         }
     }
+    let lifecycle = match plan.vad.builds.first() {
+        Some(build) => lifecycle(&engine, build, &dir.join("engine")),
+        None => Err("voice_loop.json: no voice activity detector".to_owned()),
+    };
+    println!("lifecycle: {lifecycle:?}");
     report(
         &rows,
         plan.max_wer,
@@ -268,7 +277,109 @@ fn run() -> Result<()> {
         &turns,
         &loaded_on,
         &dir.join("summary.md"),
-    )
+    )?;
+    lifecycle
+}
+
+/// What a build goes through on disk, in `store` (the host's storage): loaded again, an install cancelled (before it
+/// starts, and as its first progress is told) stores nothing, an uninstall frees the files and leaves none empty, and
+/// the build installs afresh and loads.
+fn lifecycle(engine: &Engine, build: &str, store: &Path) -> Result<()> {
+    let model = model_of(engine, build)?;
+    let load = || {
+        let loaded = block_on(engine.load(&model, Some(build), &|_: Progress| {}, &Cancel::new()))
+            .map_err(|e| format!("{build}: {e}"))?;
+        loaded
+            .as_vad()
+            .map(drop)
+            .ok_or(format!("{build}: not a voice activity detector"))
+    };
+    load()?;
+    let before = tree(store)?;
+    // Reloaded: the first load is gone, so this reads the files again.
+    load()?;
+    block_on(engine.uninstall(&model, Some(build)))
+        .map_err(|e| format!("uninstall {build}: {e}"))?;
+    let freed = tree(store)?;
+    if freed.bytes >= before.bytes || !freed.empty.is_empty() {
+        return Err(format!(
+            "uninstalling {build} left {} B of {} B and the empty files {:?}",
+            freed.bytes, before.bytes, freed.empty
+        ));
+    }
+    let cancelled_install = |sink: &dyn ProgressSink, cancel: &Cancel| {
+        match block_on(engine.install(&model, Some(build), sink, cancel)) {
+            Err(e) if e.code == "cancelled" => {}
+            other => return Err(format!("a cancelled install of {build} gave {other:?}")),
+        }
+        let left = tree(store)?;
+        if left.bytes > freed.bytes || !left.empty.is_empty() {
+            return Err(format!(
+                "a cancelled install of {build} left {} B (was {} B) and the empty files {:?}",
+                left.bytes, freed.bytes, left.empty
+            ));
+        }
+        Ok(())
+    };
+    let before_start = Cancel::new();
+    before_start.cancel();
+    cancelled_install(&|_: Progress| {}, &before_start)?;
+    let at_first_progress = Cancel::new();
+    cancelled_install(
+        &|_: Progress| at_first_progress.cancel(),
+        &at_first_progress,
+    )?;
+    load()?;
+    let again = tree(store)?;
+    if again.bytes < before.bytes || !again.empty.is_empty() {
+        return Err(format!(
+            "reinstalling {build} stored {} B, not {} B",
+            again.bytes, before.bytes
+        ));
+    }
+    Ok(())
+}
+
+/// The id of the model that has the build `build`.
+fn model_of(engine: &Engine, build: &str) -> Result<String> {
+    let models =
+        block_on(engine.local_catalog().models(None)).map_err(|e| format!("the models: {e}"))?;
+    models
+        .iter()
+        .find(|model| model.builds.iter().any(|entry| entry.id == build))
+        .map(|model| model.id.clone())
+        .ok_or(format!("{build}: not in the catalogue"))
+}
+
+/// What lies under a directory: the bytes in its files, counted per path, and the files with none.
+struct Tree {
+    bytes: u64,
+    empty: Vec<PathBuf>,
+}
+
+fn tree(dir: &Path) -> Result<Tree> {
+    let mut tree = Tree {
+        bytes: 0,
+        empty: Vec::new(),
+    };
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let len = fs::metadata(&path)
+                .map_err(|e| format!("{}: {e}", path.display()))?
+                .len();
+            tree.bytes += len;
+            if len == 0 {
+                tree.empty.push(path);
+            }
+        }
+    }
+    Ok(tree)
 }
 
 /// What `vad` finds in the clip `what` (its samples and their rate), set between silences and fed 20 ms at a time,
