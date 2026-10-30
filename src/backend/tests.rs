@@ -3,6 +3,7 @@
 
 use super::{built_in, is_known, KNOWN};
 use crate::host::Host;
+use crate::platform::local_engines::WHISPER_CPP;
 use crate::test_support::FakeHost;
 
 #[cfg(web)]
@@ -21,7 +22,7 @@ fn built_in_is_exactly_this_platforms_backends() {
         }
         expected.push("onnxruntime");
         expected.push("sherpa-onnx");
-        if cfg!(not(any(target_os = "android", target_os = "ios"))) {
+        if WHISPER_CPP {
             expected.push("whisper-cpp");
         }
     }

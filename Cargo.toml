@@ -101,7 +101,7 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # `whisper-rs`, pinned exactly (Unlicense; it bundles whisper.cpp's sources, MIT). Phase 1 links it statically, like
 # sherpa-onnx: its build script compiles whisper.cpp and ggml with CMake and a C++ compiler, for the CPU (Metal is
 # added on Apple silicon, above). Loading it on demand instead is sidevoice-engine#33. Never on wasm32, and not on
-# Android or iOS, where the on-device speech to text is sherpa-onnx's (the build.rs alias `whisper_cpp` names this same
+# Android or iOS, where the on-device speech to text is sherpa-onnx's (`platform::local_engines` names this same
 # condition). whisper.cpp tunes ggml for the building machine's CPU unless the build's environment sets
 # GGML_NATIVE=OFF, as an app shipping its binary to other machines should (README). With sherpa-onnx on Linux x86_64,
 # whisper.cpp must use libstdc++'s old string ABI, as sherpa's libraries do (.cargo/config.toml, README).
