@@ -1,5 +1,6 @@
-//! The engine's platform aliases, named once: `web`, `native` and `apple_silicon`. They name platforms only; which
-//! of them a module needs is that module's own `#[cfg]` to say.
+//! The engine's platform aliases, named once: `web`, `native`, `apple_silicon` and `whisper_cpp` (a native build that is
+//! not a phone's: the one condition of Cargo.toml's `whisper-rs` table). They name platforms only; which of them a
+//! module needs is that module's own `#[cfg]` to say.
 //!
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.
@@ -16,6 +17,7 @@ fn main() {
         web: { target_arch = "wasm32" },
         native: { not(target_arch = "wasm32") },
         apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
+        whisper_cpp: { all(native, not(target_os = "android"), not(target_os = "ios")) },
     }
     bundled_families();
     test_manifest();

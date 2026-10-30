@@ -274,7 +274,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows too, built and tested in CI), natively | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows too, built and tested in CI), natively; not on Android or iOS | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
@@ -382,6 +382,41 @@ export SHERPA_ONNX_LIB_DIR="$(cargo xtask sherpa-libs)"
 cargo xtask sherpa-libs --pin     # after changing the crate's version: the archives' digests (GitHub's) and the config fields
 cargo xtask sherpa-libs --check   # what link-size.yml runs when the dependencies, the pins or the fields change
 ```
+
+### Android
+
+The engine builds for `aarch64-linux-android` and `x86_64-linux-android` (the emulator), with the backends a phone can
+run: `sherpa-onnx` (Silero voice activity, and the models sherpa-onnx runs) and `onnxruntime` (smart-turn), plus the
+remote providers. `whisper-cpp` is not in an Android build: its dependency is in Cargo.toml's table for the builds that
+are not a phone's, and a catalogue build that needs it is rejected as `backend-not-in-this-build`. You need the Android
+NDK (r28 or later, whose libraries are 16 KB page aligned; `ANDROID_NDK_HOME`), the two Rust targets and
+[cargo-ndk](https://github.com/bbqsrc/cargo-ndk).
+
+```sh
+cargo xtask android-build [DIR]   # cargo ndk build --release for both ABIs, minSdk 26; the libraries to package, in DIR/<abi>/
+```
+
+- **The libraries a shell packages.** sherpa-onnx is shared on Android: the `static` feature resolves to the shared
+  libraries, and `sherpa-onnx-sys`'s build script links `libsherpa-onnx-c-api.so` and `libonnxruntime.so` (the one that
+  also resolves `OrtGetApiBase` for the `onnxruntime` backend). `android-build` takes them from the archive
+  `xtask/sherpa-onnx-libs.json` pins (checked against its digest, then handed to the build script through
+  `SHERPA_ONNX_ARCHIVE_DIR`), and leaves them in `DIR/<abi>/` (default `target/android/<abi>/`), `arm64-v8a` and
+  `x86_64`: they go to the app's `jniLibs/<abi>/`, beside the app's own library. They need no `libc++_shared.so`. (The
+  build script also tries to copy them into a Tauri project's `gen/android/app/src/main/jniLibs` when it finds one.)
+  `SHERPA_ONNX_LIB_DIR`, the desktop's libraries, must not be set for this build; the command removes it.
+- **TLS needs the app's help.** `reqwest` verifies certificates with the system's verifier
+  (`rustls-platform-verifier`), which calls into the JVM. Before the engine's first HTTPS call, the app must
+  - add the verifier's Kotlin component to its Gradle build (a `maven` repository pointing at the
+    `rustls-platform-verifier-android` crate that `cargo metadata --filter-platform aarch64-linux-android` finds, and
+    `implementation "rustls:rustls-platform-verifier:latest.release"`: the crate's README, "Android"), and
+  - call `rustls_platform_verifier::android::init_with_env(env, context)` once, from the JNI entry point that has the
+    `Activity`'s `Context` (or `init_hosted`), before any request. The engine does not do it: it has no `JNIEnv`.
+
+  Without either, the first request fails. The remote providers and the model downloads both go through it.
+- **`ndk_context`.** The engine itself needs none; `cpal` (the call's audio, `sidevoice-voice`) does, and Tauri 2.11 and
+  later initialises it.
+- **Limits.** The CPU is the only accelerator the Android host reports (NNAPI is deprecated since Android 15); the
+  engine's runtime on a device is not covered by CI, which builds and links only.
 
 The native tests build and check this platform's backends; the one that downloads a real file through `NativeHost` is
 ignored unless asked for, and CI asks:

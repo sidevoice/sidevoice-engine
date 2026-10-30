@@ -39,7 +39,7 @@ const RELEASES: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 struct Pins {
     /// sherpa-onnx's version: the one Cargo.toml pins the crate to.
     version: String,
-    /// Per platform (`<os>-<arch>`, Rust's names), its static archive.
+    /// Per platform (`<os>-<arch>`, Rust's names), its static archive; and `android`, the shared libraries of every ABI.
     archives: BTreeMap<String, Archive>,
 }
 
@@ -52,11 +52,34 @@ struct Archive {
 
 /// `cargo xtask sherpa-libs [DIR]`.
 pub(crate) fn fetch(dir: Option<&str>) -> Result<()> {
-    let pins = pins()?;
     let platform = format!("{}-{}", env::consts::OS, env::consts::ARCH);
+    let (archive, dir, path) = pinned_archive(&platform, dir)?;
+    let stem = archive
+        .name
+        .strip_suffix(".tar.bz2")
+        .ok_or(format!("{}: not a .tar.bz2", archive.name))?;
+    let lib = dir.join(stem).join("lib");
+    if !lib.is_dir() {
+        unpack(&path, &dir, stem)?;
+    }
+    let lib = lib.to_string_lossy().into_owned();
+    println!("{lib}");
+    if let Some(github_env) = env::var_os("GITHUB_ENV") {
+        let mut text =
+            String::from_utf8_lossy(&read(Path::new(&github_env)).unwrap_or_default()).into_owned();
+        text.push_str(&format!("SHERPA_ONNX_LIB_DIR={lib}\n"));
+        write(Path::new(&github_env), text.as_bytes())?;
+    }
+    Ok(())
+}
+
+/// The archive pinned for `platform` (a key of `archives`) in `dir` (default as `fetch`'s): downloaded unless it is
+/// there, and checked against its digest. Returns its pin, `dir` and its path.
+fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf, PathBuf)> {
+    let mut pins = pins()?;
     let archive = pins
         .archives
-        .get(&platform)
+        .remove(platform)
         .ok_or(format!("{PINS}: no archive for {platform}"))?;
     let dir = match dir {
         Some(dir) => PathBuf::from(dir),
@@ -76,23 +99,14 @@ pub(crate) fn fetch(dir: Option<&str>) -> Result<()> {
         }
         fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))?;
     }
-    let stem = archive
-        .name
-        .strip_suffix(".tar.bz2")
-        .ok_or(format!("{}: not a .tar.bz2", archive.name))?;
-    let lib = dir.join(stem).join("lib");
-    if !lib.is_dir() {
-        unpack(&path, &dir, stem)?;
-    }
-    let lib = lib.to_string_lossy().into_owned();
-    println!("{lib}");
-    if let Some(github_env) = env::var_os("GITHUB_ENV") {
-        let mut text =
-            String::from_utf8_lossy(&read(Path::new(&github_env)).unwrap_or_default()).into_owned();
-        text.push_str(&format!("SHERPA_ONNX_LIB_DIR={lib}\n"));
-        write(Path::new(&github_env), text.as_bytes())?;
-    }
-    Ok(())
+    Ok((archive, dir, path))
+}
+
+/// The Android archive (the libraries of every ABI, `jniLibs/<abi>/`), checked against its pin and left in `dir`
+/// (default as `fetch`'s). `SHERPA_ONNX_ARCHIVE_DIR=<dir>` makes `sherpa-onnx-sys`'s build script unpack it, instead of
+/// downloading what it does not check.
+pub(crate) fn android_archive(dir: Option<&str>) -> Result<PathBuf> {
+    pinned_archive("android", dir).map(|(_, dir, _)| dir)
 }
 
 /// Unpacks `archive` into `dir`, through a scratch directory so that a half-unpacked `stem/` never stands for a whole
@@ -240,7 +254,8 @@ fn crate_version(manifest: &str) -> Result<String> {
         .ok_or("Cargo.toml: no sherpa-onnx = { version = \"=X.Y.Z\", ... }".into())
 }
 
-/// The static archive of each platform, as `sherpa-onnx-sys`'s build script names it (`archive_name`, static arms).
+/// The archive of each platform, as `sherpa-onnx-sys`'s build script names it (`archive_name`: the static arms, and the
+/// Android one, where every target links the shared libraries).
 fn archive_names(version: &str) -> Vec<(String, String)> {
     [
         ("linux-x86_64", "linux-x64-static-lib"),
@@ -249,6 +264,7 @@ fn archive_names(version: &str) -> Vec<(String, String)> {
         ("macos-aarch64", "osx-arm64-static-lib"),
         ("windows-x86_64", "win-x64-static-MT-Release-lib"),
         ("windows-aarch64", "win-arm64-static-MT-Release-lib"),
+        ("android", "android"),
     ]
     .into_iter()
     .map(|(platform, kind)| {

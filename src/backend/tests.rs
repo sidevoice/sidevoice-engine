@@ -21,7 +21,9 @@ fn built_in_is_exactly_this_platforms_backends() {
         }
         expected.push("onnxruntime");
         expected.push("sherpa-onnx");
-        expected.push("whisper-cpp");
+        if cfg!(not(any(target_os = "android", target_os = "ios"))) {
+            expected.push("whisper-cpp");
+        }
     }
     assert_eq!(ids, expected);
 }

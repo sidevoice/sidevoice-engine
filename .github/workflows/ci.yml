@@ -7,7 +7,8 @@ name: ci
 # packaged build by npm-smoke); whether they work on a given machine is each backend's probe(). Models run for real
 # on every native target through the sherpa-onnx backend (test-inference; whisper.cpp runs them in the e2e workflow),
 # linked from the libraries `cargo xtask sherpa-libs` fetched and checked (.github/actions/setup), which `sherpa-libs
-# --linked` proves. What linking each backend's engine costs is link-size.yml's.
+# --linked` proves. What linking each backend's engine costs is link-size.yml's. The engine is also built for Android
+# (build-android), linked but not run.
 on:
   # Into any branch, so a pull request stacked on another is checked before its base merges.
   pull_request:
@@ -103,6 +104,19 @@ jobs:
         env:
           SIDEVOICE_TEST_MODELS: ${{ runner.temp }}/test-models
       - run: cargo xtask sherpa-libs --linked
+
+  # The engine for Android, as a phone's app builds it: cargo-ndk for each ABI, linked against sherpa-onnx's Android
+  # libraries (pinned, checked against their digest), `cargo xtask android-build`. Built and linked, not run: there is
+  # no device here, and the engine's cdylib failing to link is what a missing symbol looks like.
+  build-android:
+    name: Build (Android)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+        with:
+          android: true
+      - run: cargo xtask android-build
 
   # What a downstream app does on Windows: a crate outside this repository, with only the configuration the README asks of
   # a consumer (it inherits nothing from .cargo/config.toml), builds against the engine and runs (xtask/src/consumer_check.rs).
