@@ -71,3 +71,33 @@ impl AcceleratorClass {
         }
     }
 }
+
+/// The accelerator a loaded model was asked to run on, and the one it is known to run on
+/// ([`LocalModel::accelerator`](crate::LocalModel::accelerator)). The host only reports candidates, and a backend's
+/// library can run a model on the CPU after a GPU did not take it, so what was asked is not what is running: a GPU is
+/// reported as `actual` only when the backend confirmed it, never because it was requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AcceleratorUse {
+    /// The accelerator the engine chose for the build and asked the backend to load it on: the best that the host
+    /// reports, the backend's probe confirms and the build accepts.
+    pub requested: Accelerator,
+    /// The accelerator it runs on, when that is known: the CPU for a model loaded on a CPU, the CPU after the engine
+    /// loaded it there because `requested` did not load, and whatever the backend confirmed for a GPU. `None`: the
+    /// backend cannot tell (a library that falls back to the CPU by itself says only in its log), so it is not known to
+    /// be on `requested`.
+    pub actual: Option<Accelerator>,
+}
+
+impl AcceleratorUse {
+    /// Whether the model is known to run on the accelerator that was requested.
+    #[must_use]
+    pub fn is_confirmed(&self) -> bool {
+        self.actual == Some(self.requested)
+    }
+
+    /// Whether the model is known to run on another accelerator than the one that was requested.
+    #[must_use]
+    pub fn fell_back(&self) -> bool {
+        self.actual.is_some_and(|actual| actual != self.requested)
+    }
+}

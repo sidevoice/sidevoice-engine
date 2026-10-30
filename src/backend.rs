@@ -53,7 +53,11 @@
 //!
 //! - finds each file it needs in `files` by its key in the catalogue;
 //! - loads the model's files on the `accelerator` it is given, one that `probe` returned; it does not fall back to
-//!   another one by itself (the engine decides that, with a new selection);
+//!   another one by itself (the engine decides that: when a load on a GPU or a neural engine fails, it loads once more on
+//!   the CPU the build can run on, and records both in the model's `AcceleratorUse`);
+//! - says, through `BackendModel::confirmed_accelerator`, which accelerator the model really runs on only if it verified
+//!   it; a library that falls back by itself without saying leaves it unanswered, and the engine then does not report
+//!   the model as running on the accelerator it asked for;
 //! - returns a [`BackendModel`] that is a speech-to-text model, a text-to-speech model, a voice activity detector, or
 //!   several, and keeps nothing:
 //!   the engine owns what it returns, and the backend object stays empty and stateless (what is open lives in the

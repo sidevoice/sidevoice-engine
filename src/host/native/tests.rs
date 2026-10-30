@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use super::NativeHost;
 use crate::host::{Accelerator, Host, Runs};
 use crate::install::{Artifact, Cancel, Installer};
+use crate::platform::accelerators::{Accelerators, Machine};
 use crate::test_support::block_on;
 
 /// A fresh directory under the system's temporary one, removed when dropped.
@@ -42,7 +43,7 @@ fn it_reports_this_machine() {
     assert_eq!(caps.os, std::env::consts::OS);
     assert_eq!(caps.arch, std::env::consts::ARCH);
     assert!(caps.has(Accelerator::Cpu));
-    assert_eq!(caps.has(Accelerator::Metal), cfg!(target_os = "macos"));
+    assert_eq!(caps.accelerators, Machine::detect());
     assert!(caps.cores.is_some_and(|cores| cores > 0));
     assert!(caps.memory_mb.is_some_and(|mb| mb > 0));
 }

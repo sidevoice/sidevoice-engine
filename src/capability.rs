@@ -16,6 +16,7 @@ use async_lock::Mutex;
 
 use crate::backend::{BackendModel, Library};
 use crate::catalog::{Capability, Voice};
+use crate::host::AcceleratorUse;
 use crate::{Error, Result};
 
 pub(crate) mod audio;
@@ -44,6 +45,8 @@ pub(crate) struct Resident {
     /// listing for a remote one.
     languages: Vec<String>,
     voices: Vec<Voice>,
+    /// What a local model was asked to run on and is known to run on; a remote model has none.
+    accelerator: Option<AcceleratorUse>,
 }
 
 impl fmt::Debug for Resident {
@@ -55,8 +58,8 @@ impl fmt::Debug for Resident {
 }
 
 impl Resident {
-    /// `model`, with `library` for a local model (which it keeps open; `None` for a remote one); its capabilities are
-    /// what it answers to. Shared: every handle of it holds it, and the engine's memory remembers a local one weakly.
+    /// `model`, with `library` and `accelerator` for a local model (the library it keeps open, and the accelerator it
+    /// runs on; `None` for a remote one); its capabilities are what it answers to. Shared: every handle of it holds it, and the engine's memory remembers a local one weakly.
     #[cfg_attr(
         web,
         allow(
@@ -69,6 +72,7 @@ impl Resident {
         library: Option<Arc<dyn Library>>,
         languages: Vec<String>,
         voices: Vec<Voice>,
+        accelerator: Option<AcceleratorUse>,
     ) -> Arc<Self> {
         let mut capabilities = Vec::new();
         if model.as_stt().is_some() {
@@ -91,7 +95,13 @@ impl Resident {
             end_of_turn_seconds,
             languages,
             voices,
+            accelerator,
         })
+    }
+
+    /// The accelerator a local model was asked to run on and is known to run on.
+    pub(crate) fn accelerator(&self) -> Option<AcceleratorUse> {
+        self.accelerator
     }
 
     /// What it can do.

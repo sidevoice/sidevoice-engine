@@ -30,7 +30,13 @@ impl Engine {
         };
         let spec = adapter.spec();
         let opened = adapter.open(Api::new(&self.host, spec.id), found, facts)?;
-        let resident = Resident::new(opened, None, found.languages.clone(), found.voices.clone());
+        let resident = Resident::new(
+            opened,
+            None,
+            found.languages.clone(),
+            found.voices.clone(),
+            None,
+        );
         Ok(RemoteModel::new(spec.id, &found.id, resident))
     }
 

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::capability::{EndOfTurn, Resident, Stt, Tts, Vad};
 use crate::catalog::Capability;
+use crate::host::AcceleratorUse;
 
 /// A catalogue model's build, loaded by [`Engine::load`](crate::Engine::load). It stays in memory while any
 /// `LocalModel` of its build lives: dropping the last one unloads it. Calls on it wait for one another.
@@ -57,6 +58,15 @@ impl LocalModel {
     )]
     pub(crate) fn resident(&self) -> &Arc<Resident> {
         &self.resident
+    }
+
+    /// The accelerator it was asked to run on and the one it is known to run on ([`AcceleratorUse`]): a model that
+    /// did not load on the first is loaded on the CPU, and says so here rather than pass for a GPU one.
+    #[must_use]
+    pub fn accelerator(&self) -> AcceleratorUse {
+        self.resident
+            .accelerator()
+            .expect("a local model records the accelerator it was loaded on")
     }
 
     /// What it can do.
