@@ -1807,6 +1807,7 @@ dependencies = [
  "futures-core",
  "inventory",
  "js-sys",
+ "libc",
  "ort",
  "ort-sys",
  "reqwest",

@@ -92,7 +92,7 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # `whisper-rs`, pinned exactly (Unlicense; it bundles whisper.cpp's sources, MIT). Phase 1 links it statically, like
 # sherpa-onnx: its build script compiles whisper.cpp and ggml with CMake and a C++ compiler, for the CPU (Metal is
 # added on Apple silicon, above). Loading it on demand instead is sidevoice-engine#33. Never on wasm32, and not on
-# Android or iOS, where the on-device speech to text is sherpa-onnx's (the build.rs alias `whisper_cpp` names this same
+# Android or iOS, where the on-device speech to text is sherpa-onnx's (`platform::local_engines` names this same
 # condition). whisper.cpp tunes ggml for the building machine's CPU unless the build's environment sets
 # GGML_NATIVE=OFF, as an app shipping its binary to other machines should (README). With sherpa-onnx on Linux x86_64,
 # whisper.cpp must use libstdc++'s old string ABI, as sherpa's libraries do (.cargo/config.toml, README).
@@ -107,10 +107,16 @@ whisper-rs = "=0.16.0"
 # Cargo unifies features, so such an app's `ort` also runs on that linked runtime (1.28) rather than link or download
 # one: two static ONNX Runtimes could not be linked into one binary anyway. API 17 is what it asks of a runtime (1.17
 # or later). Not on iOS, where sherpa-onnx's xcframework keeps its ONNX Runtime private and exports no
-# `OrtGetApiBase`: no local end of turn there for now (the build.rs alias `onnx_runtime` names this same condition).
+# `OrtGetApiBase`: no local end of turn there for now (`platform::local_engines` names this same condition).
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17"] }
 ort-sys = { version = "=2.0.0-rc.13", default-features = false, features = ["disable-linking"] }
+
+# iOS only: a floor for `libc`, which no code of the engine names. `sysinfo` 0.39.6 allows `libc` ^0.2.173, and its
+# Apple code calls `mach_host_self` and `mach_task_self`, which 0.2.190 lacks for iOS (0.2.191 has them): this makes a
+# consuming app's own lock file resolve to a `libc` that compiles, as the engine's does.
+[target.'cfg(target_os = "ios")'.dependencies]
+libc = "0.2.191"
 
 # Windows only: the hard-link count of a file (src/platform/links/windows.rs), which std exposes only on Unix, the
 # graphics adapters the system lists (src/platform/accelerators/windows.rs: DXGI, a system library, no vendor's) and the

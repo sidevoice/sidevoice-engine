@@ -109,11 +109,26 @@ fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf
     Ok((archive, dir, path))
 }
 
-/// The Android archive (the libraries of every ABI, `jniLibs/<abi>/`), checked against its pin and left in `dir`
-/// (default as `fetch`'s). `SHERPA_ONNX_ARCHIVE_DIR=<dir>` makes `sherpa-onnx-sys`'s build script unpack it, instead of
-/// downloading what it does not check.
+/// The Android archive (the libraries of every ABI, `jniLibs/<abi>/`) in `dir` (default as `fetch`'s), downloaded unless
+/// it is there and checked against its pin. Returns its path.
 pub(crate) fn android_archive(dir: Option<&str>) -> Result<PathBuf> {
-    pinned_archive("android", dir).map(|(_, dir, _)| dir)
+    pinned_archive("android", dir).map(|(_, _, path)| path)
+}
+
+/// Unpacks the Android `archive` into `dest`, emptied first, and returns its `jniLibs` directory. What is linked and
+/// packaged is read from here and from nowhere `sherpa-onnx-sys` keeps its own copy of.
+pub(crate) fn unpack_android(archive: &Path, dest: &Path) -> Result<PathBuf> {
+    let _ = fs::remove_dir_all(dest);
+    let file = File::open(archive).map_err(|e| format!("{}: {e}", archive.display()))?;
+    tar::Archive::new(bzip2::read::BzDecoder::new(io::BufReader::new(file)))
+        .unpack(dest)
+        .map_err(|e| format!("{}: {e}", archive.display()))?;
+    let jni_libs = dest.join("jniLibs");
+    if jni_libs.is_dir() {
+        Ok(jni_libs)
+    } else {
+        Err(format!("{}: no jniLibs inside", archive.display()))
+    }
 }
 
 /// The iOS xcframework (`SherpaOnnxC.xcframework`, device and simulator slices) as a zip, checked against its pin and
