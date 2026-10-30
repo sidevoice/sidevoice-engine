@@ -121,7 +121,13 @@ impl Library for NoLibrary {
 fn loaded() -> (LocalModel, Arc<AtomicUsize>) {
     let alive = Arc::new(AtomicUsize::new(1));
     let model = Box::new(FakeVad(Arc::clone(&alive)));
-    let resident = Resident::new(model, Some(Arc::new(NoLibrary)), Vec::new(), Vec::new());
+    let resident = Resident::new(
+        model,
+        Some(Arc::new(NoLibrary)),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
     (LocalModel::new("vad", "vad/fake", resident), alive)
 }
 

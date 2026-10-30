@@ -16,7 +16,7 @@ mod http;
 mod native;
 mod storage;
 
-pub use capabilities::{Accelerator, AcceleratorClass, Capabilities, Runs};
+pub use capabilities::{Accelerator, AcceleratorClass, AcceleratorUse, Capabilities, Runs};
 pub use credentials::{Credentials, NoCredentials};
 pub use fetcher::{Download, Fetcher};
 pub use http::{HttpClient, HttpRequest, HttpResponse};

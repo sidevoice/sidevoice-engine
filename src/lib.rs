@@ -48,8 +48,9 @@ pub use engine::{
     ModelBuild, ModelInfo, RemoteCatalog, LOCAL_CATALOG,
 };
 pub use host::{
-    Accelerator, AcceleratorClass, Capabilities, Credentials, Download, Fetcher, FolderWriter,
-    Host, HttpClient, HttpRequest, HttpResponse, NoCredentials, Runs, Storage, StorageWriter,
+    Accelerator, AcceleratorClass, AcceleratorUse, Capabilities, Credentials, Download, Fetcher,
+    FolderWriter, Host, HttpClient, HttpRequest, HttpResponse, NoCredentials, Runs, Storage,
+    StorageWriter,
 };
 #[cfg(native)]
 pub use host::{NativeHost, TreeWriter};

@@ -104,9 +104,11 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # (.cargo/config.toml, README).
 whisper-rs = "=0.16.0"
 
-# The hard-link count of a file on Windows (src/platform/links/windows.rs), which std exposes only on Unix, and the
+# Windows only: the hard-link count of a file (src/platform/links/windows.rs), which std exposes only on Unix, the
+# graphics adapters the system lists (src/platform/accelerators/windows.rs: DXGI, a system library, no vendor's) and the
 # process's ANSI code page (src/platform/narrow_paths/windows.rs).
 [target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Graphics_Dxgi"] }
 winapi-util = "0.1.11"
 windows-sys = { version = "0.61.2", default-features = false, features = ["Win32_Globalization"] }
 

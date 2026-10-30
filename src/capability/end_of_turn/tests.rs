@@ -63,7 +63,13 @@ fn loaded(answer: f32) -> (LocalModel, Arc<Mutex<Vec<usize>>>) {
         answer,
         heard: Arc::clone(&heard),
     });
-    let resident = Resident::new(model, Some(Arc::new(NoLibrary)), Vec::new(), Vec::new());
+    let resident = Resident::new(
+        model,
+        Some(Arc::new(NoLibrary)),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
     (LocalModel::new("turn", "turn/fake", resident), heard)
 }
 
