@@ -1826,6 +1826,7 @@ dependencies = [
  "whisper-rs",
  "winapi-util",
  "windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

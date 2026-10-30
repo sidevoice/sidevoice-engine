@@ -57,6 +57,9 @@ jobs:
   test-native:
     name: Test native (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    # The tests carry the UTF-8 manifest on Windows (build.rs); required, not optional, where tests run.
+    env:
+      SIDEVOICE_TEST_MANIFEST: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -79,6 +82,8 @@ jobs:
   test-inference:
     name: Test inference (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    env:
+      SIDEVOICE_TEST_MANIFEST: "1"
     strategy:
       fail-fast: false
       matrix:

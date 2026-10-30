@@ -3,6 +3,8 @@
 //!
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.
+//!
+//! And, when CI asks, on Windows, the manifest that makes UTF-8 the tests' ANSI code page.
 
 use std::path::Path;
 use std::{env, fs};
@@ -16,6 +18,26 @@ fn main() {
         apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
     }
     bundled_families();
+    test_manifest();
+}
+
+/// The engine's own tests, on Windows, run as an app must: UTF-8 is their ANSI code page (README, "Build and test"). The
+/// manifest goes to the linker (`/MANIFEST:EMBED /MANIFESTINPUT`), as the desktop app does for every executable it
+/// builds: through `rustc-link-arg`, not `-tests`, which leaves out the lib's own test binary, and with no resource
+/// compiler. Only when `SIDEVOICE_TEST_MANIFEST` is set, which CI sets for the jobs that run tests: a consumer building
+/// the engine as a dependency never has a manifest forced on its link. Nothing for any target but MSVC.
+fn test_manifest() {
+    println!("cargo:rerun-if-env-changed=SIDEVOICE_TEST_MANIFEST");
+    if env::var_os("SIDEVOICE_TEST_MANIFEST").is_none()
+        || env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc")
+    {
+        return;
+    }
+    let manifest = Path::new(&env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"))
+        .join("tests/windows-utf8.manifest");
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
 }
 
 /// Writes `$OUT_DIR/bundled_families.rs`: a slice of `(name, include_str!(file))`, the name being the file's without

@@ -495,8 +495,15 @@ fn load(
             println!("  file {} of {}", progress.done + 1, progress.files);
         }
     };
-    block_on(engine.load(&model.id, Some(build), &progress, &Cancel::new()))
-        .map_err(|e| format!("{build}: {e}"))
+    block_on(engine.load(&model.id, Some(build), &progress, &Cancel::new())).map_err(|e| {
+        // On Windows a model directory with non-ASCII characters loads only if this binary has the UTF-8 manifest.
+        let hint = if e.code == "model-load-failed" {
+            " (a Windows test binary needs the UTF-8 manifest: build it with SIDEVOICE_TEST_MANIFEST=1)"
+        } else {
+            ""
+        };
+        format!("{build}: {e}{hint}")
+    })
 }
 
 /// What `listener` hears in `audio` (its samples and their rate), told the language.
