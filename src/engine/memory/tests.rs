@@ -42,6 +42,7 @@ fn resident(library: &Arc<dyn Library>) -> Arc<Resident> {
         Some(Arc::clone(library)),
         Vec::new(),
         Vec::new(),
+        None,
     )
 }
 

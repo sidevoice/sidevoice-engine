@@ -155,8 +155,12 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
   references: no idle unloading.
 - **`NativeHost`** (`src/host/native.rs`) takes one parameter, the data directory, which it creates. It reports `os`
   and `arch` from `std::env::consts`, `cores` from `available_parallelism`, the machine's memory (or its cgroup's
-  limit) from `sysinfo`, and `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver is
-  installed. It downloads over HTTPS with `reqwest` and rustls, the HTTP client sidevoice-core and the desktop app
+  limit) from `sysinfo`, and its accelerators from the OS (`src/platform/accelerators.rs`, one implementation per OS):
+  `Cpu`, plus `Metal` and `CoreMl` on macOS and `Cuda` where an NVIDIA driver lists a device (`/proc/driver/nvidia` on
+  Linux, NVML on Windows). These are candidates, not proof: each backend's `probe` and `load` find out what works. A
+  loaded model says which accelerator it was asked to run on and which it is known to run on
+  (`LocalModel::accelerator()`, an `AcceleratorUse`; `acceleratorUse` on the web): a model that did not load on a GPU is
+  loaded on the CPU and says so, and a GPU is reported as running only when the backend confirmed it. It downloads over HTTPS with `reqwest` and rustls, the HTTP client sidevoice-core and the desktop app
   use, streaming each body as it arrives.
 - **The installer does not know what a file is.** A build's files (catalogue) are one list of artifacts, checked as each
   arrives and only stored whole once it matches its SHA-256; `key` is only the name the backend finds it by.
@@ -291,6 +295,8 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
                   fetcher (Fetcher, Download), http (HttpClient: API calls), credentials (Credentials: the keys of
                   remote providers), native (NativeHost, native builds only: native/directory.rs, its storage, and
                   native/http.rs, its downloads and API calls)
+  platform.rs     the only place that touches the OS, native builds only: platform/accelerators (what accelerators
+                  the OS shows) and platform/links (hard-link counts), each with its implementation per OS
   catalog.rs      CatalogSource, the merged catalogue and its check; catalog/: family, model (with model/build.rs
                   and model/capability.rs), bundled (the families compiled in)
   backend.rs      Backend and BackendSpec: the contract every backend implements, the ids a catalogue may name

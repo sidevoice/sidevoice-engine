@@ -12,13 +12,13 @@
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::backend::{self, Backend, BackendInfo};
+use crate::backend::{self, Backend, BackendInfo, BackendModel, Library};
 use crate::capability::Resident;
 use crate::catalog::{
     BuildEntry, CatalogSource, FamilySpeed, MergedCatalog, ModelEntry, ModelFile,
 };
-use crate::host::{Accelerator, Host};
-use crate::install::{Artifact, Cancel, Installer, ProgressSink};
+use crate::host::{Accelerator, AcceleratorClass, AcceleratorUse, Host};
+use crate::install::{Artifact, Cancel, Installed, Installer, ProgressSink};
 use crate::provider::listing::Listings;
 use crate::provider::{self, Adapter};
 use crate::resolver::{Reason, Rejection, Resolver};
@@ -320,16 +320,54 @@ impl Engine {
             Some(library) => library,
             None => Arc::from(backend.open(&files).await?),
         };
-        let model = library.load(build, accelerator, &files).await?;
+        let (model, used) = self
+            .load_on(backend, &*library, build, accelerator, &files)
+            .await?;
         let languages = entry.languages.clone();
         let resident = Resident::new(
             model,
             Some(Arc::clone(&library)),
             languages,
             entry.voices.clone(),
+            Some(used),
         );
         lock(&self.memory).remember(id, &library, &build.id, &resident);
         Ok(LocalModel::new(&entry.id, &build.id, resident))
+    }
+
+    /// Loads `build` on `accelerator`; if that fails and the build can run on a CPU here, once more on the CPU. Says which
+    /// accelerator was asked for and which the model is known to run on ([`AcceleratorUse`]): the backend's word for a
+    /// GPU it confirms, the CPU for a model loaded there. The error of the first attempt is the one returned if the
+    /// fallback fails too.
+    async fn load_on(
+        &self,
+        backend: &dyn Backend,
+        library: &dyn Library,
+        build: &BuildEntry,
+        accelerator: Accelerator,
+        files: &Installed,
+    ) -> Result<(Box<dyn BackendModel>, AcceleratorUse)> {
+        let (model, ran_on) = match library.load(build, accelerator, files).await {
+            Ok(model) => (model, accelerator),
+            Err(error) => {
+                let caps = self.host.capabilities();
+                let cpu = self
+                    .resolver
+                    .fallback(build, backend, &caps, accelerator)
+                    .ok_or(error)?;
+                (library.load(build, cpu, files).await?, cpu)
+            }
+        };
+        let actual = model
+            .confirmed_accelerator()
+            .or((ran_on.class() == AcceleratorClass::Cpu).then_some(ran_on));
+        Ok((
+            model,
+            AcceleratorUse {
+                requested: accelerator,
+                actual,
+            },
+        ))
     }
 
     /// Every model of the catalogue, in catalogue order.

@@ -7,6 +7,7 @@ use async_trait::async_trait;
 
 use crate::capability::VadOptions;
 use crate::catalog::Voice;
+use crate::host::Accelerator;
 use crate::maybe_send::MaybeSend;
 use crate::Result;
 
@@ -27,6 +28,12 @@ pub(crate) trait BackendModel: MaybeSend {
     }
     /// The model as an end-of-turn classifier, if it is one.
     fn as_end_of_turn(&mut self) -> Option<&mut dyn EndOfTurnModel> {
+        None
+    }
+    /// The accelerator it really runs on, when the backend can tell: one it verified, not the one it was asked for. By
+    /// default it cannot (a library that falls back to the CPU by itself says so only in its log), and the engine then
+    /// does not report the model as running on the accelerator it was loaded for.
+    fn confirmed_accelerator(&self) -> Option<Accelerator> {
         None
     }
     /// The memory it takes, when the backend can tell.

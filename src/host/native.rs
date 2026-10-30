@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use std::thread;
 
 use crate::host::{
-    Accelerator, Capabilities, Credentials, Fetcher, Host, HttpClient, NoCredentials, Runs, Storage,
+    Capabilities, Credentials, Fetcher, Host, HttpClient, NoCredentials, Runs, Storage,
 };
+use crate::platform::accelerators::{Accelerators, Machine};
 use crate::Result;
 
 mod directory;
@@ -26,8 +27,9 @@ use http::Http;
 ///
 /// - `os` and `arch` from `std::env::consts`, `cores` from `std::thread::available_parallelism`, and `memory_mb`, the
 ///   machine's memory (or its cgroup's limit, if lower), from `sysinfo`;
-/// - accelerators: `Cpu` always; `Metal` and `CoreMl` on macOS; `Cuda` where an NVIDIA driver is installed (Linux's
-///   `/proc/driver/nvidia/version`, Windows' `nvcuda.dll`). Each backend's probe confirms what it can actually use.
+/// - accelerators, from the OS (the platform's `Accelerators`): `Cpu` always; `Metal` and `CoreMl` on macOS; `Cuda` where an NVIDIA driver
+///   lists a device (Linux's `/proc` entry, Windows' NVML). Candidates only: each backend's probe confirms what it can
+///   actually use.
 ///
 /// Downloads go through `reqwest`, with rustls: the HTTP client sidevoice-core and the desktop app use. **The engine's
 /// futures expect a Tokio runtime** in a native build: `reqwest` needs one, and archives are unpacked on its blocking
@@ -104,39 +106,12 @@ fn capabilities() -> Capabilities {
         runs: Runs::Native,
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
-        accelerators: accelerators(),
+        accelerators: Machine::detect(),
         memory_mb: memory_mb(),
         cores: thread::available_parallelism()
             .ok()
             .map(|cores| u32::try_from(cores.get()).unwrap_or(u32::MAX)),
     }
-}
-
-fn accelerators() -> Vec<Accelerator> {
-    let mut accelerators = vec![Accelerator::Cpu];
-    if cfg!(target_os = "macos") {
-        accelerators.extend([Accelerator::Metal, Accelerator::CoreMl]);
-    }
-    if nvidia_driver() {
-        accelerators.push(Accelerator::Cuda);
-    }
-    accelerators
-}
-
-/// Whether an NVIDIA driver is installed: present, not proven to work (that is a backend's probe).
-fn nvidia_driver() -> bool {
-    if cfg!(target_os = "linux") {
-        return std::path::Path::new("/proc/driver/nvidia/version").exists();
-    }
-    if cfg!(target_os = "windows") {
-        return std::env::var_os("SystemRoot").is_some_and(|root| {
-            PathBuf::from(root)
-                .join("System32")
-                .join("nvcuda.dll")
-                .exists()
-        });
-    }
-    false
 }
 
 /// The machine's memory in MB, or its cgroup's limit if lower; `None` if it cannot be read.

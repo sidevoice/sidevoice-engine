@@ -56,6 +56,10 @@ export interface ModelBuild {
 }
 /** The kind of hardware an accelerator is. */
 export type AcceleratorClass = "gpu" | "neural-engine" | "cpu";
+/** What a loaded model was asked to run on (`requested`) and what it is known to run on (`actual`). `actual` is absent
+ * when the backend cannot tell: a model asked for a GPU is not reported as running on it unless the backend confirmed it,
+ * and one that did not load there and was loaded on the CPU says `cpu`. */
+export interface AcceleratorUse { requested: string; actual?: string; }
 /** The speeds a model takes, 1 being its normal pace. A model with no `speed` takes none. */
 export interface SpeedRange { min: number; max: number; }
 /** A model as a catalogue lists it, whichever: what every model has. */
@@ -433,6 +437,12 @@ impl WebLocalModel {
     #[wasm_bindgen(getter)]
     pub fn build(&self) -> String {
         self.loaded.build().to_owned()
+    }
+
+    /// The accelerator it was asked to run on and the one it is known to run on: `{ requested, actual? }`.
+    #[wasm_bindgen(getter, js_name = acceleratorUse, unchecked_return_type = "AcceleratorUse")]
+    pub fn accelerator_use(&self) -> JsValue {
+        values::accelerator_use(self.loaded.accelerator())
     }
 
     /// What it can do: `"stt"`, `"tts"`, `"vad"`, `"end-of-turn"`.

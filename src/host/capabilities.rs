@@ -8,7 +8,7 @@
 
 mod accelerator;
 
-pub use accelerator::{Accelerator, AcceleratorClass};
+pub use accelerator::{Accelerator, AcceleratorClass, AcceleratorUse};
 
 /// What the host knows about the place the engine runs in, gathered once when the host is built.
 ///

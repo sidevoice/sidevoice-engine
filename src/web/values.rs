@@ -5,8 +5,9 @@ use js_sys::{Array, Float32Array, Object};
 use wasm_bindgen::JsValue;
 
 use crate::{
-    Accelerator, Audio, Capability, CatalogStatus, Error, Gender, LocalModelInfo, ModelBuild,
-    Progress, Reason, RemoteModelInfo, SpeedRange, VadEvent, VadOptions, VadOutput, Voice,
+    Accelerator, AcceleratorUse, Audio, Capability, CatalogStatus, Error, Gender, LocalModelInfo,
+    ModelBuild, Progress, Reason, RemoteModelInfo, SpeedRange, VadEvent, VadOptions, VadOutput,
+    Voice,
 };
 
 #[cfg(test)]
@@ -177,6 +178,14 @@ pub(super) fn capability_named(name: &str) -> Result<Capability, Error> {
     .into_iter()
     .find(|known| capability(*known) == name)
     .ok_or(Error::new("invalid-capability"))
+}
+
+/// `{ requested, actual? }`: what a loaded model was asked to run on and is known to run on.
+pub(super) fn accelerator_use(used: AcceleratorUse) -> JsValue {
+    object(&[
+        ("requested", Some(accelerator(used.requested).into())),
+        ("actual", used.actual.map(|a| accelerator(a).into())),
+    ])
 }
 
 /// An accelerator's stable id, as a JavaScript host and the catalogue name it.

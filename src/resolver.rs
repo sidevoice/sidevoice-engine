@@ -16,7 +16,7 @@ use std::sync::{Mutex, PoisonError};
 
 use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
 use crate::catalog::{BuildEntry, ModelEntry};
-use crate::host::{Accelerator, Capabilities, Runs};
+use crate::host::{Accelerator, AcceleratorClass, Capabilities, Runs};
 
 mod rejection;
 #[cfg(test)]
@@ -57,8 +57,62 @@ impl Resolver {
         fitting.into_iter().chain(rejected).collect()
     }
 
-    /// The best accelerator this build can run on here, or why it cannot: the backend's preference order, kept to
-    /// what its probe confirms of what the host reports, then to what the build requires.
+    /// The accelerator to load `build` on instead of `failed`, which did not load it: the best CPU it can run on here,
+    /// if `failed` is a GPU or a neural engine. The engine falls back to it once, and says so (`AcceleratorUse`); a CPU
+    /// that fails has nothing below it.
+    pub(crate) fn fallback(
+        &self,
+        build: &BuildEntry,
+        backend: &dyn Backend,
+        caps: &Capabilities,
+        failed: Accelerator,
+    ) -> Option<Accelerator> {
+        if failed.class() == AcceleratorClass::Cpu {
+            return None;
+        }
+        self.accelerators(build, backend, caps)
+            .ok()?
+            .into_iter()
+            .find(|accelerator| accelerator.class() == AcceleratorClass::Cpu)
+    }
+
+    /// The accelerators this build can run on here, best first, or why none: the backend's preference order, kept to
+    /// what its probe confirms of what the host reports, then to what the build requires. Never empty when it is `Ok`.
+    fn accelerators(
+        &self,
+        build: &BuildEntry,
+        backend: &dyn Backend,
+        caps: &Capabilities,
+    ) -> Result<Vec<Accelerator>, Rejection> {
+        let spec = backend.spec();
+        if let Some(reason) = backend.unavailable() {
+            return Err(Rejection::BackendUnavailable(reason));
+        }
+        let probed = self.probe(backend, caps);
+        // A probe narrows what the host reports, never widens it.
+        let working: Vec<_> = spec
+            .accelerators
+            .iter()
+            .copied()
+            .filter(|accelerator| caps.has(*accelerator) && probed.contains(accelerator))
+            .collect();
+        if working.is_empty() {
+            return Err(Rejection::BackendUnavailable(Reason::new("no-accelerator")));
+        }
+        // A build that runs on fewer accelerators than its backend says so in `requires`.
+        let accepted = &build.requires.accelerators;
+        let accepted: Vec<_> = working
+            .into_iter()
+            .filter(|accelerator| accepted.is_empty() || accepted.contains(accelerator))
+            .collect();
+        if accepted.is_empty() {
+            return Err(Rejection::DoesNotFit(Reason::new("build-accelerator")));
+        }
+        Ok(accepted)
+    }
+
+    /// The best accelerator this build can run on here, or why it cannot ([`Resolver::accelerators`]'s first), then
+    /// whether the machine meets what the build and the backend need.
     fn fit(
         &self,
         build: &BuildEntry,
@@ -66,27 +120,11 @@ impl Resolver {
         caps: &Capabilities,
     ) -> Result<Accelerator, Rejection> {
         let spec = backend.spec();
-        if let Some(reason) = backend.unavailable() {
-            return Err(Rejection::BackendUnavailable(reason));
-        }
-        let probed = self.probe(backend, caps);
-        // A probe narrows what the host reports, never widens it.
-        let mut working = spec
-            .accelerators
-            .iter()
-            .copied()
-            .filter(|accelerator| caps.has(*accelerator) && probed.contains(accelerator))
-            .peekable();
-        if working.peek().is_none() {
-            return Err(Rejection::BackendUnavailable(Reason::new("no-accelerator")));
-        }
-        // A build that runs on fewer accelerators than its backend says so in `requires`.
-        let accepted = &build.requires.accelerators;
-        let Some(accelerator) =
-            working.find(|accelerator| accepted.is_empty() || accepted.contains(accelerator))
-        else {
-            return Err(Rejection::DoesNotFit(Reason::new("build-accelerator")));
-        };
+        let accelerator = self
+            .accelerators(build, backend, caps)?
+            .into_iter()
+            .next()
+            .ok_or(Rejection::DoesNotFit(Reason::new("build-accelerator")))?;
         // In a page the build runs in WebAssembly, under the cap its catalogue entry declares (`requires.wasm_max_mb`, not
         // measured from the page): a build that needs more does not fit there, whatever the machine has.
         if let (Runs::Page, Some(cap)) = (caps.runs, build.requires.wasm_max_mb) {
