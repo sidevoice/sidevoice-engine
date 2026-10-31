@@ -1,6 +1,10 @@
 {
   "version": "1.13.8",
   "archives": {
+    "android": {
+      "name": "sherpa-onnx-v1.13.8-android.tar.bz2",
+      "sha256": "2ff63469a71cb6009aa2e3ed5f4a670f8abdcbe4bb9ffd23776afc792a6b4f44"
+    },
     "linux-aarch64": {
       "name": "sherpa-onnx-v1.13.8-linux-aarch64-static-lib.tar.bz2",
       "sha256": "77983e3cf29aa60f2e531d249dbd01d15596530550c8db2e9e02fc6a655da6bb"
