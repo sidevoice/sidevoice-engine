@@ -34,7 +34,7 @@ pub trait Observer {
     }
 
     /// What this process may allocate before the OS ends it, where the OS keeps such a budget; no answer where it
-    /// does not. Zero is read as no answer too: it is also what such a call says where it does not apply.
+    /// does not. Zero is an answer: the process is at its limit, or over it, and has nothing left.
     fn process_bytes() -> Option<u64> {
         None
     }
@@ -69,10 +69,7 @@ impl MemoryObservation {
         let total = [O::physical_bytes(), limit].into_iter().flatten().min();
         Self {
             total_mb: total.map(mebibytes).filter(|mb| *mb > 0),
-            available_mb: O::process_bytes()
-                .filter(|bytes| *bytes > 0)
-                .or_else(O::free_bytes)
-                .map(mebibytes),
+            available_mb: O::process_bytes().or_else(O::free_bytes).map(mebibytes),
         }
     }
 }
@@ -102,7 +99,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::Os as Machine;
 
-#[cfg(windows)]
+#[cfg(target_os = "windows")]
 mod windows;
-#[cfg(windows)]
+#[cfg(target_os = "windows")]
 pub use windows::Os as Machine;

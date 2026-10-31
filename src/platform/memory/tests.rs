@@ -47,6 +47,22 @@ impl Observer for NothingFree {
         Some(0)
     }
 }
+/// An OS whose process is at its limit while the machine has memory to spare.
+struct AtItsLimit;
+impl Observer for AtItsLimit {
+    fn physical_bytes() -> Option<u64> {
+        Some(8 * 1024 * MIB)
+    }
+    fn limit_bytes() -> Option<u64> {
+        None
+    }
+    fn free_bytes() -> Option<u64> {
+        Some(6 * 1024 * MIB)
+    }
+    fn process_bytes() -> Option<u64> {
+        Some(0)
+    }
+}
 struct AllZero;
 impl Observer for AllZero {
     fn physical_bytes() -> Option<u64> {
@@ -100,6 +116,13 @@ fn nothing_free_is_an_answer_and_an_unknown_total_is_not() {
     let unknown = MemoryObservation::observed::<AllZero>();
     assert_eq!(unknown.total_mb, None);
     assert_eq!(unknown.available_mb, Some(0));
+}
+
+#[test]
+fn a_process_at_its_limit_has_nothing_available_whatever_the_machine_has() {
+    let memory = MemoryObservation::observed::<AtItsLimit>();
+    assert_eq!(memory.total_mb, Some(8192));
+    assert_eq!(memory.available_mb, Some(0));
 }
 
 #[test]

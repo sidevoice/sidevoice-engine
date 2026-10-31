@@ -4,7 +4,8 @@ pub struct Os;
 
 extern "C" {
     /// `<os/proc.h>`, iOS 13 and later: the bytes this process may still allocate before it hits its limit. Nothing
-    /// maintained binds it (the `libc` crate does not).
+    /// maintained binds it (the `libc` crate does not). Zero means the process is at its limit or over it: nothing is
+    /// left, and the machine's free memory is not a substitute.
     fn os_proc_available_memory() -> usize;
 }
 
