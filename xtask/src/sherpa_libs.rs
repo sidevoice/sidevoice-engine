@@ -21,9 +21,9 @@
 //! pinned; the archive holds `<name without .tar.bz2>/lib`, as the script expects.
 
 use std::collections::BTreeMap;
-use std::fs::{self, File};
+use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::{env, io};
 
 use serde::{Deserialize, Serialize};
 
@@ -55,14 +55,14 @@ struct Archive {
 /// `cargo xtask sherpa-libs [DIR]`.
 pub(crate) fn fetch(dir: Option<&str>) -> Result<()> {
     let platform = format!("{}-{}", env::consts::OS, env::consts::ARCH);
-    let (archive, dir, path) = pinned_archive(&platform, dir)?;
+    let (archive, dir, bytes) = pinned_archive(&platform, dir)?;
     let stem = archive
         .name
         .strip_suffix(".tar.bz2")
         .ok_or(format!("{}: not a .tar.bz2", archive.name))?;
     let lib = dir.join(stem).join("lib");
     if !lib.is_dir() {
-        unpack(&path, &dir, stem)?;
+        unpack(&bytes, &dir, stem)?;
     }
     let lib = lib.to_string_lossy().into_owned();
     println!("{lib}");
@@ -76,8 +76,9 @@ pub(crate) fn fetch(dir: Option<&str>) -> Result<()> {
 }
 
 /// The archive pinned for `platform` (a key of `archives`) in `dir` (default as `fetch`'s): downloaded unless it is
-/// there, and checked against its digest. Returns its pin, `dir` and its path.
-fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf, PathBuf)> {
+/// there, and checked against its digest. Returns its pin, `dir` and the bytes that were checked. Whatever is unpacked
+/// comes from these bytes and never from a second read of the file, which could have been replaced after the check.
+fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf, Vec<u8>)> {
     let mut pins = pins()?;
     let archive = pins
         .archives
@@ -89,70 +90,83 @@ fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf
     };
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(&archive.name);
-    if !path.is_file() || sha256(&read(&path)?) != archive.sha256 {
-        let tag = if archive.name.ends_with(".xcframework.zip") {
-            XCFRAMEWORKS.to_owned()
-        } else {
-            format!("v{}", pins.version)
-        };
-        let url = format!("{RELEASES}/{tag}/{}", archive.name);
-        let partial = dir.join(format!("{}.partial", archive.name));
-        let partial_text = partial.to_string_lossy().into_owned();
-        run_in(&dir, "curl -fsSL --retry 3 -o", &[&partial_text, &url])?;
-        let got = sha256(&read(&partial)?);
-        if got != archive.sha256 {
-            let _ = fs::remove_file(&partial);
-            return Err(format!("{url}: sha256 {got}, pinned {}", archive.sha256));
-        }
-        fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if let Some(bytes) = cached(&path, &archive.sha256)? {
+        return Ok((archive, dir, bytes));
     }
-    Ok((archive, dir, path))
+    let tag = if archive.name.ends_with(".xcframework.zip") {
+        XCFRAMEWORKS.to_owned()
+    } else {
+        format!("v{}", pins.version)
+    };
+    let url = format!("{RELEASES}/{tag}/{}", archive.name);
+    let partial = dir.join(format!("{}.partial", archive.name));
+    let partial_text = partial.to_string_lossy().into_owned();
+    run_in(&dir, "curl -fsSL --retry 3 -o", &[&partial_text, &url])?;
+    let bytes = read(&partial)?;
+    let got = sha256(&bytes);
+    if got != archive.sha256 {
+        let _ = fs::remove_file(&partial);
+        return Err(format!("{url}: sha256 {got}, pinned {}", archive.sha256));
+    }
+    fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok((archive, dir, bytes))
 }
 
-/// The Android archive (the libraries of every ABI, `jniLibs/<abi>/`) in `dir` (default as `fetch`'s), downloaded unless
-/// it is there and checked against its pin. Returns its path.
-pub(crate) fn android_archive(dir: Option<&str>) -> Result<PathBuf> {
-    pinned_archive("android", dir).map(|(_, _, path)| path)
+/// The bytes of the file at `path`, read once, if it is there and their SHA-256 is `pinned`.
+fn cached(path: &Path, pinned: &str) -> Result<Option<Vec<u8>>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let bytes = read(path)?;
+    Ok((sha256(&bytes) == pinned).then_some(bytes))
 }
 
-/// Unpacks the Android `archive` into `dest`, emptied first, and returns its `jniLibs` directory. What is linked and
-/// packaged is read from here and from nowhere `sherpa-onnx-sys` keeps its own copy of.
-pub(crate) fn unpack_android(archive: &Path, dest: &Path) -> Result<PathBuf> {
+/// The bytes of the Android archive (the libraries of every ABI, `jniLibs/<abi>/`) in `dir` (default as `fetch`'s),
+/// downloaded unless it is there and checked against its pin.
+pub(crate) fn android_archive(dir: Option<&str>) -> Result<Vec<u8>> {
+    pinned_archive("android", dir).map(|(_, _, bytes)| bytes)
+}
+
+/// Unpacks the Android `archive` (the bytes `android_archive` checked) into `dest`, emptied first, and returns its
+/// `jniLibs` directory. What is linked and packaged is read from here and from nowhere `sherpa-onnx-sys` keeps its
+/// own copy of.
+pub(crate) fn unpack_android(archive: &[u8], dest: &Path) -> Result<PathBuf> {
     let _ = fs::remove_dir_all(dest);
-    let file = File::open(archive).map_err(|e| format!("{}: {e}", archive.display()))?;
-    tar::Archive::new(bzip2::read::BzDecoder::new(io::BufReader::new(file)))
-        .unpack(dest)
-        .map_err(|e| format!("{}: {e}", archive.display()))?;
+    extract(archive, dest)?;
     let jni_libs = dest.join("jniLibs");
     if jni_libs.is_dir() {
         Ok(jni_libs)
     } else {
-        Err(format!("{}: no jniLibs inside", archive.display()))
+        Err(format!("{}: no jniLibs inside", dest.display()))
     }
 }
 
-/// The iOS xcframework (`SherpaOnnxC.xcframework`, device and simulator slices) as a zip, checked against its pin and
-/// left in `dir` (default as `fetch`'s). Returns its path.
-pub(crate) fn ios_archive(dir: Option<&str>) -> Result<PathBuf> {
-    pinned_archive("ios", dir).map(|(_, _, path)| path)
+/// The bytes of the iOS xcframework (`SherpaOnnxC.xcframework`, device and simulator slices) as a zip, in `dir`
+/// (default as `fetch`'s), downloaded unless it is there and checked against its pin.
+pub(crate) fn ios_archive(dir: Option<&str>) -> Result<Vec<u8>> {
+    pinned_archive("ios", dir).map(|(_, _, bytes)| bytes)
 }
 
-/// Unpacks `archive` into `dir`, through a scratch directory so that a half-unpacked `stem/` never stands for a whole
-/// one.
-fn unpack(archive: &Path, dir: &Path, stem: &str) -> Result<()> {
+/// Unpacks `archive` (checked bytes) into `dir`, through a scratch directory so that a half-unpacked `stem/` never
+/// stands for a whole one.
+fn unpack(archive: &[u8], dir: &Path, stem: &str) -> Result<()> {
     let scratch = dir.join(format!("{stem}.unpacking"));
     let _ = fs::remove_dir_all(&scratch);
-    let file = File::open(archive).map_err(|e| format!("{}: {e}", archive.display()))?;
-    tar::Archive::new(bzip2::read::BzDecoder::new(io::BufReader::new(file)))
-        .unpack(&scratch)
-        .map_err(|e| format!("{}: {e}", archive.display()))?;
+    extract(archive, &scratch)?;
     if !scratch.join(stem).join("lib").is_dir() {
-        return Err(format!("{}: no {stem}/lib inside", archive.display()));
+        return Err(format!("{}: no {stem}/lib inside", scratch.display()));
     }
     let _ = fs::remove_dir_all(dir.join(stem));
     fs::rename(scratch.join(stem), dir.join(stem)).map_err(|e| format!("{stem}: {e}"))?;
     let _ = fs::remove_dir_all(&scratch);
     Ok(())
+}
+
+/// The `.tar.bz2` in `archive` unpacked into `dest`.
+fn extract(archive: &[u8], dest: &Path) -> Result<()> {
+    tar::Archive::new(bzip2::read::BzDecoder::new(archive))
+        .unpack(dest)
+        .map_err(|e| format!("unpacking into {}: {e}", dest.display()))
 }
 
 /// `~/.cache/sidevoice-engine/sherpa-onnx`.

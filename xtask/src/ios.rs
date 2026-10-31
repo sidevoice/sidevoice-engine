@@ -12,7 +12,8 @@
 //! `DIR/SherpaOnnxC.xcframework` is what the app embeds (and signs) in its bundle: the engine itself is linked into
 //! the app's own library.
 
-use std::fs::{self, File};
+use std::fs;
+use std::io;
 use std::path::Path;
 use std::process::Command;
 
@@ -32,10 +33,9 @@ pub(crate) fn build(dir: Option<&str>) -> Result<()> {
     let (_, target) = metadata()?;
     let out = dir.map_or_else(|| target.join("ios"), std::path::PathBuf::from);
     empty_dir(&out)?;
-    let file = File::open(&archive).map_err(|e| format!("{}: {e}", archive.display()))?;
-    zip::ZipArchive::new(file)
+    zip::ZipArchive::new(io::Cursor::new(archive))
         .and_then(|mut zip| zip.extract(&out))
-        .map_err(|e| format!("{}: {e}", archive.display()))?;
+        .map_err(|e| format!("unpacking into {}: {e}", out.display()))?;
     let xcframework = out.join(format!("{FRAMEWORK}.xcframework"));
     for (triple, slice) in TARGETS {
         let binary = xcframework
