@@ -60,12 +60,17 @@ anything, gathered once when the host is built:
 | `runs` | `Native` in a process, `Page` in the wasm32 build | always known |
 | `os`, `arch` | `std::env::consts::OS` and `ARCH` values. A page with nothing better: `"web"` and `"wasm32"` | always given |
 | `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
-| `memory_mb` | memory available to models, in MB | `None` |
+| `memory_mb` | memory available to models, in MiB (2^20 bytes; every `_mb` in the engine) | `None` |
 | `cores` | CPU cores | `None` |
 
 - **The host reports, the backend confirms.** Whether a backend can actually use an accelerator (a CUDA driver, a
   granted WebGPU adapter, a Core ML model that loads) is found out by the backend's probe, never by the host. The
   probe can only narrow what the host reported: an accelerator the host left out is absent.
+- **Memory is one observation, in MiB.** In a native build, `MemoryObservation::now()` gives `total_mb` (physical memory, or
+  its cgroup's limit if lower: what `memory_mb` above is, read once) and `available_mb` (what this process may still
+  allocate: the process's own budget on iOS, `os_proc_available_memory()`; the system's figure elsewhere, the kernel's
+  memory-pressure estimate on macOS; `/proc/meminfo`'s `MemAvailable` on Android). It changes from call to call; `Some(0)`
+  is an answer, `None` a gap.
 - **Unknown passes.** A requirement on memory or cores the host cannot tell is met: the engine does not reject a build
   on a guess; loading is what finds out. A host that is unsure of a number says `None` rather than guessing low.
 - **The accelerator list is fixed.** `Accelerator` is an enum of the engine (adding one is a change here, since it
