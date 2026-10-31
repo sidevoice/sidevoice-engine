@@ -275,7 +275,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
 | `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows too, built and tested in CI), natively; not on Android or iOS | `whisper-rs` (whisper.cpp and ggml, built from source) |
-| `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links |
+| `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively; not on iOS | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
 And two remote providers, natively and in the browser, through the host's HTTP with the app's key: OpenAI (speech to
@@ -417,6 +417,28 @@ cargo xtask android-build [DIR]   # cargo ndk build --release for both ABIs, min
   later initialises it.
 - **Limits.** The CPU is the only accelerator the Android host reports (NNAPI is deprecated since Android 15); the
   engine's runtime on a device is not covered by CI, which builds and links only.
+
+### iOS
+
+The engine builds for `aarch64-apple-ios` (devices) and `aarch64-apple-ios-sim` (the simulator on Apple silicon), on a
+Mac with Xcode, with the backends an iPhone can run: `sherpa-onnx` (Silero voice activity, and the models sherpa-onnx
+runs) and the remote providers. Two backends are not in an iOS build: `whisper-cpp`, as on Android, and `onnxruntime`
+(smart-turn, the end of turn): sherpa-onnx's iOS xcframework keeps its ONNX Runtime private and exports no
+`OrtGetApiBase` for `ort` to resolve, so there is no local end of turn on iOS for now. A catalogue build that needs
+either is rejected as `backend-not-in-this-build`. The host reports the CPU as the only accelerator.
+
+```sh
+cargo xtask ios-build [DIR]   # cargo build --release for both targets; the xcframework to embed, in DIR (default target/ios)
+```
+
+- **The framework an app embeds.** sherpa-onnx is one shared xcframework, `SherpaOnnxC.xcframework`, with a device slice
+  (`ios-arm64`) and a simulator one (`ios-arm64_x86_64-simulator`), the ONNX Runtime linked inside it. `ios-build` takes
+  it from the archive `xtask/sherpa-onnx-libs.json` pins (checked against its digest), unpacks it into `DIR`, builds the
+  engine for each target against that target's slice (through `SHERPA_ONNX_LIB_DIR`, a directory with the slice's
+  binary as `libsherpa-onnx-c-api.dylib`, the name the build script links), and leaves `DIR/SherpaOnnxC.xcframework`
+  for the app to embed and sign. Without that, `sherpa-onnx-sys` 1.13.8 downloads its own copy unchecked and loses
+  one slice's libraries when it builds the other (fixed in sherpa-onnx 2.0, which the engine does not use yet).
+- **Limits.** CI builds and links for both targets; running on a device or the simulator is the app's gate.
 
 The native tests build and check this platform's backends; the one that downloads a real file through `NativeHost` is
 ignored unless asked for, and CI asks:
