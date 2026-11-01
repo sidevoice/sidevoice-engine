@@ -510,10 +510,10 @@ fn serve(body: &'static [u8], ranges: bool) -> Server {
     use std::io::{BufRead, BufReader, Write};
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
-    let url = format!(
-        "http://{}/model.bin",
-        listener.local_addr().expect("address")
-    );
+    let address = listener.local_addr().expect("address");
+    let url = format!("http://{address}/model.bin");
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stopped = std::sync::Arc::clone(&stop);
     let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen = std::sync::Arc::clone(&asked);
     std::thread::spawn(move || {
