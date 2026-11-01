@@ -29,6 +29,10 @@ pub(super) struct Directory {
     blobs: PathBuf,
     models: PathBuf,
     partial: PathBuf,
+    /// One empty file per blob that was resumed (`locks/<name>`), locked by the writer of its `partial/<name>.part` from
+    /// before it opens it until it has committed or removed it. Never removed: removing a lock file others may be
+    /// opening would let two of them hold "the" lock.
+    locks: PathBuf,
 }
 
 impl Directory {
@@ -41,8 +45,14 @@ impl Directory {
             blobs: root.join("blobs"),
             models: root.join("models"),
             partial: root.join("partial"),
+            locks: root.join("locks"),
         };
-        for dir in [&storage.blobs, &storage.models, &storage.partial] {
+        for dir in [
+            &storage.blobs,
+            &storage.models,
+            &storage.partial,
+            &storage.locks,
+        ] {
             fs::create_dir_all(dir).map_err(|_| failed())?;
         }
         storage.sweep();
@@ -56,6 +66,15 @@ impl Directory {
             return;
         };
         for entry in entries.flatten() {
+            let name = entry.file_name();
+            // A file that is resumed is only touched under its lock: one being written to is not swept, whatever its age.
+            let lock = match name.to_str().and_then(|name| name.strip_suffix(".part")) {
+                Some(stem) => match self.lock(stem) {
+                    Ok(Some(lock)) => Some(lock),
+                    _ => continue,
+                },
+                None => None,
+            };
             let old = entry
                 .metadata()
                 .and_then(|meta| meta.modified())
@@ -65,6 +84,23 @@ impl Directory {
             if old {
                 remove(&entry.path());
             }
+            drop(lock);
+        }
+    }
+
+    /// The lock of the blob `name`, taken; `None` if another writer holds it.
+    fn lock(&self, name: &str) -> Result<Option<File>> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.locks.join(name))
+            .map_err(|_| failed())?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(file)),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(_)) => Err(failed()),
         }
     }
 
@@ -133,39 +169,33 @@ impl Storage for Directory {
         Ok(Box::new(Writer {
             file: Some(BufWriter::with_capacity(WRITE_BUFFER, file)),
             staged: Staged::new(partial, target),
+            _lock: None,
         }))
     }
 
-    /// Goes on in `partial/<name>.part`, one per blob, whichever attempt or process left it. It is locked while a writer
-    /// holds it, so that two installs of one blob never write to one file: the second gets a new file, and no bytes
-    /// kept.
+    /// Goes on in `partial/<name>.part`, one per blob, whichever attempt or process left it. The blob's lock
+    /// (`locks/<name>`) is held from before the file is opened until the writer has committed or removed it, so that two
+    /// installs of one blob never write to one file, and nothing can replace it between the check and the rename: the
+    /// second gets a new file, and no bytes kept.
     async fn resume(&self, name: &str) -> Result<Resumed> {
         let target = self.path(name)?;
+        let Some(lock) = self.lock(name)? else {
+            return Ok(Resumed {
+                writer: self.create(name).await?,
+                kept: None,
+                len: 0,
+            });
+        };
         let path = self.partial.join(format!("{name}.part"));
         let mut file = OpenOptions::new()
-            .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(&path)
             .map_err(|_| failed())?;
-        match file.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                return Ok(Resumed {
-                    writer: self.create(name).await?,
-                    kept: None,
-                    len: 0,
-                });
-            }
-            Err(TryLockError::Error(_)) => return Err(failed()),
-        }
-        let len = file.metadata().map_err(|_| failed())?.len();
-        // Read through a clone of the locked file (a lock may refuse other handles to read, on Windows), from its start;
-        // the writer goes on from its end, where reading it all leaves both.
+        let len = file.seek(SeekFrom::End(0)).map_err(|_| failed())?;
         let kept = if len > 0 {
-            let reader = file.try_clone().map_err(|_| failed())?;
-            file.seek(SeekFrom::Start(0)).map_err(|_| failed())?;
+            let reader = File::open(&path).map_err(|_| failed())?;
             Some(Box::new(Reader {
                 file: reader,
                 size: len,
@@ -179,6 +209,7 @@ impl Storage for Directory {
             writer: Box::new(Writer {
                 file: Some(BufWriter::with_capacity(WRITE_BUFFER, file)),
                 staged,
+                _lock: Some(lock),
             }),
             kept,
             len,
@@ -404,6 +435,8 @@ struct Writer {
     /// `None` once committed. Declared before `staged`, so that it is closed before its partial file is removed.
     file: Option<BufWriter<File>>,
     staged: Staged,
+    /// Held until the writer is gone, its partial file committed or removed first (declared last, dropped last).
+    _lock: Option<File>,
 }
 
 #[async_trait]

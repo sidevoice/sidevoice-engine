@@ -491,10 +491,22 @@ fn its_directory_sweeps_what_was_left_in_partial_for_over_a_week() {
 
 /// Serves `body` on a local port, one request per connection: with a `Range: bytes=N-` header and `ranges`, from byte
 /// `N` (206); otherwise whole (200). Returns the URL, and the ranges asked for.
-fn serve(
-    body: &'static [u8],
-    ranges: bool,
-) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+struct Server {
+    url: String,
+    asked: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    address: std::net::SocketAddr,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for Server {
+    /// Stops the thread: it wakes from waiting for a connection, sees the flag, and ends.
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        let _ = std::net::TcpStream::connect(self.address);
+    }
+}
+
+fn serve(body: &'static [u8], ranges: bool) -> Server {
     use std::io::{BufRead, BufReader, Write};
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
@@ -506,6 +518,9 @@ fn serve(
     let seen = std::sync::Arc::clone(&asked);
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
+            if stopped.load(Ordering::SeqCst) {
+                break;
+            }
             let mut reader = BufReader::new(stream);
             let mut range = None;
             loop {
@@ -539,7 +554,12 @@ fn serve(
             let _ = stream.write_all(&body[from..]);
         }
     });
-    (url, asked)
+    Server {
+        url,
+        asked,
+        address,
+        stop,
+    }
 }
 
 const BODY: &[u8] = b"the model's weights, a little longer than one part";
@@ -574,26 +594,50 @@ fn install_over(kept: &[u8], url: &str) -> (crate::Result<()>, Vec<u8>) {
 
 #[test]
 fn it_goes_on_over_http_after_the_bytes_kept_when_the_server_has_ranges() {
-    let (url, asked) = serve(BODY, true);
-    let (result, stored) = install_over(&BODY[..10], &url);
+    let server = serve(BODY, true);
+    let (result, stored) = install_over(&BODY[..10], &server.url);
     assert_eq!(result, Ok(()));
     assert_eq!(stored, BODY);
-    assert_eq!(*asked.lock().unwrap(), ["10-"]);
+    assert_eq!(*server.asked.lock().unwrap(), ["10-"]);
 }
 
 #[test]
 fn it_downloads_the_whole_file_over_http_when_the_server_has_no_ranges() {
-    let (url, _) = serve(BODY, false);
-    let (result, stored) = install_over(&BODY[..10], &url);
+    let server = serve(BODY, false);
+    let (result, stored) = install_over(&BODY[..10], &server.url);
     assert_eq!(result, Ok(()));
     assert_eq!(stored, BODY);
 }
 
 #[test]
 fn it_starts_over_when_the_bytes_kept_are_not_the_start_of_the_file() {
-    let (url, asked) = serve(BODY, true);
-    let (result, stored) = install_over(&[b'x'; 10], &url);
+    let server = serve(BODY, true);
+    let (result, stored) = install_over(&[b'x'; 10], &server.url);
     assert_eq!(result, Ok(()));
     assert_eq!(stored, BODY);
-    assert_eq!(asked.lock().unwrap().len(), 1);
+    assert_eq!(server.asked.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn its_sweep_leaves_an_old_partial_file_whose_writer_still_holds_it() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let mut writer = block_on(host.storage().resume("abc"))
+        .expect("resumed")
+        .writer;
+    block_on(writer.write(b"half")).expect("written");
+    block_on(writer.restart()).expect("flushed");
+    let kept = scratch.0.join("partial/abc.part");
+    let eight_days = std::time::Duration::from_secs(8 * 24 * 60 * 60);
+    std::fs::File::options()
+        .write(true)
+        .open(&kept)
+        .and_then(|file| file.set_modified(std::time::SystemTime::now() - eight_days))
+        .expect("aged");
+
+    drop(NativeHost::new(&scratch.0).expect("another host, as another process has"));
+    assert!(kept.exists());
+    block_on(writer.write(b"whole")).expect("still written");
+    let location = block_on(writer.commit()).expect("committed");
+    assert_eq!(std::fs::read(location).expect("stored"), b"whole");
 }
