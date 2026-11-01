@@ -206,3 +206,26 @@ fn dead_code_counts_only_under_an_os_condition_and_os_command_helpers_are_seen()
     );
     assert_eq!(n("fn f() { let _ = sh(\"cargo metadata\"); }"), 0);
 }
+
+#[test]
+fn plain_dead_code_suppressions_are_audited_not_counted() {
+    // A shared helper whose only caller is another OS's implementation inside `platform`.
+    let report = scan(
+        "#[allow(dead_code)]\npub(crate) fn helper() {}\n#[cfg_attr(native, expect(dead_code))] fn g() {}",
+        &Shared::default(),
+    )
+    .unwrap();
+    assert_eq!(report.count, 0);
+    assert_eq!(report.audit.into_iter().collect::<Vec<_>>(), vec![1, 3]);
+    // Under an OS condition it counts and is not listed twice.
+    let report = scan(
+        "#[cfg_attr(windows, allow(dead_code))] fn f() {}",
+        &Shared::default(),
+    )
+    .unwrap();
+    assert_eq!((report.count, report.audit.len()), (1, 0));
+    assert!(scan("#[allow(clippy::x)] fn f() {}", &Shared::default())
+        .unwrap()
+        .audit
+        .is_empty());
+}
