@@ -399,6 +399,7 @@ NDK (r28 or later, whose libraries are 16 KB page aligned; `ANDROID_NDK_HOME`), 
 
 ```sh
 cargo xtask android-build [DIR]   # cargo ndk build --release for both ABIs, minSdk 26; the libraries to package, in DIR/<abi>/
+cargo xtask mobile-libs android [DIR]   # only the libraries, same files and layout, without building the engine
 ```
 
 - **The libraries a shell packages.** sherpa-onnx is shared on Android: the `static` feature resolves to the shared
@@ -433,7 +434,12 @@ is not in an iOS build, as on Android: a catalogue build that needs it is reject
 
 ```sh
 cargo xtask ios-build [DIR]   # cargo build --release for both targets; the xcframeworks to embed, in DIR (default target/ios)
+cargo xtask mobile-libs ios [DIR]   # only the xcframeworks, same files and layout, without building the engine
 ```
+
+A shell whose CI only needs the libraries (to package them, not to build the engine) runs `mobile-libs`: it downloads,
+checks the digests and unpacks exactly what the matching build command leaves in `DIR`, and builds nothing (it needs no
+NDK, cargo-ndk, Xcode or macOS).
 
 - **The frameworks an app embeds and signs.** Two shared xcframeworks, each with a device slice (`ios-arm64`) and a
   simulator one (`ios-arm64_x86_64-simulator`): `sherpa-onnx.xcframework` (`SherpaOnnxC.framework`, sherpa-onnx's library)

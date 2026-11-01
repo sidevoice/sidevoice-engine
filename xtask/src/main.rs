@@ -27,6 +27,8 @@
 //!   and the libraries a shell packages per ABI written to DIR (xtask/src/android.rs).
 //! - `ios-build [DIR]`: the engine built for iOS, device and simulator, against the pinned sherpa-onnx and ONNX Runtime xcframeworks, which
 //!   are written to DIR for the app to embed (macOS only, xtask/src/ios.rs).
+//! - `mobile-libs <android|ios> [DIR]`: what `android-build` / `ios-build` leave in DIR (the same files, the same layout,
+//!   checked against the same digests), without building the engine: for a shell's CI that only packages the libraries.
 //! - `test-browser`: the engine's wasm32 tests in a headless Chrome, those that need a page (OPFS) included
 //!   (xtask/src/test_browser.rs).
 //! - `web-e2e [DIR]`: the voice loop for real in a headless Chrome, through the npm package: Whisper transcribes the
@@ -60,7 +62,8 @@ type Result<T> = std::result::Result<T, String>;
 const USAGE: &str =
     "usage: cargo xtask npm | npm-smoke | manifest DIR [--tag vX.Y.Z] | publish DIR TAG | npm-publish TAG \
      | pin-catalog [--check] | consumer-check | e2e [DIR] | link-size | remote-live | test-browser | web-e2e [DIR] \
-     | sherpa-libs [DIR | --linked | --pin | --check] | android-build [DIR] | ios-build [DIR] | platform-guard";
+     | sherpa-libs [DIR | --linked | --pin | --check] | android-build [DIR] | ios-build [DIR] \
+     | mobile-libs <android|ios> [DIR] | platform-guard";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -82,6 +85,10 @@ fn main() -> ExitCode {
         ["remote-live"] => remote_live::run(),
         ["android-build"] => android::build(None),
         ["android-build", dir] => android::build(Some(dir)),
+        ["mobile-libs", "android"] => android::libs(None),
+        ["mobile-libs", "android", dir] => android::libs(Some(dir)),
+        ["mobile-libs", "ios"] => ios::libs(None),
+        ["mobile-libs", "ios", dir] => ios::libs(Some(dir)),
         ["ios-build"] => ios::build(None),
         ["ios-build", dir] => ios::build(Some(dir)),
         ["sherpa-libs"] => sherpa_libs::fetch(None),
