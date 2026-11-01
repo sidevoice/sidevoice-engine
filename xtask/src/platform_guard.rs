@@ -11,6 +11,11 @@
 //! - a `Command::new("<program>")` of a program that exists on one OS only (shells, `uname`, `launchctl`…);
 //! - the Cargo OS variables (`CARGO_CFG_TARGET_OS`…) read by a build script.
 //!
+//! `allow(dead_code)` / `expect(dead_code)` has no rule of its own. Dead code that exists because the code is only
+//! used on another OS sits under an OS condition (`#[cfg_attr(windows, allow(dead_code))]`, or an OS alias), which
+//! the OS-condition rule above already counts. A plain `allow(dead_code)`, or one under a non-OS condition
+//! (`native`, `web`, `test`, a feature), is not OS code and costs nothing.
+//!
 //! Limits, by design of a token scan: a program name or OS variable reaching `Command::new` through a constant
 //! or a computed value, and a bare function imported by glob (`use libc::*`), are not followed.
 use std::{
@@ -197,26 +202,6 @@ fn os_attr_tokens(body: &[TokenTree], aliases: &HashSet<String>) -> bool {
     let name = body.first().and_then(ident).unwrap_or_default();
     let args = group(body.get(1), Delimiter::Parenthesis).unwrap_or_default();
     os_attr(&name, &args, aliases)
-}
-
-/// Whether an attribute body hides unused code: `allow(dead_code)` or `expect(dead_code)`, also inside `cfg_attr`.
-fn suppresses_dead_code(body: &[TokenTree]) -> bool {
-    body.iter().enumerate().any(|(i, tree)| match tree {
-        TokenTree::Group(g) => suppresses_dead_code(&flat(g.stream())),
-        TokenTree::Ident(id) if id == "allow" || id == "expect" => {
-            group(body.get(i + 1), Delimiter::Parenthesis)
-                .is_some_and(|args| mentions_ident(args, "dead_code"))
-        }
-        _ => false,
-    })
-}
-
-fn mentions_ident(stream: TokenStream, name: &str) -> bool {
-    stream.into_iter().any(|tree| match tree {
-        TokenTree::Ident(id) => id == name,
-        TokenTree::Group(g) => mentions_ident(g.stream(), name),
-        _ => false,
-    })
 }
 
 fn string_value(literal: &proc_macro2::Literal) -> Option<String> {
@@ -507,7 +492,6 @@ impl Scan {
                         // One attribute is one occurrence, however many rules it breaks.
                         if name.as_deref() == Some("windows_subsystem")
                             || native_os_link(&body)
-                            || suppresses_dead_code(&body)
                             || (cfg && os_attr_tokens(&body, &self.shared.cfg_aliases))
                         {
                             self.found(&trees[i]);

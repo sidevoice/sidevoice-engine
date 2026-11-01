@@ -182,11 +182,20 @@ fn imports_are_followed_through_renames_and_chains_in_any_order() {
 }
 
 #[test]
-fn dead_code_suppressions_and_os_command_helpers_are_seen() {
-    assert_eq!(n("#[allow(dead_code)] fn unavailable() {}"), 1);
-    assert_eq!(n("#[expect(dead_code)] fn unavailable() {}"), 1);
+fn dead_code_counts_only_under_an_os_condition_and_os_command_helpers_are_seen() {
+    assert_eq!(n("#[allow(dead_code)] fn unused() {}"), 0);
+    assert_eq!(n("#[expect(dead_code)] fn unused() {}"), 0);
     assert_eq!(
         n("#[cfg_attr(feature = \"x\", allow(dead_code))] fn f() {}"),
+        0
+    );
+    assert_eq!(n("#[cfg_attr(native, allow(dead_code))] fn f() {}"), 0);
+    assert_eq!(n("#[cfg_attr(web, expect(dead_code))] fn f() {}"), 0);
+    assert_eq!(n("#[cfg_attr(test, allow(dead_code))] fn f() {}"), 0);
+    // Cross-OS dead code stays visible through its OS condition, once per attribute.
+    assert_eq!(n("#[cfg_attr(windows, allow(dead_code))] fn f() {}"), 1);
+    assert_eq!(
+        n("#[cfg_attr(not(target_os = \"macos\"), expect(dead_code))] fn f() {}"),
         1
     );
     assert_eq!(n("#[allow(clippy::too_many_arguments)] fn f() {}"), 0);
