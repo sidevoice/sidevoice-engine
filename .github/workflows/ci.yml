@@ -8,7 +8,7 @@ name: ci
 # on every native target through the sherpa-onnx backend (test-inference; whisper.cpp runs them in the e2e workflow),
 # linked from the libraries `cargo xtask sherpa-libs` fetched and checked (.github/actions/setup), which `sherpa-libs
 # --linked` proves. What linking each backend's engine costs is link-size.yml's. The engine is also built for Android
-# (build-android), linked but not run.
+# (build-android) and for iOS (build-ios), linked but not run.
 on:
   # Into any branch, so a pull request stacked on another is checked before its base merges.
   pull_request:
@@ -117,6 +117,18 @@ jobs:
         with:
           android: true
       - run: cargo xtask android-build
+
+  # The engine for iOS, device and simulator, as a phone's app builds it, against the pinned sherpa-onnx xcframework
+  # (`cargo xtask ios-build`). On macOS, where the iOS SDK is; built and linked, not run.
+  build-ios:
+    name: Build (iOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup
+        with:
+          ios: true
+      - run: cargo xtask ios-build
 
   # What a downstream app does on Windows: a crate outside this repository, with only the configuration the README asks of
   # a consumer (it inherits nothing from .cargo/config.toml), builds against the engine and runs (xtask/src/consumer_check.rs).

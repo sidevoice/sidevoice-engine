@@ -19,5 +19,8 @@ bzip2 = "=0.6.1"
 tar = { version = "0.4.46", default-features = false }
 # `sherpa-libs --pin` reads the pinned sherpa-onnx crate's config structs to generate the fields a build's files fill.
 syn = { version = "2", default-features = false, features = ["full", "parsing"] }
+# `ios-build` unpacks sherpa-onnx's iOS xcframework (a zip, stored and deflated entries) itself, as `sherpa-libs` does for
+# the other archives.
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # Token scanning keeps comments and string contents out of the platform boundary check.
 proc-macro2 = { version = "1", features = ["span-locations"] }

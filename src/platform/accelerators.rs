@@ -7,10 +7,10 @@ use crate::host::Accelerator;
 
 /// What an OS shows of an NVIDIA driver.
 #[cfg_attr(
-    any(target_os = "macos", target_os = "android"),
+    any(target_os = "macos", target_os = "android", target_os = "ios"),
     allow(
         dead_code,
-        reason = "macOS and Android ship no NVIDIA driver and only say `Absent`; the other systems build the rest"
+        reason = "macOS, Android and iOS ship no NVIDIA driver and only say `Absent`; the other systems build the rest"
     )
 )]
 pub enum Nvidia {
@@ -49,6 +49,11 @@ pub trait Accelerators {
 mod android;
 #[cfg(target_os = "android")]
 pub use android::Os as Machine;
+
+#[cfg(target_os = "ios")]
+mod ios;
+#[cfg(target_os = "ios")]
+pub use ios::Os as Machine;
 
 #[cfg(target_os = "linux")]
 mod linux;

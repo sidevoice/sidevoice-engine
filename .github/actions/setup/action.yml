@@ -3,7 +3,8 @@ description: >-
   Installs the pinned Rust toolchain (with rustfmt and Clippy), restores the build cache and fetches sherpa-onnx's
   prebuilt libraries (`cargo xtask sherpa-libs`). With `wasm: true`, also the wasm32 target and the wasm-bindgen CLI
   (`wasm-bindgen`, and `wasm-bindgen-test-runner`, the wasm32 tests' runner in .cargo/config.toml). With `android: true`,
-  the Android targets, the NDK and cargo-ndk (`cargo xtask android-build`).
+  the Android targets, the NDK and cargo-ndk (`cargo xtask android-build`). With `ios: true`, the iOS targets
+  (`cargo xtask ios-build`, on macOS).
 
 inputs:
   wasm:
@@ -11,6 +12,9 @@ inputs:
     default: "false"
   android:
     description: Whether to set up the Android build too.
+    default: "false"
+  ios:
+    description: Whether to set up the iOS build too (on macOS).
     default: "false"
 
 runs:
@@ -63,3 +67,6 @@ runs:
         "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
         echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
         cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+    - if: inputs.ios == 'true'
+      shell: bash
+      run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
