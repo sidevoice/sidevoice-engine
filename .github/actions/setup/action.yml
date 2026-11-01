@@ -2,11 +2,15 @@ name: Set up the Rust build
 description: >-
   Installs the pinned Rust toolchain (with rustfmt and Clippy), restores the build cache and fetches sherpa-onnx's
   prebuilt libraries (`cargo xtask sherpa-libs`). With `wasm: true`, also the wasm32 target and the wasm-bindgen CLI
-  (`wasm-bindgen`, and `wasm-bindgen-test-runner`, the wasm32 tests' runner in .cargo/config.toml).
+  (`wasm-bindgen`, and `wasm-bindgen-test-runner`, the wasm32 tests' runner in .cargo/config.toml). With `android: true`,
+  the Android targets, the NDK and cargo-ndk (`cargo xtask android-build`).
 
 inputs:
   wasm:
     description: Whether to set up the wasm32 build too.
+    default: "false"
+  android:
+    description: Whether to set up the Android build too.
     default: "false"
 
 runs:
@@ -45,3 +49,17 @@ runs:
       with:
         tool: wasm-bindgen@0.2.129
         fallback: none
+    # The NDK is installed by version rather than taken from the runner image, which carries whichever it carries; r28 or
+    # later makes the libraries 16 KB page aligned. cargo-ndk is built from its published crate, as it is not among
+    # install-action's tools; rust-cache restores the binary.
+    - if: inputs.android == 'true'
+      shell: bash
+      env:
+        NDK_VERSION: "29.0.14206865"
+        CARGO_NDK_VERSION: "4.1.2"
+      run: |
+        set -euo pipefail
+        rustup target add aarch64-linux-android x86_64-linux-android
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+        cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"

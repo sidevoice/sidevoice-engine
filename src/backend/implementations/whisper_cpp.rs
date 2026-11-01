@@ -1,4 +1,5 @@
-// Native only: whisper-rs compiles whisper.cpp for the target (its dependency is native-only in Cargo.toml).
+// Native only: whisper-rs compiles whisper.cpp for the target (its dependency is native-only in Cargo.toml). Nor on a
+// phone: `platform::local_engines` gates the module's declaration, and Cargo.toml's table has the same condition.
 #![cfg(native)]
 //! whisper.cpp, on ggml: speech to text with Whisper's ggml builds (the catalogue's `whisper-cpp` builds, files from
 //! ggerganov/whisper.cpp). One whole turn at a time, in the language asked for or the one it detects, decoded greedily,
