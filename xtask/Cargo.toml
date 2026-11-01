@@ -7,6 +7,11 @@ publish = false
 description = "Build tooling for the engine: the npm package, the release assets, publishing, the catalogue's pins and the voice loop."
 
 [dependencies]
+# The host's OS and CPU names (`linux-x86_64`, `macos-x86_64`, ...) shared with the connector, from a core release tag.
+# Only `target`, so no default features: no third-party crate comes with it. Build tooling only; the engine library never
+# depends on it. The tag is the core release that carries `target::host()` (sidevoice/sidevoice-core#233); whoever
+# releases core and bumps its consumers bumps it here too, as in the connector (which pins v0.16.0).
+sidevoice-platform = { git = "https://github.com/sidevoice/sidevoice-core", tag = "v0.17.0", default-features = false }
 # preserve_order: `pin-catalog` rewrites the family files with their keys where they were.
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

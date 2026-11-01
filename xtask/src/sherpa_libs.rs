@@ -53,7 +53,7 @@ struct Archive {
 /// `cargo xtask sherpa-libs [DIR]`.
 pub(crate) fn fetch(dir: Option<&str>) -> Result<()> {
     let pins = pins()?;
-    let platform = format!("{}-{}", env::consts::OS, env::consts::ARCH);
+    let platform = sidevoice_platform::target::host().name();
     let archive = pins
         .archives
         .get(&platform)
