@@ -118,7 +118,7 @@ jobs:
           android: true
       - run: cargo xtask android-build
 
-  # The engine for iOS, device and simulator, as a phone's app builds it, against the pinned sherpa-onnx xcframework
+  # The engine for iOS, device and simulator, as a phone's app builds it, against the pinned sherpa-onnx and ONNX Runtime xcframeworks
   # (`cargo xtask ios-build`). On macOS, where the iOS SDK is; built and linked, not run.
   build-ios:
     name: Build (iOS)

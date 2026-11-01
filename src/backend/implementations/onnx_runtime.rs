@@ -1,16 +1,14 @@
-// Native only: it runs on the ONNX Runtime that sherpa-onnx links into native builds. Not on iOS, whose xcframework
-// exports none for `ort` to find: `platform::local_engines` gates the module's declaration, and Cargo.toml's table has
-// the same condition.
+// Native only: it runs on the ONNX Runtime that sherpa-onnx links into native builds.
 #![cfg(native)]
 //! ONNX Runtime: ONNX models that no other backend's library knows how to configure, run directly. Today smart-turn
 //! v3, end of turn.
 //!
 //! # Binding
 //!
-//! Native builds already link one ONNX Runtime, statically, inside sherpa-onnx's libraries (1.28 for sherpa-onnx
-//! 1.13.8). This backend runs on that one rather than link a second: the `ort` crate's safe API, with `ort-sys`'s
-//! `disable-linking`, so it downloads and links no runtime of its own, and `OrtGetApiBase` resolves, when the app is
-//! linked, to the runtime inside sherpa-onnx's libraries. `ort` initializes itself from it the first time it is used,
+//! Native builds already link one ONNX Runtime with sherpa-onnx (1.28 for sherpa-onnx 1.13.8): statically, inside its
+//! libraries, or on iOS in the shared `onnxruntime.framework` its library loads (build.rs). This backend runs on that one rather than link a
+//! second: the `ort` crate's safe API, with `ort-sys`'s `disable-linking`, so it downloads and links no runtime of its
+//! own, and `OrtGetApiBase` resolves, when the app is linked, to that runtime. `ort` initializes itself from it the first time it is used,
 //! as it does for any caller: the engine installs no process-wide API, so an app's own use of `ort` is unaffected by
 //! whether, or when, this backend opens. `open` only checks that the linked runtime offers API 17. What it adds to an
 //! app is `ort`'s glue.

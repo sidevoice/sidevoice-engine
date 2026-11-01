@@ -34,6 +34,12 @@ const PINS: &str = "xtask/sherpa-onnx-libs.json";
 const RELEASES: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download";
 /// The release tag the iOS xcframeworks of every version are published under.
 const XCFRAMEWORKS: &str = "xcframework";
+/// The shared ONNX Runtime xcframework iOS links (sherpa-onnx builds its iOS libraries against this version, its
+/// `build-ios-shared.sh`), and where its builder publishes it.
+const ONNXRUNTIME_VERSION: &str = "1.28.2";
+const ONNXRUNTIME_RELEASES: &str =
+    "https://github.com/csukuangfj/onnxruntime-libs/releases/download";
+const ONNXRUNTIME_REPO: &str = "csukuangfj/onnxruntime-libs";
 
 /// `xtask/sherpa-onnx-libs.json`.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +47,8 @@ const XCFRAMEWORKS: &str = "xcframework";
 struct Pins {
     /// sherpa-onnx's version: the one Cargo.toml pins the crate to.
     version: String,
-    /// Per platform (`<os>-<arch>`, Rust's names), its static archive; and `android` and `ios`, the shared libraries.
+    /// Per platform (`<os>-<arch>`, Rust's names), its static archive; and `android`, `ios` (sherpa-onnx's shared xcframework) and
+    /// `ios-onnxruntime` (the ONNX Runtime xcframework it loads), the shared libraries.
     archives: BTreeMap<String, Archive>,
 }
 
@@ -93,12 +100,16 @@ fn pinned_archive(platform: &str, dir: Option<&str>) -> Result<(Archive, PathBuf
     if let Some(bytes) = cached(&path, &archive.sha256)? {
         return Ok((archive, dir, bytes));
     }
-    let tag = if archive.name.ends_with(".xcframework.zip") {
-        XCFRAMEWORKS.to_owned()
+    let url = if archive.name.starts_with("onnxruntime-") {
+        format!(
+            "{ONNXRUNTIME_RELEASES}/v{ONNXRUNTIME_VERSION}/{}",
+            archive.name
+        )
+    } else if archive.name.ends_with(".xcframework.zip") {
+        format!("{RELEASES}/{XCFRAMEWORKS}/{}", archive.name)
     } else {
-        format!("v{}", pins.version)
+        format!("{RELEASES}/v{}/{}", pins.version, archive.name)
     };
-    let url = format!("{RELEASES}/{tag}/{}", archive.name);
     let partial = dir.join(format!("{}.partial", archive.name));
     let partial_text = partial.to_string_lossy().into_owned();
     run_in(&dir, "curl -fsSL --retry 3 -o", &[&partial_text, &url])?;
@@ -127,6 +138,15 @@ pub(crate) fn android_archive(dir: Option<&str>) -> Result<Vec<u8>> {
     pinned_archive("android", dir).map(|(_, _, bytes)| bytes)
 }
 
+/// The bytes of the two iOS xcframeworks, as zips, in `dir` (default as `fetch`'s), each downloaded unless it is there
+/// and checked against its pin: sherpa-onnx's (`sherpa-onnx.xcframework`, whose library loads the ONNX Runtime) and the
+/// ONNX Runtime's (`onnxruntime.xcframework`), each with a device and a simulator slice.
+pub(crate) fn ios_archives(dir: Option<&str>) -> Result<(Vec<u8>, Vec<u8>)> {
+    let sherpa = pinned_archive("ios", dir)?.2;
+    let onnxruntime = pinned_archive("ios-onnxruntime", dir)?.2;
+    Ok((sherpa, onnxruntime))
+}
+
 /// Unpacks the Android `archive` (the bytes `android_archive` checked) into `dest`, emptied first, and returns its
 /// `jniLibs` directory. What is linked and packaged is read from here and from nowhere `sherpa-onnx-sys` keeps its
 /// own copy of.
@@ -139,12 +159,6 @@ pub(crate) fn unpack_android(archive: &[u8], dest: &Path) -> Result<PathBuf> {
     } else {
         Err(format!("{}: no jniLibs inside", dest.display()))
     }
-}
-
-/// The bytes of the iOS xcframework (`SherpaOnnxC.xcframework`, device and simulator slices) as a zip, in `dir`
-/// (default as `fetch`'s), downloaded unless it is there and checked against its pin.
-pub(crate) fn ios_archive(dir: Option<&str>) -> Result<Vec<u8>> {
-    pinned_archive("ios", dir).map(|(_, _, bytes)| bytes)
 }
 
 /// Unpacks `archive` (checked bytes) into `dir`, through a scratch directory so that a half-unpacked `stem/` never
@@ -241,8 +255,12 @@ fn has_files(dir: &Path) -> bool {
 /// `cargo xtask sherpa-libs --pin` (or `--check`).
 pub(crate) fn pin(check: bool) -> Result<()> {
     let version = crate_version(&String::from_utf8_lossy(&read(&repo().join("Cargo.toml"))?))?;
-    let mut assets = release(&format!("v{version}"))?;
-    assets.extend(release(XCFRAMEWORKS)?);
+    let mut assets = release("k2-fsa/sherpa-onnx", &format!("v{version}"))?;
+    assets.extend(release("k2-fsa/sherpa-onnx", XCFRAMEWORKS)?);
+    assets.extend(release(
+        ONNXRUNTIME_REPO,
+        &format!("v{ONNXRUNTIME_VERSION}"),
+    )?);
     let mut archives = BTreeMap::new();
     for (platform, name) in archive_names(&version) {
         let sha256 = assets
@@ -298,7 +316,8 @@ fn crate_version(manifest: &str) -> Result<String> {
 }
 
 /// The archive of each platform, as `sherpa-onnx-sys`'s build script names it (`archive_name`: the static arms, and the
-/// Android and iOS ones, where every target links the shared libraries).
+/// Android and iOS ones, where every target links the shared libraries; iOS's are the two xcframeworks, sherpa-onnx's
+/// and the ONNX Runtime it loads, which `ort` resolves too).
 fn archive_names(version: &str) -> Vec<(String, String)> {
     [
         ("linux-x86_64", "linux-x64-static-lib"),
@@ -316,17 +335,23 @@ fn archive_names(version: &str) -> Vec<(String, String)> {
             format!("sherpa-onnx-v{version}-{kind}.tar.bz2"),
         )
     })
-    .chain([(
-        "ios".to_owned(),
-        format!("sherpa-onnx-v{version}-ios-shared-onnxruntime-static.xcframework.zip"),
-    )])
+    .chain([
+        (
+            "ios".to_owned(),
+            format!("sherpa-onnx-v{version}-ios-shared.xcframework.zip"),
+        ),
+        (
+            "ios-onnxruntime".to_owned(),
+            format!("onnxruntime-ios-shared-xcframework-{ONNXRUNTIME_VERSION}.xcframework.zip"),
+        ),
+    ])
     .collect()
 }
 
-/// Each asset of the release tagged `tag` and its SHA-256, as GitHub publishes it. Asked with `GITHUB_TOKEN` when it is
+/// Each asset of the release tagged `tag` of `repo` and its SHA-256, as GitHub publishes it. Asked with `GITHUB_TOKEN` when it is
 /// set.
-fn release(tag: &str) -> Result<BTreeMap<String, String>> {
-    let url = format!("https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/tags/{tag}");
+fn release(repo: &str, tag: &str) -> Result<BTreeMap<String, String>> {
+    let url = format!("https://api.github.com/repos/{repo}/releases/tags/{tag}");
     let auth = env::var("GITHUB_TOKEN").map(|token| format!("Authorization: Bearer {token}"));
     let mut args: Vec<&str> = auth
         .as_deref()
