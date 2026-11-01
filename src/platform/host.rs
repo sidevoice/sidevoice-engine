@@ -12,3 +12,6 @@ pub const ARCH: &str = std::env::consts::ARCH;
 
 /// Whether this is macOS on an ARM chip, the one machine where Metal is a GPU the engine's backends can use.
 pub const APPLE_SILICON: bool = cfg!(apple_silicon);
+
+#[cfg(test)]
+mod tests;

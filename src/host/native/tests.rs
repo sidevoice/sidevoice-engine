@@ -130,7 +130,15 @@ fn it_installs_a_real_file_in_its_build_folder_and_uninstalls_it() {
     );
     let blob = scratch.0.join("blobs").join(PINNED_SHA256);
     assert!(blob.is_file());
-    assert_eq!(Files::count(&blob).expect("counted"), 2);
+    // Two names where this file system hard-links (a probe in the same directory says so); the one name of its blob
+    // where the install fell back to copying, as `directory` does when linking fails (some Windows temp folders).
+    let (probe, probed) = (scratch.0.join("probe"), scratch.0.join("probed"));
+    std::fs::write(&probe, b"probe").expect("a file");
+    let links = std::fs::hard_link(&probe, &probed).is_ok();
+    assert_eq!(
+        Files::count(&blob).expect("counted"),
+        if links { 2 } else { 1 }
+    );
     let sizes = sizes.into_inner().unwrap();
     assert!(sizes
         .iter()
