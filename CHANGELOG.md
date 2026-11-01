@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.7.0...v0.8.0) (2026-11-01)
+
+
+### Features
+
+* **mobile:** build the engine for Android ([#136](https://github.com/sidevoice/sidevoice-engine/issues/136)) ([2af4527](https://github.com/sidevoice/sidevoice-engine/commit/2af45275383714d7dbb88aa84f7ec7c4d9c6aa4c))
+* **mobile:** build the engine for iOS ([#138](https://github.com/sidevoice/sidevoice-engine/issues/138)) ([3e45598](https://github.com/sidevoice/sidevoice-engine/commit/3e45598702d51ca41f7fa2ac34cac38fd08b7e98))
+* **platform:** one memory observation with defined units ([#137](https://github.com/sidevoice/sidevoice-engine/issues/137)) ([7c2950b](https://github.com/sidevoice/sidevoice-engine/commit/7c2950b56a9f13d4a28c78cfc09f3408c1415388))
+
 ## [0.7.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.6.0...v0.7.0) (2026-10-30)
 
 
