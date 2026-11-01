@@ -112,11 +112,15 @@ whisper-rs = "=0.16.0"
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "api-17"] }
 ort-sys = { version = "=2.0.0-rc.13", default-features = false, features = ["disable-linking"] }
 
-# iOS only: a floor for `libc`, which no code of the engine names. `sysinfo` 0.39.6 allows `libc` ^0.2.173, and its
+# iOS only: a floor for `libc`, which no iOS code of the engine names. `sysinfo` 0.39.6 allows `libc` ^0.2.173, and its
 # Apple code calls `mach_host_self` and `mach_task_self`, which 0.2.190 lacks for iOS (0.2.191 has them): this makes a
 # consuming app's own lock file resolve to a `libc` that compiles, as the engine's does.
 [target.'cfg(target_os = "ios")'.dependencies]
 libc = "0.2.191"
+
+# macOS only: the kernel's memory-pressure level (src/platform/memory/macos.rs), which `sysinfo` does not give.
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2.190"
 
 # Windows only: the hard-link count of a file (src/platform/links/windows.rs), which std exposes only on Unix, the
 # graphics adapters the system lists (src/platform/accelerators/windows.rs: DXGI, a system library, no vendor's) and the
