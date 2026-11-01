@@ -56,6 +56,8 @@ pub use host::{
 pub use host::{NativeHost, TreeWriter};
 pub use install::{Artifact, Cancel, Progress, ProgressSink};
 pub use maybe_send::{MaybeSend, MaybeSync};
+#[cfg(native)]
+pub use platform::memory::MemoryObservation;
 pub use provider::{RemoteModel, RemoteModelInfo};
 pub use resolver::Reason;
 

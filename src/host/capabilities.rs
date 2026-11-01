@@ -27,7 +27,7 @@ pub struct Capabilities {
     /// The accelerators present here, as far as the host can see; order does not matter. Each backend's `probe`
     /// confirms which of these it can actually use.
     pub accelerators: Vec<Accelerator>,
-    /// Memory available to models, in MB, when the host can tell.
+    /// Memory available to models, in MiB (2^20 bytes, what every `_mb` in the engine means), when the host can tell.
     pub memory_mb: Option<u32>,
     /// CPU cores, when the host can tell.
     pub cores: Option<u32>,

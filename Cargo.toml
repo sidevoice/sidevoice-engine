@@ -104,6 +104,10 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # (.cargo/config.toml, README).
 whisper-rs = "=0.16.0"
 
+# macOS only: the kernel's memory-pressure level (src/platform/memory/macos.rs), which `sysinfo` does not give.
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2.190"
+
 # Windows only: the hard-link count of a file (src/platform/links/windows.rs), which std exposes only on Unix, the
 # graphics adapters the system lists (src/platform/accelerators/windows.rs: DXGI, a system library, no vendor's) and the
 # process's ANSI code page (src/platform/narrow_paths/windows.rs).

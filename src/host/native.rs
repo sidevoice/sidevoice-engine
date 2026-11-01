@@ -10,6 +10,7 @@ use crate::host::{
     Capabilities, Credentials, Fetcher, Host, HttpClient, NoCredentials, Runs, Storage,
 };
 use crate::platform::accelerators::{Accelerators, Machine};
+use crate::platform::memory::MemoryObservation;
 use crate::Result;
 
 mod directory;
@@ -26,7 +27,7 @@ use http::Http;
 /// built:
 ///
 /// - `os` and `arch` from `std::env::consts`, `cores` from `std::thread::available_parallelism`, and `memory_mb`, the
-///   machine's memory (or its cgroup's limit, if lower), from `sysinfo`;
+///   machine's memory (or its cgroup's limit, if lower), in MiB, from the platform's `MemoryObservation` (`sysinfo`);
 /// - accelerators, from the OS (the platform's `Accelerators`): `Cpu` always; `Metal` and `CoreMl` on macOS; `Cuda` where an NVIDIA driver
 ///   lists a device (Linux's `/proc` entry, Windows' DXGI adapters). Candidates only: each backend's probe confirms what it can
 ///   actually use.
@@ -107,23 +108,9 @@ fn capabilities() -> Capabilities {
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         accelerators: Machine::detect(),
-        memory_mb: memory_mb(),
+        memory_mb: MemoryObservation::now().total_mb,
         cores: thread::available_parallelism()
             .ok()
             .map(|cores| u32::try_from(cores.get()).unwrap_or(u32::MAX)),
     }
-}
-
-/// The machine's memory in MB, or its cgroup's limit if lower; `None` if it cannot be read.
-fn memory_mb() -> Option<u32> {
-    let mut system = sysinfo::System::new();
-    system.refresh_memory();
-    let mut bytes = system.total_memory();
-    if let Some(limits) = system.cgroup_limits() {
-        if limits.total_memory > 0 {
-            bytes = bytes.min(limits.total_memory);
-        }
-    }
-    let mb = bytes / (1024 * 1024);
-    (mb > 0).then(|| u32::try_from(mb).unwrap_or(u32::MAX))
 }
