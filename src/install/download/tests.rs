@@ -118,7 +118,7 @@ fn a_server_without_ranges_sends_the_whole_file_and_the_kept_bytes_go() {
 #[test]
 fn kept_bytes_that_are_wrong_start_the_download_over() {
     let host = MemoryHost::serving(&[(URL, MODEL)]).with_ranges();
-    host.keep_partial(&sha256(MODEL), &vec![b'x'; KEPT]);
+    host.keep_partial(&sha256(MODEL), &[b'x'; KEPT]);
     let (result, _) = fetch(&host, &sha256(MODEL), &Cancel::new());
     assert_eq!(result, Ok(()));
     // Once from the kept bytes, once from the start.
