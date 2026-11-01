@@ -14,7 +14,9 @@ pub(crate) fn measure() -> Result<()> {
     let (_, target) = metadata()?;
     let root = target.join("link-size");
     let (bytes, backends) = build(&root)?;
-    let platform = format!("{} {}", env::consts::OS, env::consts::ARCH);
+    let host = sidevoice_platform::target::build_target()
+        .ok_or("link-size: this platform has no release target")?;
+    let platform = format!("{} {}", host.os, host.arch);
     let table = format!(
         "| Platform | Size | Backends |\n|---|---|---|\n| {platform} | {:.1} MB ({bytes} B) | {} |\n",
         bytes as f64 / 1_048_576.0,

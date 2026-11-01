@@ -7,6 +7,9 @@ publish = false
 description = "Build tooling for the engine: the npm package, the release assets, publishing, the catalogue's pins and the voice loop."
 
 [dependencies]
+# The release target names (`linux-x86_64`, ...) the host builds for, shared with the connector: the core release tag, as the
+# connector pins it. Build tooling only; the engine library never depends on it.
+sidevoice-platform = { git = "https://github.com/sidevoice/sidevoice-core", tag = "v0.16.1" }
 # preserve_order: `pin-catalog` rewrites the family files with their keys where they were.
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

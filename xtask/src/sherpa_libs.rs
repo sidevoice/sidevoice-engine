@@ -53,10 +53,12 @@ struct Archive {
 /// `cargo xtask sherpa-libs [DIR]`.
 pub(crate) fn fetch(dir: Option<&str>) -> Result<()> {
     let pins = pins()?;
-    let platform = format!("{}-{}", env::consts::OS, env::consts::ARCH);
+    let platform = sidevoice_platform::target::build_target()
+        .ok_or(format!("{PINS}: this platform has no release target"))?
+        .name;
     let archive = pins
         .archives
-        .get(&platform)
+        .get(platform)
         .ok_or(format!("{PINS}: no archive for {platform}"))?;
     let dir = match dir {
         Some(dir) => PathBuf::from(dir),
