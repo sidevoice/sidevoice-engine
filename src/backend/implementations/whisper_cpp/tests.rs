@@ -6,12 +6,13 @@ use super::{context_params, language_id, WhisperCpp, SPEC};
 use crate::backend::{Backend, BackendModel};
 use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
+use crate::platform::host::APPLE_SILICON;
 use crate::test_support::{block_on, build};
 use crate::Result;
 
 #[test]
 fn it_declares_metal_first_on_apple_silicon_and_the_cpu_everywhere() {
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    if APPLE_SILICON {
         assert_eq!(SPEC.accelerators, [Accelerator::Metal, Accelerator::Cpu]);
     } else {
         assert_eq!(SPEC.accelerators, [Accelerator::Cpu]);
@@ -65,7 +66,7 @@ fn it_refuses_an_accelerator_it_does_not_run_on_before_reading_the_model() {
         );
     }
     let metal = code(load(Accelerator::Metal, &model));
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    if APPLE_SILICON {
         assert_eq!(metal, "model-load-failed");
     } else {
         assert_eq!(metal, "unsupported-accelerator");
@@ -94,7 +95,7 @@ fn flash_attention_is_on_with_the_gpu_and_off_on_the_cpu() {
     let on =
         |accelerator| context_params(accelerator).map(|params| (params.use_gpu, params.flash_attn));
     assert_eq!(on(Accelerator::Cpu), Ok((false, false)));
-    if cfg!(apple_silicon) {
+    if APPLE_SILICON {
         assert_eq!(on(Accelerator::Metal), Ok((true, true)));
     } else {
         assert_eq!(

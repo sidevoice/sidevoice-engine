@@ -1,8 +1,9 @@
-//! Which backends each build contains. The expected lists use the raw target conditions, not the engine's aliases:
-//! these tests are what checks the aliases.
+//! Which backends each build contains. The expected lists read `platform::host` for Apple silicon and
+//! the raw `wasm32` condition for the web build.
 
 use super::{built_in, is_known, KNOWN};
 use crate::host::Host;
+use crate::platform::host::APPLE_SILICON;
 use crate::test_support::FakeHost;
 
 #[cfg(web)]
@@ -16,7 +17,7 @@ fn built_in_is_exactly_this_platforms_backends() {
     if cfg!(target_arch = "wasm32") {
         expected.push("transformers-js");
     } else {
-        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        if APPLE_SILICON {
             expected.push("mlx");
         }
         expected.push("onnxruntime");

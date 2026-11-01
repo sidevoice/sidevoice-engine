@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use sha2::Digest;
 
+use crate::platform::host;
+
 #[cfg(native)]
 use crate::TreeWriter;
 use crate::{
@@ -26,9 +28,9 @@ impl Host for FakeHost {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             runs: if cfg!(web) { Runs::Page } else { Runs::Native },
-            os: std::env::consts::OS.to_owned(),
-            arch: std::env::consts::ARCH.to_owned(),
-            accelerators: if cfg!(apple_silicon) {
+            os: host::OS.to_owned(),
+            arch: host::ARCH.to_owned(),
+            accelerators: if host::APPLE_SILICON {
                 vec![Accelerator::Metal, Accelerator::Cpu]
             } else {
                 vec![Accelerator::Cpu, Accelerator::Wasm]

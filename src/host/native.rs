@@ -10,6 +10,7 @@ use crate::host::{
     Capabilities, Credentials, Fetcher, Host, HttpClient, NoCredentials, Runs, Storage,
 };
 use crate::platform::accelerators::{Accelerators, Machine};
+use crate::platform::host;
 use crate::Result;
 
 mod directory;
@@ -104,8 +105,8 @@ impl Host for NativeHost {
 fn capabilities() -> Capabilities {
     Capabilities {
         runs: Runs::Native,
-        os: std::env::consts::OS.to_owned(),
-        arch: std::env::consts::ARCH.to_owned(),
+        os: host::OS.to_owned(),
+        arch: host::ARCH.to_owned(),
         accelerators: Machine::detect(),
         memory_mb: memory_mb(),
         cores: thread::available_parallelism()

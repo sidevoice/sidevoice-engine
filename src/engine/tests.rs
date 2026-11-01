@@ -17,6 +17,7 @@ use std::task::{Context, Poll};
 use crate::backend::{Backend, BackendModel, BackendSpec, Library, SttModel, TtsModel};
 use crate::catalog::{CatalogFragment, CatalogSource};
 use crate::install::Installed;
+use crate::platform::host::APPLE_SILICON;
 use crate::test_support::{
     block_on, build, family, model, sha256, FakeCatalog, FakeHost, MemoryHost,
 };
@@ -44,7 +45,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     // sherpa-onnx on the CPU (sidevoice-engine#4); elsewhere both are on the CPU, and catalogue order stands.
     let recommended = if cfg!(web) {
         "whisper-small-web"
-    } else if cfg!(apple_silicon) {
+    } else if APPLE_SILICON {
         "whisper-small-gguf"
     } else {
         "whisper-small-onnx"
@@ -53,7 +54,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     assert_eq!(small.builds[0].id, recommended);
     assert!(small.builds[0].available && small.builds[0].accelerator.is_some());
     // Each build that runs says its accelerator's class; one that does not, none.
-    let class = if cfg!(apple_silicon) {
+    let class = if APPLE_SILICON {
         AcceleratorClass::Gpu
     } else {
         AcceleratorClass::Cpu
@@ -70,7 +71,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     let last = small.builds.last().expect("builds");
     assert!(!last.available && last.accelerator_class().is_none());
     assert!(small.builds[0].reasons.is_empty());
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    if APPLE_SILICON {
         let mlx = small
             .builds
             .iter()
@@ -84,7 +85,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .iter()
         .find(|b| b.id == "whisper-small-gguf")
         .expect("gguf");
-    if cfg!(apple_silicon) {
+    if APPLE_SILICON {
         assert_eq!(gguf.accelerator, Some(Accelerator::Metal));
     } else if cfg!(not(target_arch = "wasm32")) {
         assert_eq!(gguf.accelerator, Some(Accelerator::Cpu));
@@ -183,7 +184,7 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     };
     let backends: &[&str] = if cfg!(target_arch = "wasm32") {
         &["transformers-js"]
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    } else if APPLE_SILICON {
         &["mlx", "sherpa-onnx", "whisper-cpp", "onnxruntime"]
     } else {
         &["sherpa-onnx", "whisper-cpp", "onnxruntime"]
@@ -226,7 +227,7 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     // (sidevoice-engine#4); natively elsewhere both run on the CPU and catalogue order keeps sherpa-onnx.
     let whisper = if cfg!(web) {
         "transformers-js"
-    } else if cfg!(apple_silicon) {
+    } else if APPLE_SILICON {
         "whisper-cpp"
     } else {
         "sherpa-onnx"
