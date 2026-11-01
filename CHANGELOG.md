@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.8.0...v0.9.0) (2026-11-01)
+
+
+### Features
+
+* **mobile:** smart-turn on iOS through one shared ONNX Runtime ([#144](https://github.com/sidevoice/sidevoice-engine/issues/144)) ([b94a46e](https://github.com/sidevoice/sidevoice-engine/commit/b94a46e46fa5649416fbdfad0597f40620b89bc6))
+
 ## [0.8.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.7.0...v0.8.0) (2026-11-01)
 
 
