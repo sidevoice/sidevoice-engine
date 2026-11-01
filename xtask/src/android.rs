@@ -27,20 +27,43 @@ const RUNTIME_LIBS: [&str; 2] = ["libsherpa-onnx-c-api.so", "libonnxruntime.so"]
 
 /// `cargo xtask android-build [DIR]`.
 pub(crate) fn build(dir: Option<&str>) -> Result<()> {
+    let (libs, out) = prepare(dir)?;
+    for abi in ABIS {
+        ndk(abi, &libs.join(abi))?;
+        println!("{}", out.join(abi).display());
+    }
+    Ok(())
+}
+
+/// `cargo xtask mobile-libs android [DIR]`: the same libraries in the same layout, without building the engine.
+pub(crate) fn libs(dir: Option<&str>) -> Result<()> {
+    let (_, out) = prepare(dir)?;
+    for abi in ABIS {
+        println!("{}", out.join(abi).display());
+    }
+    Ok(())
+}
+
+/// The pinned archive checked and unpacked into `<target>/android-sherpa/` (returned: the directory the engine is linked
+/// against) and the runtime libraries packaged into `DIR/<abi>/` (returned: `DIR`).
+fn prepare(dir: Option<&str>) -> Result<(PathBuf, PathBuf)> {
     let archive = sherpa_libs::android_archive(None)?;
     let (_, target) = metadata()?;
     let libs = sherpa_libs::unpack_android(&archive, &target.join("android-sherpa"))?;
     let out = dir.map_or_else(|| target.join("android"), PathBuf::from);
-    empty_dir(&out)?;
+    package(&libs, &out)?;
+    Ok((libs, out))
+}
+
+/// `out` emptied, then `DIR/<abi>/` filled with the runtime libraries of each ABI from the unpacked `libs`.
+fn package(libs: &Path, out: &Path) -> Result<()> {
+    empty_dir(out)?;
     for abi in ABIS {
-        let linked = libs.join(abi);
-        ndk(abi, &linked)?;
         let packaged = out.join(abi);
         fs::create_dir_all(&packaged).map_err(|e| format!("{}: {e}", packaged.display()))?;
         for lib in RUNTIME_LIBS {
-            copy(&linked.join(lib), &packaged.join(lib))?;
+            copy(&libs.join(abi).join(lib), &packaged.join(lib))?;
         }
-        println!("{}", packaged.display());
     }
     Ok(())
 }
@@ -78,3 +101,6 @@ fn copy(from: &Path, to: &Path) -> Result<()> {
         )
     })
 }
+
+#[cfg(test)]
+mod tests;

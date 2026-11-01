@@ -17,7 +17,7 @@
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::{empty_dir, metadata, repo, sherpa_libs, Result};
@@ -36,15 +36,48 @@ const ONNXRUNTIME: &str = "onnxruntime";
 
 /// `cargo xtask ios-build [DIR]`.
 pub(crate) fn build(dir: Option<&str>) -> Result<()> {
+    let out = prepare(dir)?;
+    for (triple, _) in TARGETS {
+        link(
+            triple,
+            &out.join(format!("lib-{triple}")),
+            &out.join(format!("frameworks-{triple}")),
+        )?;
+    }
+    print_frameworks(&out);
+    Ok(())
+}
+
+/// `cargo xtask mobile-libs ios [DIR]`: the same xcframeworks in the same layout, without building the engine.
+pub(crate) fn libs(dir: Option<&str>) -> Result<()> {
+    print_frameworks(&prepare(dir)?);
+    Ok(())
+}
+
+fn print_frameworks(out: &Path) {
+    for xcframework in [SHERPA_XCFRAMEWORK, ONNXRUNTIME_XCFRAMEWORK] {
+        println!("{}", out.join(xcframework).display());
+    }
+}
+
+/// The pinned archives checked and unpacked into `DIR` (returned), with the per-target directories the linker is
+/// pointed at.
+fn prepare(dir: Option<&str>) -> Result<PathBuf> {
     let (sherpa, onnxruntime) = sherpa_libs::ios_archives(None)?;
     let (_, target) = metadata()?;
-    let out = dir.map_or_else(|| target.join("ios"), std::path::PathBuf::from);
+    let out = dir.map_or_else(|| target.join("ios"), PathBuf::from);
     empty_dir(&out)?;
     for archive in [sherpa, onnxruntime] {
         zip::ZipArchive::new(io::Cursor::new(archive))
             .and_then(|mut zip| zip.extract(&out))
             .map_err(|e| format!("unpacking into {}: {e}", out.display()))?;
     }
+    layout(&out)?;
+    Ok(out)
+}
+
+/// For each target, from the unpacked xcframeworks in `out`: `lib-<triple>/` and `frameworks-<triple>/`.
+fn layout(out: &Path) -> Result<()> {
     for (triple, slice) in TARGETS {
         let binary = |xcframework: &str, name: &str| {
             out.join(xcframework)
@@ -68,10 +101,6 @@ pub(crate) fn build(dir: Option<&str>) -> Result<()> {
             &binary(ONNXRUNTIME_XCFRAMEWORK, ONNXRUNTIME),
             &framework.join(ONNXRUNTIME),
         )?;
-        link(triple, &lib, &frameworks)?;
-    }
-    for xcframework in [SHERPA_XCFRAMEWORK, ONNXRUNTIME_XCFRAMEWORK] {
-        println!("{}", out.join(xcframework).display());
     }
     Ok(())
 }
@@ -98,3 +127,6 @@ fn copy(from: &Path, to: &Path) -> Result<()> {
         .map(drop)
         .map_err(|e| format!("{} to {}: {e}", from.display(), to.display()))
 }
+
+#[cfg(test)]
+mod tests;
