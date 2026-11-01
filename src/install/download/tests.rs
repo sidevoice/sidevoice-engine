@@ -137,11 +137,12 @@ fn a_file_that_is_wrong_from_the_start_is_downloaded_once_and_leaves_nothing_kep
 }
 
 #[test]
-fn a_cancelled_download_keeps_what_arrived_and_the_next_one_finishes_it() {
+fn a_cancelled_download_leaves_nothing_kept_for_the_next_one() {
     let host = MemoryHost::serving(&[(URL, MODEL)]).with_ranges();
+    host.keep_partial(&sha256(MODEL), &MODEL[..KEPT]);
     let cancel = Cancel::new();
     let progress = |progress: Progress| {
-        if progress.received >= 8 {
+        if progress.received > KEPT as u64 {
             cancel.cancel();
         }
     };
@@ -160,12 +161,6 @@ fn a_cancelled_download_keeps_what_arrived_and_the_next_one_finishes_it() {
         start,
     ));
     assert_eq!(result.expect_err("cancelled").code, "cancelled");
-    let kept = host.partial(&sha256(MODEL)).expect("kept");
-    assert!(!kept.is_empty() && kept.len() < MODEL.len());
-    assert_eq!(kept, MODEL[..kept.len()]);
-
-    let (result, _) = fetch(&host, &sha256(MODEL), &Cancel::new());
-    assert_eq!(result, Ok(()));
-    assert_eq!(host.offsets(), [kept.len() as u64]);
-    assert_eq!(host.stored()[&sha256(MODEL)], MODEL);
+    assert_eq!(host.partial(&sha256(MODEL)), None);
+    assert!(host.stored().is_empty());
 }

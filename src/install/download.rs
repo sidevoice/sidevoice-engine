@@ -1,9 +1,9 @@
 //! One file downloaded into storage: fetched through the host, hashed as its bytes arrive, written as they come, and
-//! committed under its digest only if it is the file expected. A download that stops half way (a failure, a cancel,
+//! committed under its digest only if it is the file expected. A download that stops half way (a failure,
 //! the future dropped) stores nothing, but the host may keep what arrived ([`Storage::resume`]): the next attempt asks
 //! the server for the rest ([`Fetcher::fetch_from`]), hashes the bytes kept first, and goes on, so the digest is
 //! always checked over the whole file. A server that sends the whole file anyway, or bytes kept that turn out wrong,
-//! start it over.
+//! start it over. A cancel removes what arrived: it is the person's, and the install it was part of is cancelled.
 
 use super::digest::Hasher;
 use super::{Cancel, Progress, ProgressSink};
@@ -64,7 +64,15 @@ async fn transfer(
         return Err(Error::new("download-failed"));
     }
     if offset > 0 {
-        let hashed = hash_kept(kept, &mut hasher, cancel).await?;
+        let hashed = match hash_kept(kept, &mut hasher, cancel).await {
+            Ok(hashed) => hashed,
+            Err(error) => {
+                if error.code == "cancelled" {
+                    writer.discard().await?;
+                }
+                return Err(error);
+            }
+        };
         if hashed != len {
             // The bytes kept are not all there.
             writer.discard().await?;
@@ -78,7 +86,7 @@ async fn transfer(
     report.received += offset;
     report.size = download.size().map(|size| size + offset);
     progress.progress(report);
-    stream(
+    let streamed = stream(
         &mut *download,
         &mut *writer,
         &mut hasher,
@@ -86,7 +94,15 @@ async fn transfer(
         cancel,
         &mut report,
     )
-    .await?;
+    .await;
+    if let Err(error) = streamed {
+        // A cancel is the person's: what arrived goes with it. Any other failure (no network, the app suspended) keeps
+        // it for the next attempt.
+        if error.code == "cancelled" {
+            writer.discard().await?;
+        }
+        return Err(error);
+    }
     if hasher.finish() != sha256 {
         writer.discard().await?;
         return if offset > 0 {
