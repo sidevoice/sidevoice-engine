@@ -13,6 +13,13 @@ use crate::Result;
 pub trait Fetcher: MaybeSend + MaybeSync {
     /// Starts downloading `url`, following redirects; resolves once the server has answered.
     async fn fetch(&self, url: &str) -> Result<Box<dyn Download>>;
+
+    /// Starts downloading `url` from byte `offset` on, when the server can serve it (an HTTP range request), so that
+    /// a download interrupted earlier goes on where it stopped. The [`Download`] says where it really starts
+    /// ([`Download::offset`]): `offset`, or `0` when the server sends the whole file. The default never resumes.
+    async fn fetch_from(&self, url: &str, _offset: u64) -> Result<Box<dyn Download>> {
+        self.fetch(url).await
+    }
 }
 
 /// Bytes arriving a part at a time: a download under way, or a stored file being read
@@ -20,8 +27,13 @@ pub trait Fetcher: MaybeSend + MaybeSync {
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
 pub trait Download: MaybeSend {
-    /// Its size in bytes, when known (a server may not say).
+    /// The bytes it hands over, in all, when known (a server may not say): from [`Download::offset`] on.
     fn size(&self) -> Option<u64>;
+
+    /// Where in the file its first byte is: `0`, unless it resumes ([`Fetcher::fetch_from`]).
+    fn offset(&self) -> u64 {
+        0
+    }
 
     /// The next bytes, never empty, or `None` once all have arrived.
     async fn chunk(&mut self) -> Result<Option<Vec<u8>>>;

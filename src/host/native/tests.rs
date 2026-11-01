@@ -395,3 +395,205 @@ fn a_name_stored_twice_is_stored_once_and_leaves_nothing_partial_whether_file_or
         b"member"
     );
 }
+
+#[test]
+fn its_directory_keeps_what_a_dropped_download_wrote_for_the_next_attempt() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let storage = host.storage();
+    let blobs = scratch.0.join("blobs");
+    let partial = scratch.0.join("partial");
+
+    let first = block_on(storage.resume("abc")).expect("resumed");
+    assert_eq!(first.len, 0);
+    assert!(first.kept.is_none());
+    let mut writer = first.writer;
+    block_on(writer.write(b"who")).expect("written");
+    drop(writer);
+    assert_eq!(entries(&partial), 1);
+    assert_eq!(block_on(storage.find("abc")), Ok(None));
+
+    let second = block_on(storage.resume("abc")).expect("resumed");
+    assert_eq!(second.len, 3);
+    let mut kept = second.kept.expect("kept");
+    let mut bytes = Vec::new();
+    while let Some(part) = block_on(kept.chunk()).expect("read") {
+        bytes.extend(part);
+    }
+    drop(kept);
+    assert_eq!(bytes, b"who");
+    let mut writer = second.writer;
+    block_on(writer.write(b"le")).expect("written");
+    let location = block_on(writer.commit()).expect("committed");
+    assert_eq!(std::fs::read(&location).expect("stored"), b"whole");
+    assert_eq!(Path::new(&location), blobs.join("abc"));
+    assert_eq!(entries(&partial), 0);
+}
+
+#[test]
+fn its_directory_gives_a_second_writer_of_one_blob_a_file_of_its_own() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let storage = host.storage();
+
+    let mut first = block_on(storage.resume("abc")).expect("resumed").writer;
+    block_on(first.write(b"one")).expect("written");
+    let second = block_on(storage.resume("abc")).expect("resumed");
+    assert_eq!(second.len, 0);
+    let mut other = second.writer;
+    block_on(other.write(b"two")).expect("written");
+    drop(other);
+    let location = block_on(first.commit()).expect("committed");
+    assert_eq!(std::fs::read(location).expect("stored"), b"one");
+    assert_eq!(entries(&scratch.0.join("partial")), 0);
+}
+
+#[test]
+fn its_directory_forgets_a_discarded_download_and_restarts_an_empty_one() {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let storage = host.storage();
+
+    let mut writer = block_on(storage.resume("abc")).expect("resumed").writer;
+    block_on(writer.write(b"wrong")).expect("written");
+    block_on(writer.discard()).expect("discarded");
+    assert_eq!(entries(&scratch.0.join("partial")), 0);
+    assert_eq!(block_on(storage.resume("abc")).expect("resumed").len, 0);
+
+    let mut writer = block_on(storage.resume("abc")).expect("resumed").writer;
+    block_on(writer.write(b"wrong")).expect("written");
+    block_on(writer.restart()).expect("restarted");
+    block_on(writer.write(b"right")).expect("written");
+    let location = block_on(writer.commit()).expect("committed");
+    assert_eq!(std::fs::read(location).expect("stored"), b"right");
+}
+
+#[test]
+fn its_directory_sweeps_what_was_left_in_partial_for_over_a_week() {
+    let scratch = Scratch::new();
+    drop(NativeHost::new(&scratch.0).expect("host"));
+    let partial = scratch.0.join("partial");
+    let old = partial.join("old.part");
+    let recent = partial.join("recent.part");
+    std::fs::write(&old, b"x").expect("written");
+    std::fs::write(&recent, b"x").expect("written");
+    let eight_days = std::time::Duration::from_secs(8 * 24 * 60 * 60);
+    std::fs::File::options()
+        .write(true)
+        .open(&old)
+        .and_then(|file| file.set_modified(std::time::SystemTime::now() - eight_days))
+        .expect("aged");
+
+    drop(NativeHost::new(&scratch.0).expect("host"));
+    assert!(!old.exists());
+    assert!(recent.exists());
+}
+
+/// Serves `body` on a local port, one request per connection: with a `Range: bytes=N-` header and `ranges`, from byte
+/// `N` (206); otherwise whole (200). Returns the URL, and the ranges asked for.
+fn serve(
+    body: &'static [u8],
+    ranges: bool,
+) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+    let url = format!(
+        "http://{}/model.bin",
+        listener.local_addr().expect("address")
+    );
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = std::sync::Arc::clone(&asked);
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream);
+            let mut range = None;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("range: bytes=") {
+                    range = value.trim().trim_end_matches('-').parse::<usize>().ok();
+                    seen.lock().unwrap().push(value.trim().to_owned());
+                }
+            }
+            let mut stream = reader.into_inner();
+            let head = match range.filter(|_| ranges) {
+                Some(from) if from < body.len() => format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {from}-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len() - 1,
+                    body.len(),
+                    body.len() - from
+                ),
+                _ => format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                ),
+            };
+            let from = range
+                .filter(|_| ranges)
+                .filter(|from| *from < body.len())
+                .unwrap_or(0);
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&body[from..]);
+        }
+    });
+    (url, asked)
+}
+
+const BODY: &[u8] = b"the model's weights, a little longer than one part";
+
+/// Installs `BODY` from `url` over a native host whose `partial/` already holds `kept` for it; what is stored.
+fn install_over(kept: &[u8], url: &str) -> (crate::Result<()>, Vec<u8>) {
+    let scratch = Scratch::new();
+    let host = NativeHost::new(&scratch.0).expect("host");
+    let digest = crate::test_support::sha256(BODY);
+    std::fs::write(
+        scratch.0.join("partial").join(format!("{digest}.part")),
+        kept,
+    )
+    .expect("kept");
+    let artifacts = [Artifact {
+        key: "model.bin".to_owned(),
+        url: url.to_owned(),
+        sha256: digest.clone(),
+        archive_path: None,
+    }];
+    let installed = block_on(Installer.install(
+        "model/hf",
+        &artifacts,
+        &host,
+        &|_: crate::Progress| {},
+        &Cancel::new(),
+    ));
+    let stored = std::fs::read(scratch.0.join("blobs").join(&digest)).unwrap_or_default();
+    assert_eq!(entries(&scratch.0.join("partial")), 0);
+    (installed.map(drop), stored)
+}
+
+#[test]
+fn it_goes_on_over_http_after_the_bytes_kept_when_the_server_has_ranges() {
+    let (url, asked) = serve(BODY, true);
+    let (result, stored) = install_over(&BODY[..10], &url);
+    assert_eq!(result, Ok(()));
+    assert_eq!(stored, BODY);
+    assert_eq!(*asked.lock().unwrap(), ["10-"]);
+}
+
+#[test]
+fn it_downloads_the_whole_file_over_http_when_the_server_has_no_ranges() {
+    let (url, _) = serve(BODY, false);
+    let (result, stored) = install_over(&BODY[..10], &url);
+    assert_eq!(result, Ok(()));
+    assert_eq!(stored, BODY);
+}
+
+#[test]
+fn it_starts_over_when_the_bytes_kept_are_not_the_start_of_the_file() {
+    let (url, asked) = serve(BODY, true);
+    let (result, stored) = install_over(&[b'x'; 10], &url);
+    assert_eq!(result, Ok(()));
+    assert_eq!(stored, BODY);
+    assert_eq!(asked.lock().unwrap().len(), 1);
+}

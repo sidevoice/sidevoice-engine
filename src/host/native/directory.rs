@@ -1,18 +1,24 @@
 //! The native host's storage: a directory, laid out as Hugging Face's hub cache. Blobs (stored files and trees) are
 //! `blobs/<name>`; build folders are `models/<build id>/`, each file in them a hard link to its blob (or, where the
 //! file system refuses the link, a copy). One being written is `partial/<name>.<process>.<n>` until it is committed,
-//! which renames it into place (atomic on one file system), and removed if it is dropped first. File operations are
-//! short and blocking; the long wait, the network, is elsewhere.
+//! which renames it into place (atomic on one file system), and removed if it is dropped first. A download is the
+//! exception: it is `partial/<digest>.part`, kept when it is dropped, for the next attempt to go on after it
+//! ([`Storage::resume`]), and swept after a week. File operations are short and blocking; the long wait, the network,
+//! is elsewhere.
 
-use std::fs::{self, File};
-use std::io::{BufWriter, ErrorKind, Read, Write};
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{BufWriter, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
 
 use crate::platform::links::{Files, Links};
 use crate::{
-    async_trait, Download, Error, FolderWriter, Result, Storage, StorageWriter, TreeWriter,
+    async_trait, Download, Error, FolderWriter, Result, Resumed, Storage, StorageWriter, TreeWriter,
 };
+
+/// How long what a download left in `partial/` is kept for another attempt to go on with: a week.
+const KEPT_FOR: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// The size of the parts a stored file is read back in.
 const PART: usize = 64 * 1024;
@@ -39,7 +45,27 @@ impl Directory {
         for dir in [&storage.blobs, &storage.models, &storage.partial] {
             fs::create_dir_all(dir).map_err(|_| failed())?;
         }
+        storage.sweep();
         Ok(storage)
+    }
+
+    /// Removes what `partial/` holds that nothing has written to for [`KEPT_FOR`]: downloads nobody will go on with,
+    /// and what a crash left. What is being written, or was lately, stays.
+    fn sweep(&self) {
+        let Ok(entries) = fs::read_dir(&self.partial) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let old = entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+                .is_some_and(|age| age > KEPT_FOR);
+            if old {
+                remove(&entry.path());
+            }
+        }
     }
 
     /// Where the blob `name` is stored, if it is a valid name.
@@ -108,6 +134,55 @@ impl Storage for Directory {
             file: Some(BufWriter::with_capacity(WRITE_BUFFER, file)),
             staged: Staged::new(partial, target),
         }))
+    }
+
+    /// Goes on in `partial/<name>.part`, one per blob, whichever attempt or process left it. It is locked while a writer
+    /// holds it, so that two installs of one blob never write to one file: the second gets a new file, and no bytes
+    /// kept.
+    async fn resume(&self, name: &str) -> Result<Resumed> {
+        let target = self.path(name)?;
+        let path = self.partial.join(format!("{name}.part"));
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|_| failed())?;
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => {
+                return Ok(Resumed {
+                    writer: self.create(name).await?,
+                    kept: None,
+                    len: 0,
+                });
+            }
+            Err(TryLockError::Error(_)) => return Err(failed()),
+        }
+        let len = file.metadata().map_err(|_| failed())?.len();
+        // Read through a clone of the locked file (a lock may refuse other handles to read, on Windows), from its start;
+        // the writer goes on from its end, where reading it all leaves both.
+        let kept = if len > 0 {
+            let reader = file.try_clone().map_err(|_| failed())?;
+            file.seek(SeekFrom::Start(0)).map_err(|_| failed())?;
+            Some(Box::new(Reader {
+                file: reader,
+                size: len,
+            }) as Box<dyn Download>)
+        } else {
+            None
+        };
+        let mut staged = Staged::new(path, target);
+        staged.keep = true;
+        Ok(Resumed {
+            writer: Box::new(Writer {
+                file: Some(BufWriter::with_capacity(WRITE_BUFFER, file)),
+                staged,
+            }),
+            kept,
+            len,
+        })
     }
 
     async fn read(&self, name: &str) -> Result<Box<dyn Download>> {
@@ -227,6 +302,8 @@ struct Staged {
     partial: PathBuf,
     target: PathBuf,
     committed: bool,
+    /// Whether dropping it uncommitted leaves the partial file for another attempt to go on with.
+    keep: bool,
 }
 
 impl Staged {
@@ -235,6 +312,7 @@ impl Staged {
             partial,
             target,
             committed: false,
+            keep: false,
         }
     }
 
@@ -258,7 +336,7 @@ impl Staged {
 
 impl Drop for Staged {
     fn drop(&mut self) {
-        if !self.committed {
+        if !self.committed && !self.keep {
             remove(&self.partial);
         }
     }
@@ -342,6 +420,20 @@ impl StorageWriter for Writer {
             .map_err(std::io::IntoInnerError::into_error)
             .and_then(|file| file.sync_all());
         self.staged.commit(synced)
+    }
+
+    async fn restart(&mut self) -> Result<()> {
+        let writer = self.file.as_mut().ok_or_else(failed)?;
+        writer.flush().map_err(|_| failed())?;
+        let file = writer.get_mut();
+        file.set_len(0).map_err(|_| failed())?;
+        file.seek(SeekFrom::Start(0)).map_err(|_| failed())?;
+        Ok(())
+    }
+
+    async fn discard(mut self: Box<Self>) -> Result<()> {
+        self.staged.keep = false;
+        Ok(())
     }
 }
 
