@@ -8,6 +8,8 @@ use super::NativeHost;
 use crate::host::{Accelerator, Host, Runs};
 use crate::install::{Artifact, Cancel, Installer};
 use crate::platform::accelerators::{Accelerators, Machine};
+use crate::platform::host;
+use crate::platform::links::{Files, Links};
 use crate::test_support::block_on;
 
 /// A fresh directory under the system's temporary one, removed when dropped.
@@ -40,8 +42,8 @@ fn it_reports_this_machine() {
     let caps = NativeHost::new(&scratch.0).expect("host").capabilities();
 
     assert_eq!(caps.runs, Runs::Native);
-    assert_eq!(caps.os, std::env::consts::OS);
-    assert_eq!(caps.arch, std::env::consts::ARCH);
+    assert_eq!(caps.os, host::OS);
+    assert_eq!(caps.arch, host::ARCH);
     assert!(caps.has(Accelerator::Cpu));
     assert_eq!(caps.accelerators, Machine::detect());
     assert!(caps.cores.is_some_and(|cores| cores > 0));
@@ -128,11 +130,7 @@ fn it_installs_a_real_file_in_its_build_folder_and_uninstalls_it() {
     );
     let blob = scratch.0.join("blobs").join(PINNED_SHA256);
     assert!(blob.is_file());
-    #[cfg(unix)]
-    assert_eq!(
-        std::os::unix::fs::MetadataExt::nlink(&std::fs::metadata(&blob).expect("blob")),
-        2
-    );
+    assert_eq!(Files::count(&blob).expect("counted"), 2);
     let sizes = sizes.into_inner().unwrap();
     assert!(sizes
         .iter()

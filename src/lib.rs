@@ -26,7 +26,7 @@ mod engine;
 mod host;
 mod install;
 mod maybe_send;
-#[cfg(native)]
+#[cfg(any(native, test))]
 mod platform;
 mod provider;
 mod resolver;

@@ -141,6 +141,7 @@ fn run() -> Result<()> {
         fs::create_dir_all(dir.join(sub)).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let host = NativeHost::new(dir.join("engine")).map_err(|e| format!("NativeHost: {e}"))?;
+    let machine = host.capabilities();
     let engine = Engine::new(Box::new(host), vec![Box::new(BundledCatalog)])
         .map_err(|e| format!("the engine: {e:?}"))?;
     // A second host on the same directory, for the clips: only its fetcher is used.
@@ -276,6 +277,7 @@ fn run() -> Result<()> {
         &detections,
         &turns,
         &loaded_on,
+        &format!("{} {}", machine.os, machine.arch),
         &dir.join("summary.md"),
     )?;
     lifecycle
@@ -575,7 +577,7 @@ fn fetch(host: &NativeHost, clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
 }
 
 /// Prints the tables (transcripts, detections, turns) and the accelerator each build was loaded on, writes them to
-/// `summary` with a heading for this platform, and fails if any row failed or is above `max_wer`, or any detection or
+/// `summary` with a heading for this machine (`machine`: its OS and architecture, as the host reports them), and fails if any row failed or is above `max_wer`, or any detection or
 /// turn failed.
 fn report(
     rows: &[Row],
@@ -583,6 +585,7 @@ fn report(
     detections: &[Detection],
     turns: &[end_of_turn::Turn],
     loaded_on: &BTreeMap<String, Option<Accelerator>>,
+    machine: &str,
     summary: &Path,
 ) -> Result<()> {
     let mut table =
@@ -633,7 +636,7 @@ fn report(
         builds.push_str(&format!("- `{build}`: {on}\n"));
     }
     println!("\n{table}\n{verdict}\n\n{detected}\n{ended}\n{builds}");
-    let heading = format!("## Voice loop ({} {})", env::consts::OS, env::consts::ARCH);
+    let heading = format!("## Voice loop ({machine})");
     write(
         summary,
         format!("{heading}\n\n{table}\n{verdict}\n\n{detected}\n{ended}\n{builds}").as_bytes(),

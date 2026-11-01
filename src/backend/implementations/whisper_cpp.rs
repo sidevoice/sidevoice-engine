@@ -46,6 +46,7 @@ use crate::backend::{Backend, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
 use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
+use crate::platform::host::APPLE_SILICON;
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -54,10 +55,11 @@ mod tests;
 struct WhisperCpp;
 
 /// Metal where it is compiled in (see *Accelerators*), then the CPU.
-#[cfg(apple_silicon)]
-const ACCELERATORS: &[Accelerator] = &[Accelerator::Metal, Accelerator::Cpu];
-#[cfg(not(apple_silicon))]
-const ACCELERATORS: &[Accelerator] = &[Accelerator::Cpu];
+const ACCELERATORS: &[Accelerator] = if APPLE_SILICON {
+    &[Accelerator::Metal, Accelerator::Cpu]
+} else {
+    &[Accelerator::Cpu]
+};
 
 const SPEC: BackendSpec = BackendSpec {
     id: "whisper-cpp",
