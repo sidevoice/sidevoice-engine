@@ -25,8 +25,8 @@
 //!   against `xtask/sherpa-onnx-libs.json` and unpacked for `SHERPA_ONNX_LIB_DIR` (xtask/src/sherpa_libs.rs).
 //! - `android-build [DIR]`: the engine built with cargo-ndk for each Android ABI, against the pinned sherpa-onnx libraries,
 //!   and the libraries a shell packages per ABI written to DIR (xtask/src/android.rs).
-//! - `ios-build [DIR]`: the engine built for iOS, device and simulator, against the pinned sherpa-onnx xcframework, which
-//!   is written to DIR for the app to embed (macOS only, xtask/src/ios.rs).
+//! - `ios-build [DIR]`: the engine built for iOS, device and simulator, against the pinned sherpa-onnx and ONNX Runtime xcframeworks, which
+//!   are written to DIR for the app to embed (macOS only, xtask/src/ios.rs).
 //! - `test-browser`: the engine's wasm32 tests in a headless Chrome, those that need a page (OPFS) included
 //!   (xtask/src/test_browser.rs).
 //! - `web-e2e [DIR]`: the voice loop for real in a headless Chrome, through the npm package: Whisper transcribes the

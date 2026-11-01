@@ -4,6 +4,8 @@
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.
 //!
+//! And the link to the shared ONNX Runtime framework that sherpa-onnx loads on iOS (`onnxruntime_framework`).
+//!
 //! And, when CI asks, on Windows, the manifest that makes UTF-8 the tests' ANSI code page.
 
 use std::path::Path;
@@ -18,7 +20,21 @@ fn main() {
         apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
     }
     bundled_families();
+    onnxruntime_framework();
     test_manifest();
+}
+
+/// Links `onnxruntime.framework` when `ONNXRUNTIME_FRAMEWORK_DIR` names the directory holding it, which an iOS build
+/// sets for the target being built (`cargo xtask ios-build` does, README "iOS"). It is the ONNX Runtime sherpa-onnx's
+/// shared library loads (`@rpath/onnxruntime.framework`), and `ort-sys` links none (`disable-linking`): without this
+/// `OrtGetApiBase` has no definition when an app or the cdylib is linked. The app embeds the same framework. Nothing
+/// when the variable is not set, as in every build but iOS's.
+fn onnxruntime_framework() {
+    println!("cargo:rerun-if-env-changed=ONNXRUNTIME_FRAMEWORK_DIR");
+    if let Ok(dir) = env::var("ONNXRUNTIME_FRAMEWORK_DIR") {
+        println!("cargo:rustc-link-search=framework={dir}");
+        println!("cargo:rustc-link-lib=framework=onnxruntime");
+    }
 }
 
 /// The engine's own tests, on Windows, run as an app must: UTF-8 is their ANSI code page (README, "Build and test"). The
