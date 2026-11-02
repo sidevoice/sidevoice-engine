@@ -367,6 +367,10 @@ fn tree(dir: &Path) -> Result<Tree> {
         for entry in fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))? {
             let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
             if path.is_dir() {
+                // The lock files of resumed downloads (`locks/<digest>`) stay, empty, for good: they hold no model.
+                if path.file_name().is_some_and(|name| name == "locks") {
+                    continue;
+                }
                 pending.push(path);
                 continue;
             }

@@ -48,8 +48,8 @@ pub use engine::{
 };
 pub use host::{
     Accelerator, AcceleratorClass, AcceleratorUse, Capabilities, Credentials, Download, Fetcher,
-    FolderWriter, Host, HttpClient, HttpRequest, HttpResponse, NoCredentials, Runs, Storage,
-    StorageWriter,
+    FolderWriter, Host, HttpClient, HttpRequest, HttpResponse, NoCredentials, Resumed, Runs,
+    Storage, StorageWriter,
 };
 #[cfg(native)]
 pub use host::{NativeHost, TreeWriter};

@@ -42,6 +42,18 @@ pub trait Storage: MaybeSend + MaybeSync {
     /// [committed](StorageWriter::commit); dropped before that, what was written is discarded.
     async fn create(&self, name: &str) -> Result<Box<dyn StorageWriter>>;
 
+    /// Like [`Storage::create`], but picking up what an earlier attempt to store `name` left when it stopped before
+    /// finishing (an interrupted download): the bytes kept so far, to be read back, and a writer that goes on after
+    /// them. A host that keeps nothing between attempts hands out a new file, which is what the default does. What is
+    /// kept is only a candidate: the caller checks the whole file before committing it.
+    async fn resume(&self, name: &str) -> Result<Resumed> {
+        Ok(Resumed {
+            writer: self.create(name).await?,
+            kept: None,
+            len: 0,
+        })
+    }
+
     /// The file stored as `name`, a part at a time.
     async fn read(&self, name: &str) -> Result<Box<dyn Download>>;
 
@@ -76,6 +88,17 @@ pub trait Storage: MaybeSend + MaybeSync {
     async fn is_linked(&self, name: &str) -> Result<bool>;
 }
 
+/// What [`Storage::resume`] hands out: the writer, and the bytes it already holds.
+pub struct Resumed {
+    /// Appends after the `len` bytes kept; dropped uncommitted, it keeps them (and what was added) for the next
+    /// attempt, unless [`StorageWriter::discard`] was called.
+    pub writer: Box<dyn StorageWriter>,
+    /// The bytes kept, from the first one to the last, if any are.
+    pub kept: Option<Box<dyn Download>>,
+    /// How many bytes are kept.
+    pub len: u64,
+}
+
 /// A file being written to [`Storage`], stored under its name only when committed.
 #[cfg_attr(native, async_trait)]
 #[cfg_attr(web, async_trait(?Send))]
@@ -86,6 +109,18 @@ pub trait StorageWriter: MaybeSend {
     /// Stores what was written under its name, replacing a file already stored there, and says where it is kept, as
     /// [`Storage::find`] would.
     async fn commit(self: Box<Self>) -> Result<String>;
+
+    /// Throws away what the writer holds, bytes kept from an earlier attempt included, and starts empty. Only a
+    /// writer from [`Storage::resume`] that holds some needs it.
+    async fn restart(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Drops the writer and what it holds, even what [`Storage::resume`] would keep for another attempt: the bytes
+    /// are known to be wrong.
+    async fn discard(self: Box<Self>) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// A tree being written to [`Storage`], synchronously, stored under its name only when committed. Paths follow the

@@ -47,14 +47,56 @@ impl Fetcher for Http {
             .map_err(|_| failed())?;
         Ok(Box::new(HttpDownload {
             size: response.content_length(),
+            offset: 0,
             body: Box::pin(response.bytes_stream()),
         }))
+    }
+
+    async fn fetch_from(&self, url: &str, offset: u64) -> Result<Box<dyn Download>> {
+        if offset == 0 {
+            return self.fetch(url).await;
+        }
+        let response = self
+            .client
+            .get(url)
+            .header(reqwest::header::RANGE, format!("bytes={offset}-"))
+            .send()
+            .await
+            .map_err(|_| failed())?;
+        match response.status() {
+            reqwest::StatusCode::PARTIAL_CONTENT => {
+                // Only what was asked for: the range must start where the bytes kept end.
+                let start = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_RANGE)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(range_start);
+                if start != Some(offset) {
+                    return Err(failed());
+                }
+                Ok(Box::new(HttpDownload {
+                    size: response.content_length(),
+                    offset,
+                    body: Box::pin(response.bytes_stream()),
+                }))
+            }
+            // The server ignores ranges: the whole file, from the start.
+            status if status.is_success() => Ok(Box::new(HttpDownload {
+                size: response.content_length(),
+                offset: 0,
+                body: Box::pin(response.bytes_stream()),
+            })),
+            // The range is past the end of the file (what was kept is all of it, or more): the whole file.
+            reqwest::StatusCode::RANGE_NOT_SATISFIABLE => self.fetch(url).await,
+            _ => Err(failed()),
+        }
     }
 }
 
 /// A download under way: its body, as it arrives.
 struct HttpDownload<S> {
     size: Option<u64>,
+    offset: u64,
     body: Pin<Box<S>>,
 }
 
@@ -68,6 +110,10 @@ where
         self.size
     }
 
+    fn offset(&self) -> u64 {
+        self.offset
+    }
+
     async fn chunk(&mut self) -> Result<Option<Vec<u8>>> {
         loop {
             match std::future::poll_fn(|cx| self.body.as_mut().poll_next(cx)).await {
@@ -78,6 +124,12 @@ where
             }
         }
     }
+}
+
+/// The first byte of a `Content-Range` value (`bytes 100-199/200`).
+fn range_start(value: &str) -> Option<u64> {
+    let range = value.strip_prefix("bytes ")?;
+    range.split('-').next()?.trim().parse().ok()
 }
 
 fn failed() -> Error {

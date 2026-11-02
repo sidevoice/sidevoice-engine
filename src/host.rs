@@ -24,7 +24,7 @@ pub use http::{HttpClient, HttpRequest, HttpResponse};
 pub use native::NativeHost;
 #[cfg(native)]
 pub use storage::TreeWriter;
-pub use storage::{FolderWriter, Storage, StorageWriter};
+pub use storage::{FolderWriter, Resumed, Storage, StorageWriter};
 
 /// The facts, storage, downloads, API calls, keys and clock of the place the engine runs in. Without a host there is no engine: an app passes
 /// the built-in one for its build ([`NativeHost`] natively) or its own.

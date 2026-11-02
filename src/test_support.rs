@@ -17,7 +17,7 @@ use crate::{
     async_trait, Accelerator, Artifact, BuildEntry, Capabilities, Capability, CatalogFragment,
     CatalogSource, Credentials, Download, Error, Family, Fetcher, FolderWriter, Host, HttpClient,
     HttpRequest, HttpResponse, Memory, MemorySource, ModelEntry, ModelFile, NoCredentials,
-    Requires, Result, Runs, Storage, StorageWriter,
+    Requires, Result, Resumed, Runs, Storage, StorageWriter,
 };
 
 pub(crate) struct FakeHost;
@@ -135,6 +135,11 @@ pub(crate) struct MemoryHost {
     trees: Arc<Mutex<BTreeMap<String, MemoryTree>>>,
     folders: Arc<Mutex<BTreeMap<String, MemoryFolder>>>,
     fetches: AtomicUsize,
+    /// Whether the server it fetches from honours range requests.
+    ranges: bool,
+    /// What interrupted downloads left, by name, and where each download started.
+    partials: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    offsets: Arc<Mutex<Vec<u64>>>,
     remote: Arc<FakeProvider>,
     /// Its clock: milliseconds since the epoch, fixed until a test moves it.
     now: Arc<AtomicU64>,
@@ -175,12 +180,36 @@ impl MemoryHost {
             trees: Arc::clone(&self.trees),
             folders: Arc::clone(&self.folders),
             fetches: AtomicUsize::new(0),
+            ranges: self.ranges,
+            partials: Arc::clone(&self.partials),
+            offsets: Arc::clone(&self.offsets),
             remote: Arc::clone(&self.remote),
             now: Arc::clone(&self.now),
             failing: Arc::clone(&self.failing),
             gate: Arc::clone(&self.gate),
             waiting: Arc::clone(&self.waiting),
         }
+    }
+
+    /// Makes its server honour range requests, as most do.
+    pub(crate) fn with_ranges(mut self) -> Self {
+        self.ranges = true;
+        self
+    }
+
+    /// Leaves `bytes` as what an interrupted download of `name` kept.
+    pub(crate) fn keep_partial(&self, name: &str, bytes: &[u8]) {
+        lock(&self.partials).insert(name.to_owned(), bytes.to_vec());
+    }
+
+    /// What an interrupted download of `name` kept, if anything.
+    pub(crate) fn partial(&self, name: &str) -> Option<Vec<u8>> {
+        lock(&self.partials).get(name).cloned()
+    }
+
+    /// Where each download that asked to start somewhere other than the start began (as a range request does).
+    pub(crate) fn offsets(&self) -> Vec<u64> {
+        lock(&self.offsets).clone()
     }
 
     /// Makes every read of `name` fail with `storage-failed`, or, with `fail` false, succeed again.
@@ -293,6 +322,20 @@ impl Storage for MemoryHost {
             bytes: Vec::new(),
             stored: Arc::clone(&self.stored),
         }))
+    }
+
+    async fn resume(&self, name: &str) -> Result<Resumed> {
+        let kept = lock(&self.partials).get(name).cloned().unwrap_or_default();
+        let len = kept.len() as u64;
+        Ok(Resumed {
+            writer: Box::new(MemoryPartialWriter {
+                name: name.to_owned(),
+                partials: Arc::clone(&self.partials),
+                stored: Arc::clone(&self.stored),
+            }),
+            kept: (len > 0).then(|| Box::new(MemoryDownload(kept)) as Box<dyn Download>),
+            len,
+        })
     }
 
     async fn read(&self, name: &str) -> Result<Box<dyn Download>> {
@@ -445,6 +488,41 @@ impl FolderWriter for MemoryFolderWriter {
     }
 }
 
+/// A writer that adds to what an earlier attempt kept, and keeps what it wrote unless it is committed or discarded.
+struct MemoryPartialWriter {
+    name: String,
+    partials: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    stored: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+}
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl StorageWriter for MemoryPartialWriter {
+    async fn write(&mut self, bytes: &[u8]) -> Result<()> {
+        lock(&self.partials)
+            .entry(self.name.clone())
+            .or_default()
+            .extend_from_slice(bytes);
+        Ok(())
+    }
+
+    async fn commit(self: Box<Self>) -> Result<String> {
+        let bytes = lock(&self.partials).remove(&self.name).unwrap_or_default();
+        lock(&self.stored).insert(self.name.clone(), bytes);
+        Ok(format!("memory:{}", self.name))
+    }
+
+    async fn restart(&mut self) -> Result<()> {
+        lock(&self.partials).insert(self.name.clone(), Vec::new());
+        Ok(())
+    }
+
+    async fn discard(self: Box<Self>) -> Result<()> {
+        lock(&self.partials).remove(&self.name);
+        Ok(())
+    }
+}
+
 struct MemoryWriter {
     name: String,
     bytes: Vec<u8>,
@@ -473,6 +551,40 @@ impl Fetcher for MemoryHost {
         self.fetches.fetch_add(1, Ordering::Relaxed);
         let bytes = self.served.get(url).ok_or(Error::new("download-failed"))?;
         Ok(Box::new(MemoryDownload(bytes.clone())))
+    }
+
+    async fn fetch_from(&self, url: &str, offset: u64) -> Result<Box<dyn Download>> {
+        let bytes = self.served.get(url).ok_or(Error::new("download-failed"))?;
+        // A server without ranges, or a range past the end (416): the whole file.
+        let from = usize::try_from(offset).unwrap_or(usize::MAX);
+        if !self.ranges || from >= bytes.len() {
+            return self.fetch(url).await;
+        }
+        self.fetches.fetch_add(1, Ordering::Relaxed);
+        lock(&self.offsets).push(offset);
+        Ok(Box::new(MemoryRange(
+            MemoryDownload(bytes[from..].to_vec()),
+            offset,
+        )))
+    }
+}
+
+/// A download that starts at an offset.
+struct MemoryRange(MemoryDownload, u64);
+
+#[cfg_attr(native, async_trait)]
+#[cfg_attr(web, async_trait(?Send))]
+impl Download for MemoryRange {
+    fn size(&self) -> Option<u64> {
+        self.0.size()
+    }
+
+    fn offset(&self) -> u64 {
+        self.1
+    }
+
+    async fn chunk(&mut self) -> Result<Option<Vec<u8>>> {
+        self.0.chunk().await
     }
 }
 
