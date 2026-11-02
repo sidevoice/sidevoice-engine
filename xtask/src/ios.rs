@@ -27,6 +27,11 @@ const TARGETS: [(&str, &str); 2] = [
     ("aarch64-apple-ios", "ios-arm64"),
     ("aarch64-apple-ios-sim", "ios-arm64_x86_64-simulator"),
 ];
+/// The oldest iOS the engine is built for here (`IPHONEOS_DEPLOYMENT_TARGET`), for Rust and for the C, C++ and
+/// Objective-C the build scripts compile (whisper.cpp and ggml, aws-lc) alike. Without it the C compilers target the
+/// SDK's own version and rustc links for its default (10.0), and the link fails (`___chkstk_darwin`). whisper.cpp needs
+/// iOS 13 or later (`std::filesystem`); an app builds with its own minimum (README, "iOS").
+const DEPLOYMENT_TARGET: &str = "15.0";
 /// The sherpa-onnx xcframework, its framework and the binary inside it.
 const SHERPA_XCFRAMEWORK: &str = "sherpa-onnx.xcframework";
 const SHERPA: &str = "SherpaOnnxC";
@@ -105,14 +110,15 @@ fn layout(out: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The engine built in release for `triple`, linked against the sherpa-onnx library in `lib` and the ONNX Runtime
-/// framework in `frameworks`.
+/// The engine built in release for `triple`, for iOS [`DEPLOYMENT_TARGET`], linked against the sherpa-onnx library in
+/// `lib` and the ONNX Runtime framework in `frameworks`.
 fn link(triple: &str, lib: &Path, frameworks: &Path) -> Result<()> {
     let status = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
         .args(["build", "--locked", "--release", "--target", triple])
         .current_dir(repo())
         .env("SHERPA_ONNX_LIB_DIR", lib)
         .env("ONNXRUNTIME_FRAMEWORK_DIR", frameworks)
+        .env("IPHONEOS_DEPLOYMENT_TARGET", DEPLOYMENT_TARGET)
         .status()
         .map_err(|e| format!("cargo build --target {triple}: {e}"))?;
     if status.success() {

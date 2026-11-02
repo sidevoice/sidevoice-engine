@@ -1,5 +1,5 @@
-// Native only: whisper-rs compiles whisper.cpp for the target (its dependency is native-only in Cargo.toml). Nor on a
-// phone: `platform::local_engines` gates the module's declaration, and Cargo.toml's table has the same condition.
+// Native only: whisper-rs compiles whisper.cpp for the target (its dependency is native-only in Cargo.toml). Nor on
+// Android: `platform::local_engines` gates the module's declaration, and Cargo.toml's table has the same condition.
 #![cfg(native)]
 //! whisper.cpp, on ggml: speech to text with Whisper's ggml builds (the catalogue's `whisper-cpp` builds, files from
 //! ggerganov/whisper.cpp). One whole turn at a time, in the language asked for or the one it detects, decoded greedily,
@@ -22,11 +22,13 @@
 //!
 //! # Accelerators
 //!
-//! Metal on Apple silicon, the only build that compiles ggml's Metal backend in (the `metal` feature of whisper-rs, in
-//! Cargo.toml), and the CPU everywhere. On Metal the model asks whisper.cpp for its GPU, with flash attention; should
-//! Metal not start, whisper.cpp says so in its log and runs on the CPU. Windows is built and tested in CI: the CPU,
-//! through whisper.cpp built with
-//! `GGML_NATIVE=OFF`. CUDA and Vulkan are features of whisper-rs that are not turned on.
+//! Metal on macOS on Apple silicon and on iOS, the builds that compile ggml's Metal backend in (the `metal` feature of
+//! whisper-rs, in Cargo.toml; `platform::local_engines::WHISPER_CPP_METAL`), and the CPU everywhere. On Metal the model
+//! asks whisper.cpp for its GPU, with flash attention; should Metal not start (the iOS simulator's GPU may lack what
+//! ggml asks of it), whisper.cpp says so in its log and runs on the CPU. The Metal shaders are embedded in the binary
+//! (whisper-rs builds with GGML_METAL_EMBED_LIBRARY) and compiled when the first model loads, so an app ships no
+//! `.metallib`. Windows is built and tested in CI: the CPU, through whisper.cpp built with `GGML_NATIVE=OFF`. CUDA and
+//! Vulkan are features of whisper-rs that are not turned on.
 //!
 //! # Languages
 //!
@@ -47,6 +49,7 @@ use crate::backend::{Backend, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
 use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
+use crate::platform::local_engines::WHISPER_CPP_METAL;
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -55,10 +58,11 @@ mod tests;
 struct WhisperCpp;
 
 /// Metal where it is compiled in (see *Accelerators*), then the CPU.
-#[cfg(apple_silicon)]
-const ACCELERATORS: &[Accelerator] = &[Accelerator::Metal, Accelerator::Cpu];
-#[cfg(not(apple_silicon))]
-const ACCELERATORS: &[Accelerator] = &[Accelerator::Cpu];
+const ACCELERATORS: &[Accelerator] = if WHISPER_CPP_METAL {
+    &[Accelerator::Metal, Accelerator::Cpu]
+} else {
+    &[Accelerator::Cpu]
+};
 
 const SPEC: BackendSpec = BackendSpec {
     id: "whisper-cpp",

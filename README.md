@@ -279,7 +279,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon, the CPU elsewhere (Windows too, built and tested in CI), natively; not on Android or iOS | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon and iOS, the CPU elsewhere (Windows too, built and tested in CI), natively; not on Android | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links (on iOS, the shared `onnxruntime.framework` it loads) |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
@@ -393,7 +393,7 @@ cargo xtask sherpa-libs --check   # what link-size.yml runs when the dependencie
 The engine builds for `aarch64-linux-android`, `armv7-linux-androideabi` (32-bit phones, `armeabi-v7a`) and `x86_64-linux-android` (the emulator), with the backends a phone can
 run: `sherpa-onnx` (Silero voice activity, and the models sherpa-onnx runs) and `onnxruntime` (smart-turn), plus the
 remote providers. `whisper-cpp` is not in an Android build: its dependency is in Cargo.toml's table for the builds that
-are not a phone's, and a catalogue build that needs it is rejected as `backend-not-in-this-build`. You need the Android
+are not Android's, and a catalogue build that needs it is rejected as `backend-not-in-this-build`. You need the Android
 NDK (r28 or later, whose libraries are 16 KB page aligned; `ANDROID_NDK_HOME`), the three Rust targets and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk).
 
@@ -427,10 +427,12 @@ cargo xtask mobile-libs android [DIR]   # only the libraries, same files and lay
 ### iOS
 
 The engine builds for `aarch64-apple-ios` (devices) and `aarch64-apple-ios-sim` (the simulator on Apple silicon), on a
-Mac with Xcode, with the backends an iPhone can run: `sherpa-onnx` (Silero voice activity, and the models sherpa-onnx
-runs), `onnxruntime` (smart-turn, the end of turn: `ort` resolves `OrtGetApiBase` from the same shared ONNX Runtime
-framework sherpa-onnx loads, so there is one runtime, as on every other system) and the remote providers. `whisper-cpp`
-is not in an iOS build, as on Android: a catalogue build that needs it is rejected as `backend-not-in-this-build`. The host reports the CPU as the only accelerator.
+Mac with Xcode, with the backends an iPhone can run: `whisper-cpp` (Whisper's ggml builds on Metal, the iPhone's GPU),
+`sherpa-onnx` (Silero voice activity, and the models sherpa-onnx runs, on the CPU), `onnxruntime` (smart-turn, the end
+of turn: `ort` resolves `OrtGetApiBase` from the same shared ONNX Runtime framework sherpa-onnx loads, so there is one
+runtime, as on every other system) and the remote providers. The host reports `Metal` and `CoreMl` besides the CPU, as
+on macOS; only whisper.cpp uses one (Metal), so a Whisper model's ggml build is ranked first and sherpa-onnx's int8
+build stays its CPU fallback, as on a Mac.
 
 ```sh
 cargo xtask ios-build [DIR]   # cargo build --release for both targets; the xcframeworks to embed, in DIR (default target/ios)
@@ -454,7 +456,16 @@ NDK, cargo-ndk, Xcode or macOS).
   on iOS: `ort-sys` links none). An app building the engine sets both for each target. Without them, `sherpa-onnx-sys`
   1.13.8 downloads its own copy unchecked (the variant with the runtime inside, which exports no `OrtGetApiBase`) and
   loses one slice's libraries when it builds the other (fixed in sherpa-onnx 2.0, which the engine does not use yet).
-- **Limits.** CI builds and links for both targets; running on a device or the simulator is the app's gate.
+- **whisper.cpp** is compiled for each target from the sources `whisper-rs-sys` bundles, with ggml's Metal backend and
+  its shaders embedded in the library (`GGML_METAL_EMBED_LIBRARY`): nothing more to embed, and the app links Metal,
+  MetalKit, Foundation and Accelerate, which the build script names. It needs CMake and libclang on the Mac, as on
+  macOS. `GGML_NATIVE` is off by itself when cross-compiling; an app sets `GGML_NATIVE="OFF"` anyway ("Build and
+  test"). The build sets `IPHONEOS_DEPLOYMENT_TARGET` to the app's oldest iOS, 13 or later (whisper.cpp uses
+  `std::filesystem`), so that the C the build scripts compile and the Rust are built for the same iOS: without it they
+  disagree and the link fails (`___chkstk_darwin`), and availability checks are compiled for the SDK's version.
+  `ios-build` uses 15.0.
+- **Limits.** CI builds and links for both targets; running on a device or the simulator is the app's gate. The
+  simulator's GPU may not run ggml's Metal kernels; whisper.cpp then says so in its log and runs on the CPU.
 
 The native tests build and check this platform's backends; the one that downloads a real file through `NativeHost` is
 ignored unless asked for, and CI asks:
