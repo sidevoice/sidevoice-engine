@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.9.0...v0.10.0) (2026-11-02)
+
+
+### Features
+
+* **install:** resume partial downloads with an HTTP range request ([#147](https://github.com/sidevoice/sidevoice-engine/issues/147)) ([fc80347](https://github.com/sidevoice/sidevoice-engine/commit/fc80347d893656ca36097c6acd1f4b744b862c7b))
+
 ## [0.9.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.8.0...v0.9.0) (2026-11-01)
 
 
