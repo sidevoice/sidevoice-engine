@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.10.0...v0.11.0) (2026-11-02)
+
+
+### Features
+
+* **android:** build the engine for armeabi-v7a ([#149](https://github.com/sidevoice/sidevoice-engine/issues/149)) ([5cc4910](https://github.com/sidevoice/sidevoice-engine/commit/5cc49108a523625fcfc9d90b1836279558965d33))
+
 ## [0.10.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.9.0...v0.10.0) (2026-11-02)
 
 
