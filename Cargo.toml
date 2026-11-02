@@ -61,9 +61,11 @@ web-sys = { version = "0.3.106", features = [
   "console",
 ] }
 
-# macOS on Apple silicon, on top of everything native: MLX, and whisper.cpp with its Metal backend (the same
-# dependency as below, with Metal added).
-[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+# macOS on Apple silicon and iOS, on top of everything native: whisper.cpp with its Metal backend (the same dependency
+# as below, with Metal added; `platform::local_engines` names this same condition). whisper-rs-sys builds Metal with
+# GGML_METAL_EMBED_LIBRARY: the shaders' source is embedded in the binary and compiled when Metal starts, so no
+# `.metallib` resource ships with an app.
+[target.'cfg(any(all(target_os = "macos", target_arch = "aarch64"), target_os = "ios"))'.dependencies]
 whisper-rs = { version = "=0.16.0", features = ["metal"] }
 
 # Every native build: the built-in NativeHost (src/host/native.rs) and archives (src/install/archive.rs). sysinfo
@@ -98,15 +100,15 @@ tokio = { version = "1.53.2", default-features = false, features = ["rt"] }
 # runtime on demand instead is sidevoice-engine#33. Never on wasm32: the web build does not carry it.
 sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["static"] }
 
-# Every native build but the phones': the whisper.cpp backend (src/backend/implementations/whisper_cpp.rs).
+# Every native build but Android's: the whisper.cpp backend (src/backend/implementations/whisper_cpp.rs).
 # `whisper-rs`, pinned exactly (Unlicense; it bundles whisper.cpp's sources, MIT). Phase 1 links it statically, like
 # sherpa-onnx: its build script compiles whisper.cpp and ggml with CMake and a C++ compiler, for the CPU (Metal is
-# added on Apple silicon, above). Loading it on demand instead is sidevoice-engine#33. Never on wasm32, and not on
-# Android or iOS, where the on-device speech to text is sherpa-onnx's (`platform::local_engines` names this same
+# added on Apple silicon and iOS, above). Loading it on demand instead is sidevoice-engine#33. Never on wasm32, and not
+# on Android, where the on-device speech to text is sherpa-onnx's (`platform::local_engines` names this same
 # condition). whisper.cpp tunes ggml for the building machine's CPU unless the build's environment sets
 # GGML_NATIVE=OFF, as an app shipping its binary to other machines should (README). With sherpa-onnx on Linux x86_64,
 # whisper.cpp must use libstdc++'s old string ABI, as sherpa's libraries do (.cargo/config.toml, README).
-[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android"), not(target_os = "ios")))'.dependencies]
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 whisper-rs = "=0.16.0"
 
 # iOS only: a floor for `libc`, which no iOS code of the engine names. `sysinfo` 0.39.6 allows `libc` ^0.2.173, and its
