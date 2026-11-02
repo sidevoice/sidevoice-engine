@@ -390,15 +390,15 @@ cargo xtask sherpa-libs --check   # what link-size.yml runs when the dependencie
 
 ### Android
 
-The engine builds for `aarch64-linux-android` and `x86_64-linux-android` (the emulator), with the backends a phone can
+The engine builds for `aarch64-linux-android`, `armv7-linux-androideabi` (32-bit phones, `armeabi-v7a`) and `x86_64-linux-android` (the emulator), with the backends a phone can
 run: `sherpa-onnx` (Silero voice activity, and the models sherpa-onnx runs) and `onnxruntime` (smart-turn), plus the
 remote providers. `whisper-cpp` is not in an Android build: its dependency is in Cargo.toml's table for the builds that
 are not a phone's, and a catalogue build that needs it is rejected as `backend-not-in-this-build`. You need the Android
-NDK (r28 or later, whose libraries are 16 KB page aligned; `ANDROID_NDK_HOME`), the two Rust targets and
+NDK (r28 or later, whose libraries are 16 KB page aligned; `ANDROID_NDK_HOME`), the three Rust targets and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk).
 
 ```sh
-cargo xtask android-build [DIR]   # cargo ndk build --release for both ABIs, minSdk 26; the libraries to package, in DIR/<abi>/
+cargo xtask android-build [DIR]   # cargo ndk build --release for every ABI, minSdk 26; the libraries to package, in DIR/<abi>/
 cargo xtask mobile-libs android [DIR]   # only the libraries, same files and layout, without building the engine
 ```
 
@@ -406,7 +406,7 @@ cargo xtask mobile-libs android [DIR]   # only the libraries, same files and lay
   libraries, and `sherpa-onnx-sys`'s build script links `libsherpa-onnx-c-api.so` and `libonnxruntime.so` (the one that
   also resolves `OrtGetApiBase` for the `onnxruntime` backend). `android-build` takes them from the archive
   `xtask/sherpa-onnx-libs.json` pins (checked against its digest, then handed to the build script through
-  `SHERPA_ONNX_ARCHIVE_DIR`), and leaves them in `DIR/<abi>/` (default `target/android/<abi>/`), `arm64-v8a` and
+  `SHERPA_ONNX_ARCHIVE_DIR`), and leaves them in `DIR/<abi>/` (default `target/android/<abi>/`), `arm64-v8a`, `armeabi-v7a` and
   `x86_64`: they go to the app's `jniLibs/<abi>/`, beside the app's own library. They need no `libc++_shared.so`. (The
   build script also tries to copy them into a Tauri project's `gen/android/app/src/main/jniLibs` when it finds one.)
   `SHERPA_ONNX_LIB_DIR`, the desktop's libraries, must not be set for this build; the command removes it.

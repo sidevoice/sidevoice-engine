@@ -1,7 +1,7 @@
 //! `cargo xtask android-build [DIR]`: the engine built for Android, and the libraries a shell packages beside it.
 //!
 //! The archive `xtask/sherpa-onnx-libs.json` pins is checked against its digest, then unpacked here, afresh, into
-//! `<target>/android-sherpa/`. `cargo ndk` builds the engine in release for each ABI (`arm64-v8a` for phones, `x86_64`
+//! `<target>/android-sherpa/`. `cargo ndk` builds the engine in release for each ABI (`arm64-v8a` and `armeabi-v7a` for phones, `x86_64`
 //! for the emulator), one ABI at a time, each linked against that ABI's directory of the unpacked archive through
 //! `SHERPA_ONNX_LIB_DIR`. The variable is the one `sherpa-onnx-sys`'s build script reads before its own cache
 //! (`target/sherpa-onnx-prebuilt`), which a stale or edited copy would otherwise stand in for what was verified. A
@@ -19,7 +19,7 @@ use std::{env, fs};
 use crate::{empty_dir, metadata, repo, sherpa_libs, Result};
 
 /// Each ABI Android names.
-const ABIS: [&str; 2] = ["arm64-v8a", "x86_64"];
+const ABIS: [&str; 3] = ["arm64-v8a", "armeabi-v7a", "x86_64"];
 /// The Android API level the engine is linked for: the oldest `sidevoice-voice` runs on (cpal's AAudio needs 26).
 const API_LEVEL: &str = "26";
 /// What the engine links at run time, from sherpa-onnx's archive.
