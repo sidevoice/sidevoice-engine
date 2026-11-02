@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.11.0...v0.12.0) (2026-11-02)
+
+
+### Features
+
+* **ios:** whisper.cpp on Metal on iOS ([#151](https://github.com/sidevoice/sidevoice-engine/issues/151)) ([410a0d8](https://github.com/sidevoice/sidevoice-engine/commit/410a0d8c3eca0f654a75f4340b7eeacef6989fa9))
+
 ## [0.11.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.10.0...v0.11.0) (2026-11-02)
 
 
