@@ -459,10 +459,11 @@ NDK, cargo-ndk, Xcode or macOS).
 - **whisper.cpp** is compiled for each target from the sources `whisper-rs-sys` bundles, with ggml's Metal backend and
   its shaders embedded in the library (`GGML_METAL_EMBED_LIBRARY`): nothing more to embed, and the app links Metal,
   MetalKit, Foundation and Accelerate, which the build script names. It needs CMake and libclang on the Mac, as on
-  macOS. `GGML_NATIVE` is off by itself when cross-compiling; an app sets `GGML_NATIVE="OFF"` anyway ("Build and test"). The build sets `IPHONEOS_DEPLOYMENT_TARGET` to the
-  app's oldest iOS, 13 or later (whisper.cpp uses `std::filesystem`), so that the C the build scripts compile and the
-  Rust are built for the same iOS: without it they disagree and the link fails (`___chkstk_darwin`), and availability
-  checks are compiled for the SDK's version. `ios-build` uses 15.0.
+  macOS. `GGML_NATIVE` is off by itself when cross-compiling; an app sets `GGML_NATIVE="OFF"` anyway ("Build and
+  test"). The build sets `IPHONEOS_DEPLOYMENT_TARGET` to the app's oldest iOS, 13 or later (whisper.cpp uses
+  `std::filesystem`), so that the C the build scripts compile and the Rust are built for the same iOS: without it they
+  disagree and the link fails (`___chkstk_darwin`), and availability checks are compiled for the SDK's version.
+  `ios-build` uses 15.0.
 - **Limits.** CI builds and links for both targets; running on a device or the simulator is the app's gate. The
   simulator's GPU may not run ggml's Metal kernels; whisper.cpp then says so in its log and runs on the CPU.
 
