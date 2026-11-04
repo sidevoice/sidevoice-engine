@@ -9,8 +9,10 @@
 #[cfg(test)]
 pub const WHISPER_CPP: bool = cfg!(not(target_os = "android"));
 
-/// Whether the whisper.cpp backend is built with ggml's Metal backend: on macOS on Apple silicon and on iOS, where
-/// Cargo.toml turns on whisper-rs's `metal` feature (the same condition). Elsewhere it runs on the CPU only.
+/// Whether the whisper.cpp backend is built with ggml's Metal backend: on macOS on Apple silicon, where Cargo.toml
+/// turns on whisper-rs's `metal` feature (the same condition). Elsewhere it runs on the CPU only, iOS included: iOS
+/// refuses GPU work from an app in the background, which an app in a call often is, and ggml then aborts the process
+/// (`ggml_metal_synchronize`'s `GGML_ABORT`, whisper.cpp#3531) instead of failing the computation.
 #[cfg_attr(
     any(web, target_os = "android"),
     allow(
@@ -18,10 +20,7 @@ pub const WHISPER_CPP: bool = cfg!(not(target_os = "android"));
         reason = "whisper.cpp is built natively only, and not on Android"
     )
 )]
-pub const WHISPER_CPP_METAL: bool = cfg!(any(
-    all(target_os = "macos", target_arch = "aarch64"),
-    target_os = "ios"
-));
+pub const WHISPER_CPP_METAL: bool = cfg!(all(target_os = "macos", target_arch = "aarch64"));
 
 /// The items it is given, where [`WHISPER_CPP`] is true.
 macro_rules! where_whisper_cpp_builds {
