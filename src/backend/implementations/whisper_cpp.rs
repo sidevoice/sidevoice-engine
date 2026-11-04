@@ -22,13 +22,14 @@
 //!
 //! # Accelerators
 //!
-//! Metal on macOS on Apple silicon and on iOS, the builds that compile ggml's Metal backend in (the `metal` feature of
-//! whisper-rs, in Cargo.toml; `platform::local_engines::WHISPER_CPP_METAL`), and the CPU everywhere. On Metal the model
-//! asks whisper.cpp for its GPU, with flash attention; should Metal not start (the iOS simulator's GPU may lack what
-//! ggml asks of it), whisper.cpp says so in its log and runs on the CPU. The Metal shaders are embedded in the binary
-//! (whisper-rs builds with GGML_METAL_EMBED_LIBRARY) and compiled when the first model loads, so an app ships no
-//! `.metallib`. Windows is built and tested in CI: the CPU, through whisper.cpp built with `GGML_NATIVE=OFF`. CUDA and
-//! Vulkan are features of whisper-rs that are not turned on.
+//! Metal on macOS on Apple silicon, the build that compiles ggml's Metal backend in (the `metal` feature of
+//! whisper-rs, in Cargo.toml; `platform::local_engines::WHISPER_CPP_METAL`), and the CPU everywhere. On Metal the
+//! model asks whisper.cpp for its GPU, with flash attention; should Metal not start, whisper.cpp says so in its log and
+//! runs on the CPU. The Metal shaders are embedded in the binary (whisper-rs builds with GGML_METAL_EMBED_LIBRARY) and
+//! compiled when the first model loads, so an app ships no `.metallib`. iOS runs it on the CPU: iOS refuses GPU work
+//! from an app in the background, and ggml aborts the process when a command buffer fails (`ggml_metal_synchronize`,
+//! whisper.cpp#3531), which no error returned here could catch. Windows is built and tested in CI: the CPU, through
+//! whisper.cpp built with `GGML_NATIVE=OFF`. CUDA and Vulkan are features of whisper-rs that are not turned on.
 //!
 //! # Languages
 //!

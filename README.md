@@ -91,9 +91,9 @@ take some of them, which it says as a hard constraint (`"requires": {"accelerato
 The builds of a model that run here are ranked by the class of the accelerator each would run on (sidevoice-engine#4):
 a GPU first, then a neural engine, then a CPU, the order of `AcceleratorClass`. Within a class
 they keep catalogue order, the documented fallback until measured speed and quality rank them (sidevoice-engine#16).
-The first is the recommended build. So on Apple silicon whisper.cpp on Metal is recommended for every Whisper model,
-ahead of sherpa-onnx on the CPU; on Linux and Windows, where whisper.cpp runs on the CPU too, catalogue order keeps
-sherpa-onnx.
+The first is the recommended build. So on an Apple silicon Mac whisper.cpp on Metal is recommended for every Whisper
+model, ahead of sherpa-onnx on the CPU; on Linux, Windows and iOS, where whisper.cpp runs on the CPU too, catalogue
+order keeps sherpa-onnx.
 
 ## Using a model, and what stays in memory
 
@@ -279,7 +279,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon and iOS, the CPU elsewhere (Windows too, built and tested in CI), natively; not on Android | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon Macs, the CPU elsewhere (iOS included, and Windows, built and tested in CI), natively; not on Android | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links (on iOS, the shared `onnxruntime.framework` it loads) |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
@@ -427,12 +427,14 @@ cargo xtask mobile-libs android [DIR]   # only the libraries, same files and lay
 ### iOS
 
 The engine builds for `aarch64-apple-ios` (devices) and `aarch64-apple-ios-sim` (the simulator on Apple silicon), on a
-Mac with Xcode, with the backends an iPhone can run: `whisper-cpp` (Whisper's ggml builds on Metal, the iPhone's GPU),
+Mac with Xcode, with the backends an iPhone can run: `whisper-cpp` (Whisper's ggml builds, on the CPU),
 `sherpa-onnx` (Silero voice activity, and the models sherpa-onnx runs, on the CPU), `onnxruntime` (smart-turn, the end
 of turn: `ort` resolves `OrtGetApiBase` from the same shared ONNX Runtime framework sherpa-onnx loads, so there is one
 runtime, as on every other system) and the remote providers. The host reports `Metal` and `CoreMl` besides the CPU, as
-on macOS; only whisper.cpp uses one (Metal), so a Whisper model's ggml build is ranked first and sherpa-onnx's int8
-build stays its CPU fallback, as on a Mac.
+on macOS, but no backend uses either on iOS: every build runs on the CPU, so catalogue order ranks them, and a Whisper
+model's sherpa-onnx int8 build comes before its ggml one. whisper.cpp is built without Metal on iOS because iOS refuses
+GPU work from an app in the background (a call on the Lock Screen or in the Dynamic Island), and ggml then aborts the
+process rather than fail the computation (`ggml_metal_synchronize`'s `GGML_ABORT`, whisper.cpp#3531).
 
 ```sh
 cargo xtask ios-build [DIR]   # cargo build --release for both targets; the xcframeworks to embed, in DIR (default target/ios)
@@ -456,16 +458,14 @@ NDK, cargo-ndk, Xcode or macOS).
   on iOS: `ort-sys` links none). An app building the engine sets both for each target. Without them, `sherpa-onnx-sys`
   1.13.8 downloads its own copy unchecked (the variant with the runtime inside, which exports no `OrtGetApiBase`) and
   loses one slice's libraries when it builds the other (fixed in sherpa-onnx 2.0, which the engine does not use yet).
-- **whisper.cpp** is compiled for each target from the sources `whisper-rs-sys` bundles, with ggml's Metal backend and
-  its shaders embedded in the library (`GGML_METAL_EMBED_LIBRARY`): nothing more to embed, and the app links Metal,
-  MetalKit, Foundation and Accelerate, which the build script names. It needs CMake and libclang on the Mac, as on
-  macOS. `GGML_NATIVE` is off by itself when cross-compiling; an app sets `GGML_NATIVE="OFF"` anyway ("Build and
-  test"). The build sets `IPHONEOS_DEPLOYMENT_TARGET` to the app's oldest iOS, 13 or later (whisper.cpp uses
-  `std::filesystem`), so that the C the build scripts compile and the Rust are built for the same iOS: without it they
-  disagree and the link fails (`___chkstk_darwin`), and availability checks are compiled for the SDK's version.
-  `ios-build` uses 15.0.
-- **Limits.** CI builds and links for both targets; running on a device or the simulator is the app's gate. The
-  simulator's GPU may not run ggml's Metal kernels; whisper.cpp then says so in its log and runs on the CPU.
+- **whisper.cpp** is compiled for each target from the sources `whisper-rs-sys` bundles, for the CPU (no Metal, see
+  above): nothing more to embed, and the app links Accelerate, which the build script names. It needs CMake and
+  libclang on the Mac, as on macOS. `GGML_NATIVE` is off by itself when cross-compiling; an app sets
+  `GGML_NATIVE="OFF"` anyway ("Build and test"). The build sets `IPHONEOS_DEPLOYMENT_TARGET` to the app's oldest
+  iOS, 13 or later (whisper.cpp uses `std::filesystem`), so that the C the build scripts compile and the Rust are
+  built for the same iOS: without it they disagree and the link fails (`___chkstk_darwin`), and availability checks
+  are compiled for the SDK's version. `ios-build` uses 15.0.
+- **Limits.** CI builds and links for both targets; running on a device or the simulator is the app's gate.
 
 The native tests build and check this platform's backends; the one that downloads a real file through `NativeHost` is
 ignored unless asked for, and CI asks:

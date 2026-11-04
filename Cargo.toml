@@ -102,7 +102,7 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 # `whisper-rs`, pinned exactly (Unlicense; it bundles whisper.cpp's sources, MIT). Phase 1 links it statically, like
 # sherpa-onnx: its build script compiles whisper.cpp and ggml with CMake and a C++ compiler, for the CPU (Metal is
 # added on Apple silicon, above). Loading it on demand instead is sidevoice-engine#33. Never on wasm32, and not on
-# Android, where the on-device speech to text is sherpa-onnx's; iOS has its own table, below, with Metal
+# Android, where the on-device speech to text is sherpa-onnx's; iOS has its own table, below, also on the CPU
 # (`platform::local_engines` names both conditions). whisper.cpp tunes ggml for the building machine's CPU unless the
 # build's environment sets GGML_NATIVE=OFF, as an app shipping its binary to other machines should (README). With
 # sherpa-onnx on Linux x86_64, whisper.cpp must use libstdc++'s old string ABI, as sherpa's libraries do
@@ -110,17 +110,17 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android"), not(target_os = "ios")))'.dependencies]
 whisper-rs = "=0.16.0"
 
-# iOS only: whisper.cpp with its Metal backend (src/backend/implementations/whisper_cpp.rs), the same pinned dependency
-# as above, with Metal, in a table of its own so that no other build changes. whisper-rs-sys builds Metal with
-# GGML_METAL_EMBED_LIBRARY: the shaders' source is embedded in the binary and compiled when Metal starts, so no
-# `.metallib` resource ships with the app. sherpa-onnx's Whisper stays the CPU fallback.
+# iOS only: whisper.cpp (src/backend/implementations/whisper_cpp.rs), the same pinned dependency as above, on the CPU,
+# without its `metal` feature. iOS refuses GPU work from an app in the background (a call on the Lock Screen or in the
+# Dynamic Island is one), and ggml then aborts the process instead of failing the computation
+# (`ggml_metal_synchronize`'s `GGML_ABORT`, whisper.cpp#3531), so Metal is not compiled in for iOS at all.
 #
 # And a floor for `libc`, which no iOS code of the engine names. `sysinfo` 0.39.6 allows `libc` ^0.2.173, and its
 # Apple code calls `mach_host_self` and `mach_task_self`, which 0.2.190 lacks for iOS (0.2.191 has them): this makes a
 # consuming app's own lock file resolve to a `libc` that compiles, as the engine's does.
 [target.'cfg(target_os = "ios")'.dependencies]
 libc = "0.2.191"
-whisper-rs = { version = "=0.16.0", features = ["metal"] }
+whisper-rs = "=0.16.0"
 
 # macOS only: the kernel's memory-pressure level (src/platform/memory/macos.rs), which `sysinfo` does not give.
 [target.'cfg(target_os = "macos")'.dependencies]
