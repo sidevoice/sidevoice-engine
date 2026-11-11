@@ -5,7 +5,8 @@
 pub struct Os;
 
 impl super::Observer for Os {
-    /// Its GPU shares the machine's memory, and no backend runs on it natively: no figure of its own.
+    /// The native host lists no GPU or neural engine on Android (only the CPU, which takes the machine's memory), so
+    /// there is nothing to give memory to.
     fn accelerator_bytes() -> Vec<(crate::host::Accelerator, u64)> {
         Vec::new()
     }

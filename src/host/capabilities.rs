@@ -34,8 +34,9 @@ pub struct Capabilities {
     pub memory_mb: Option<u32>,
     /// CPU cores, when the host can tell.
     pub cores: Option<u32>,
-    /// The memory a GPU or a neural engine can give models, for each the host can tell; one it leaves out is checked
-    /// against `memory_mb` ([`Capabilities::memory_for`]). Order does not matter.
+    /// The memory a GPU or a neural engine can give models, for each the host lists; one left out has none, so no model
+    /// runs on it ([`Capabilities::memory_for`]). A CPU is never here: it always takes `memory_mb`. Order does not
+    /// matter.
     pub accelerator_memory: Vec<AcceleratorMemory>,
     /// Whether the system stops serving the GPU to the app while the app is in the background (iOS: a Metal command
     /// buffer committed then fails). A build that runs on a GPU here then works only while the app is in the
@@ -52,8 +53,8 @@ impl Capabilities {
     }
 
     /// The memory a model running on `accelerator` can take here, in MiB: `memory_mb` for a CPU; for a GPU or a neural
-    /// engine its own figure ([`Capabilities::accelerator_memory`]), else `memory_mb` too (Apple's and the phones'
-    /// GPUs share it, and a discrete GPU no backend reports yet is not refused on a guess). `None` when unknown.
+    /// engine its own figure ([`Capabilities::accelerator_memory`]), and zero when it has none listed: no model runs on
+    /// it. `None` when the host cannot tell the machine's memory at all, and nothing is checked.
     #[must_use]
     pub fn memory_for(&self, accelerator: Accelerator) -> Option<u32> {
         if accelerator.class() == AcceleratorClass::Cpu {
@@ -63,12 +64,12 @@ impl Capabilities {
             .iter()
             .find(|memory| memory.accelerator == accelerator)
             .map(|memory| memory.mb)
-            .or(self.memory_mb)
+            .or(self.memory_mb.map(|_| 0))
     }
 }
 
-/// The memory an accelerator can give models, in MiB: on Apple, the working set Metal advises a GPU to stay within
-/// (part of the unified memory `memory_mb` is).
+/// The memory an accelerator can give models, in MiB. On Apple, Metal's working set (part of the unified memory
+/// `memory_mb` is) and, for Core ML, which shares that memory, the machine's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AcceleratorMemory {
     /// The accelerator.

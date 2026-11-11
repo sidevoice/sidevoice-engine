@@ -6,7 +6,7 @@
 use super::{build, Languages, Pick};
 use crate::backend::{Backend, BackendSpec, Library};
 use crate::install::Installed;
-use crate::test_support::{block_on, FakeHost};
+use crate::test_support::{block_on, memory_on_each, FakeHost};
 use crate::{
     async_trait, Accelerator, BundledCatalog, Capabilities, Credentials, Engine, Fetcher, Host,
     HttpClient, Result, Runs, Storage,
@@ -92,7 +92,7 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>) -> Capabilities {
         accelerators: accelerators.to_vec(),
         memory_mb,
         cores: Some(8),
-        accelerator_memory: Vec::new(),
+        accelerator_memory: memory_on_each(accelerators, memory_mb),
         gpu_stops_in_background: false,
     }
 }

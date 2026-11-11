@@ -2,7 +2,8 @@
 //! backends a build of the engine has is decided when it is compiled), which of its accelerators work here (what the
 //! host reports, narrowed by `probe`, cached), is one of them an accelerator the build can take (its `requires`), in a
 //! page does the build fit in what WebAssembly hands it (`requires.wasm_max_mb`), does the memory of an accelerator it
-//! can run on take it (that accelerator's own, where the host reports one: `Capabilities::memory_for`), does the
+//! can run on take it (that accelerator's own, and none for a GPU or neural engine the host does not list:
+//! `Capabilities::memory_for`), does the
 //! machine meet the backend's requirements (a value the host cannot tell passes). The builds of a model are listed with those that
 //! run first, each on its backend's preferred accelerator, and every one that does not with its reason (`rejection`).
 //!
@@ -136,8 +137,9 @@ impl Resolver {
                 )));
             }
         }
-        // The first accelerator whose memory takes the build: its own where the host reports it, the machine's
-        // otherwise (`Capabilities::memory_for`; unknown memory takes it). When none does, why the first does not.
+        // The first accelerator whose memory takes the build: its own, none for one the host does not list
+        // (`Capabilities::memory_for`; a machine memory the host cannot tell takes it). When none does, why the
+        // first does not.
         let needs = MinMemoryMb(build.memory.mb);
         let Some(accelerator) = accelerators
             .into_iter()

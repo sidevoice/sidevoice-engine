@@ -1156,6 +1156,10 @@ impl crate::Host for GpuHost {
         crate::Capabilities {
             runs: crate::Runs::Native,
             accelerators: vec![Accelerator::Cuda, Accelerator::Cpu],
+            accelerator_memory: crate::test_support::memory_on_each(
+                &[Accelerator::Cuda, Accelerator::Cpu],
+                FakeHost.capabilities().memory_mb,
+            ),
             ..FakeHost.capabilities()
         }
     }

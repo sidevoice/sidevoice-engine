@@ -5,7 +5,7 @@
 use js_sys::{Array, Reflect};
 use wasm_bindgen::prelude::*;
 
-use crate::{Accelerator, Capabilities, Runs};
+use crate::{Accelerator, AcceleratorMemory, Capabilities, Runs};
 
 #[cfg(test)]
 mod tests;
@@ -25,15 +25,22 @@ pub(super) fn read(value: &JsValue) -> Result<Capabilities, JsError> {
                 .ok_or_else(|| invalid("accelerators"))
         })
         .collect::<Result<_, _>>()?;
+    let memory_mb = optional_count(value, "memoryMb")?;
     Ok(Capabilities {
         runs: Runs::Page,
         os: text("os")?,
         arch: text("arch")?,
         accelerators,
-        memory_mb: optional_count(value, "memoryMb")?,
+        memory_mb,
         cores: optional_count(value, "cores")?,
-        // A page cannot tell what its GPU has: WebGPU says nothing of its memory.
-        accelerator_memory: Vec::new(),
+        // WebGPU says nothing of its memory: it takes the page's.
+        accelerator_memory: memory_mb
+            .map(|mb| AcceleratorMemory {
+                accelerator: Accelerator::WebGpu,
+                mb,
+            })
+            .into_iter()
+            .collect(),
         // A page's WebGPU is the browser's to keep or drop with a hidden tab; nothing here says it stops.
         gpu_stops_in_background: false,
     })

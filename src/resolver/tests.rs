@@ -8,7 +8,7 @@ use super::Resolver;
 use crate::backend::{Backend, BackendSpec, Library, MinCores};
 use crate::catalog::{BuildEntry, CatalogFragment, CatalogSource, MergedCatalog};
 use crate::install::Installed;
-use crate::test_support::{build, family, model};
+use crate::test_support::{build, family, memory_on_each, model};
 use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
 
 #[cfg(web)]
@@ -79,7 +79,7 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
         accelerators: accelerators.to_vec(),
         memory_mb,
         cores,
-        accelerator_memory: Vec::new(),
+        accelerator_memory: memory_on_each(accelerators, memory_mb),
         gpu_stops_in_background: false,
     }
 }
@@ -255,7 +255,7 @@ fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
             accelerators: accelerators.to_vec(),
             memory_mb: Some(16_384),
             cores: Some(8),
-            accelerator_memory: Vec::new(),
+            accelerator_memory: memory_on_each(accelerators, Some(16_384)),
             gpu_stops_in_background: false,
         };
         [Capability::Stt, Capability::Tts]
@@ -530,7 +530,7 @@ fn in_a_page_webgpu_ranks_before_webassembly() {
         accelerators: accelerators.to_vec(),
         memory_mb: Some(16_384),
         cores: Some(8),
-        accelerator_memory: Vec::new(),
+        accelerator_memory: memory_on_each(accelerators, Some(16_384)),
         gpu_stops_in_background: false,
     };
     let at = |id: &str, accelerator| (id.to_owned(), accelerator);
@@ -606,7 +606,13 @@ fn a_build_is_offered_on_the_first_accelerator_whose_own_memory_takes_it() {
             "memory", 2_048, 1_024
         )))
     );
-    // An accelerator with no figure of its own is checked against the machine's memory.
+    // An accelerator with no figure has no memory: nothing runs on it, the CPU takes the build.
+    let unlisted = Capabilities {
+        accelerator_memory: Vec::new(),
+        ..caps(COREML_AND_CPU, Some(4_096), None)
+    };
+    assert_eq!(fit(COREML_AND_CPU, &unlisted), Ok(Accelerator::Cpu));
+    // One listed with the memory takes it.
     assert_eq!(
         fit(COREML_AND_CPU, &caps(COREML_AND_CPU, Some(4_096), None)),
         Ok(Accelerator::CoreMl)

@@ -1,5 +1,6 @@
 /// iOS: the system ends a process that goes over its memory limit, and tells it what is left of it. `sysinfo`'s figures
-/// are the machine's, which a process cannot use. Its GPU's working set is Metal's.
+/// are the machine's, which a process cannot use. Its GPU's working set is Metal's, and its neural engine's is the
+/// process budget.
 pub struct Os;
 
 extern "C" {
@@ -10,12 +11,13 @@ extern "C" {
 }
 
 impl super::Observer for Os {
-    /// Metal's working set, but never more than the process may still allocate: the GPU's memory is the app's on
-    /// iOS, and the system ends the app past its budget whatever Metal advises. A budget of zero (the Simulator,
-    /// Mac Catalyst, where the function answers nothing) caps nothing.
+    /// Metal's working set, but never more than the process may still allocate, and Core ML's share: the process
+    /// budget. The GPU's and the neural engine's memory is the app's on iOS, and the system ends the app past its
+    /// budget whatever Metal advises. With no budget (the Simulator, Mac Catalyst, where the function answers
+    /// nothing) Metal is not capped and Core ML takes the machine's memory.
     fn accelerator_bytes() -> Vec<(crate::host::Accelerator, u64)> {
         let budget = Self::process_bytes().filter(|bytes| *bytes > 0);
-        super::metal::working_set()
+        let mut accelerators: Vec<_> = super::metal::working_set()
             .into_iter()
             .map(|(accelerator, bytes)| {
                 (
@@ -23,7 +25,13 @@ impl super::Observer for Os {
                     budget.map_or(bytes, |budget| bytes.min(budget)),
                 )
             })
-            .collect()
+            .collect();
+        accelerators.extend(
+            budget
+                .or_else(Self::physical_bytes)
+                .map(|bytes| (crate::host::Accelerator::CoreMl, bytes)),
+        );
+        accelerators
     }
 
     fn process_bytes() -> Option<u64> {

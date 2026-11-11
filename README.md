@@ -62,7 +62,7 @@ anything, gathered once when the host is built:
 | `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
 | `memory_mb` | memory available to models, in MiB (2^20 bytes; every `_mb` in the engine) | `None` |
 | `cores` | CPU cores | `None` |
-| `accelerator_memory` | the memory a GPU or neural engine can give models, each the host can tell: natively Metal's `recommendedMaxWorkingSetSize` on macOS and iOS; a build on an accelerator left out is checked against `memory_mb` (`Capabilities::memory_for`) | leave it out |
+| `accelerator_memory` | an explicit map accelerator to MiB, for the GPUs and neural engines the host lists; one left out has no memory, so no model runs on it (`Capabilities::memory_for`; a CPU always takes `memory_mb`). Natively: Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the machine's memory on macOS and iOS, none elsewhere yet; in a page, WebGPU takes `memoryMb` | leave it out (no GPU or neural engine runs) |
 | `gpu_stops_in_background` | whether the system stops serving the GPU to the app in the background: `true` on iOS (the native host's platform says so), `false` elsewhere and in a page | `false` |
 
 - **The host reports, the backend confirms.** Whether a backend can actually use an accelerator (a CUDA driver, a
@@ -88,7 +88,7 @@ anything, gathered once when the host is built:
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
 A build is offered on the first accelerator in its backend's order of preference that the host reports, the probe
-confirms, the build allows and whose memory takes it (`Capabilities::memory_for`: a build too large for Metal's working
+confirms, the build allows and whose memory takes it (`Capabilities::memory_for`: an accelerator with no memory listed takes nothing, and a build too large for Metal's working
 set runs on the CPU when the machine's memory takes it; when none does, it does not run here, `memory`): which accelerators a build runs on is its backend's to know, unless the build cannot
 take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
 
