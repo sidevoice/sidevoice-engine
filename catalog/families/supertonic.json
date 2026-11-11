@@ -503,7 +503,7 @@
       "license": "OpenRAIL-M",
       "voices": [
         {
-          "id": "F1",
+          "id": "0",
           "name": "F1",
           "languages": [
             "en",
@@ -515,7 +515,7 @@
           "gender": "female"
         },
         {
-          "id": "F2",
+          "id": "1",
           "name": "F2",
           "languages": [
             "en",
@@ -527,7 +527,7 @@
           "gender": "female"
         },
         {
-          "id": "F3",
+          "id": "2",
           "name": "F3",
           "languages": [
             "en",
@@ -539,7 +539,7 @@
           "gender": "female"
         },
         {
-          "id": "F4",
+          "id": "3",
           "name": "F4",
           "languages": [
             "en",
@@ -551,7 +551,7 @@
           "gender": "female"
         },
         {
-          "id": "F5",
+          "id": "4",
           "name": "F5",
           "languages": [
             "en",
@@ -563,7 +563,7 @@
           "gender": "female"
         },
         {
-          "id": "M1",
+          "id": "5",
           "name": "M1",
           "languages": [
             "en",
@@ -575,7 +575,7 @@
           "gender": "male"
         },
         {
-          "id": "M2",
+          "id": "6",
           "name": "M2",
           "languages": [
             "en",
@@ -587,7 +587,7 @@
           "gender": "male"
         },
         {
-          "id": "M3",
+          "id": "7",
           "name": "M3",
           "languages": [
             "en",
@@ -599,7 +599,7 @@
           "gender": "male"
         },
         {
-          "id": "M4",
+          "id": "8",
           "name": "M4",
           "languages": [
             "en",
@@ -611,7 +611,7 @@
           "gender": "male"
         },
         {
-          "id": "M5",
+          "id": "9",
           "name": "M5",
           "languages": [
             "en",
@@ -684,61 +684,61 @@
               "bytes": 101353472
             },
             {
-              "key": "voices/F1",
+              "key": "voices/0",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F1.bin",
               "sha256": "29996535c3f45e4a7817a77a95146aa7adca23a9441fdf96dcb494fa3001ced2",
               "bytes": 51712
             },
             {
-              "key": "voices/F2",
+              "key": "voices/1",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F2.bin",
               "sha256": "741a38f11c88170435f0eea3273dfe545550a05121d66510b3daf79c1cb671ed",
               "bytes": 51712
             },
             {
-              "key": "voices/F3",
+              "key": "voices/2",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F3.bin",
               "sha256": "d5e253074af8408fda21740f2f28cac5071ca7afd4ef5bc25964d7c037e44817",
               "bytes": 51712
             },
             {
-              "key": "voices/F4",
+              "key": "voices/3",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F4.bin",
               "sha256": "51883eb879138c774b845bfb7f45ec9f1ca2329851f2a55921700d1f4fbd336e",
               "bytes": 51712
             },
             {
-              "key": "voices/F5",
+              "key": "voices/4",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/F5.bin",
               "sha256": "e7a5f1d98c34d5ccf98f6630647fa34d0977e2eaff3f21e417db38add593067f",
               "bytes": 51712
             },
             {
-              "key": "voices/M1",
+              "key": "voices/5",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M1.bin",
               "sha256": "a8060d77a1b44decd3d594655bc54fd8ecc6c894e7072d031b05f0d1047d5492",
               "bytes": 51712
             },
             {
-              "key": "voices/M2",
+              "key": "voices/6",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M2.bin",
               "sha256": "67566aa5c0c027b323c5dcaf1ffaf0d7f0ac465718b40e505b8d6aae7d3b5ca8",
               "bytes": 51712
             },
             {
-              "key": "voices/M3",
+              "key": "voices/7",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M3.bin",
               "sha256": "59346499e139d9274ba1c5f0fc613e3ece97573d80d85503105f383abd9beea0",
               "bytes": 51712
             },
             {
-              "key": "voices/M4",
+              "key": "voices/8",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M4.bin",
               "sha256": "4a87edec2d5f772ca947f14a1d70f06c3f4f00767db61eef0272cc040842393d",
               "bytes": 51712
             },
             {
-              "key": "voices/M5",
+              "key": "voices/9",
               "url": "https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/68d4d9420d0e0e51d14656e1ec5c9b091490b49e/voices/M5.bin",
               "sha256": "d1cd16f1c7c14775450302a28a735ee7f92d37be8c83522806932196189be431",
               "bytes": 51712
@@ -748,6 +748,60 @@
             "mb": 330,
             "source": "estimated",
             "basis": "weights size + 30%"
+          }
+        },
+        {
+          "id": "supertonic-2/sherpa-onnx-int8",
+          "backend": "sherpa-onnx",
+          "precision": "int8",
+          "files": [
+            {
+              "key": "supertonic.duration_predictor",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-tts-int8-2026-03-06/resolve/5dec5897b86e2b293790eedb5e1f561a3295651f/duration_predictor.int8.onnx",
+              "sha256": "6d556b3691165c364be91dc0bd894656b5949f5acd2750d8ec2f954010845011",
+              "bytes": 1521526
+            },
+            {
+              "key": "supertonic.text_encoder",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-tts-int8-2026-03-06/resolve/5dec5897b86e2b293790eedb5e1f561a3295651f/text_encoder.int8.onnx",
+              "sha256": "dd5f535ed629f7df86071043e15f541ce1b2ab7f1bdbce4c7892b307bca79fa3",
+              "bytes": 27431318
+            },
+            {
+              "key": "supertonic.vector_estimator",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-tts-int8-2026-03-06/resolve/5dec5897b86e2b293790eedb5e1f561a3295651f/vector_estimator.int8.onnx",
+              "sha256": "9cce89801068dc998719fbc91777f99f3f4d16ee36592281f8703f32e305daa2",
+              "bytes": 40686657
+            },
+            {
+              "key": "supertonic.vocoder",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-tts-int8-2026-03-06/resolve/5dec5897b86e2b293790eedb5e1f561a3295651f/vocoder.int8.onnx",
+              "sha256": "db99c36fb871fbfb128b903662995f2e22213e875f2434f319f8d10ee0f10e90",
+              "bytes": 25977132
+            },
+            {
+              "key": "supertonic.tts_json",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-tts-int8-2026-03-06/resolve/5dec5897b86e2b293790eedb5e1f561a3295651f/tts.json",
+              "sha256": "ee531d9af9b80438a2ed703e22155ee6c83b12595ab22fd3bb6de94c7502fe96",
+              "bytes": 8699
+            },
+            {
+              "key": "supertonic.unicode_indexer",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-tts-int8-2026-03-06/resolve/5dec5897b86e2b293790eedb5e1f561a3295651f/unicode_indexer.bin",
+              "sha256": "06557ec23778a2c67130a99e28f5f550b9598fc1f04049cbb35d864549913154",
+              "bytes": 262144
+            },
+            {
+              "key": "supertonic.voice_style",
+              "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-tts-int8-2026-03-06/resolve/5dec5897b86e2b293790eedb5e1f561a3295651f/voice.bin",
+              "sha256": "12e0919ffc641ff20858026a4c655fbd9e5c414800bb1b756c9d4011e2536325",
+              "bytes": 517168
+            }
+          ],
+          "memory": {
+            "mb": 245,
+            "source": "measured",
+            "basis": "peak resident memory of a process that loaded the build and synthesised 10 sentences (en, es, fr, pt; voices F1 and M1) on the CPU, Linux x86_64, sherpa-onnx 1.13.8, 4 threads"
           }
         }
       ]

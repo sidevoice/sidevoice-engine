@@ -258,6 +258,7 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
                 "kokoro-82m-v1.0",
                 "piper-en_US-ljspeech-medium",
                 "piper-es_ES-carlfm-x_low",
+                "supertonic-2",
                 "supertonic-3"
             ]
         );
