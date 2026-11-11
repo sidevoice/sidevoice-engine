@@ -20,19 +20,38 @@ use crate::{
     Requires, Result, Resumed, Runs, Storage, StorageWriter,
 };
 
+/// The memory each of `accelerators` can give models in a test host: `memory_mb` apiece, as a host whose GPUs and
+/// neural engines share the machine's memory would list it (one left out has none). Nothing when the memory is unknown.
+pub(crate) fn memory_on_each(
+    accelerators: &[Accelerator],
+    memory_mb: Option<u32>,
+) -> Vec<crate::AcceleratorMemory> {
+    memory_mb.map_or_else(Vec::new, |mb| {
+        accelerators
+            .iter()
+            .map(|accelerator| crate::AcceleratorMemory {
+                accelerator: *accelerator,
+                mb,
+            })
+            .collect()
+    })
+}
+
 pub(crate) struct FakeHost;
 
 impl Host for FakeHost {
     fn capabilities(&self) -> Capabilities {
+        let accelerators = if cfg!(apple_silicon) {
+            vec![Accelerator::Metal, Accelerator::Cpu]
+        } else {
+            vec![Accelerator::Cpu, Accelerator::Wasm]
+        };
         Capabilities {
             runs: if cfg!(web) { Runs::Page } else { Runs::Native },
             os: std::env::consts::OS.to_owned(),
             arch: std::env::consts::ARCH.to_owned(),
-            accelerators: if cfg!(apple_silicon) {
-                vec![Accelerator::Metal, Accelerator::Cpu]
-            } else {
-                vec![Accelerator::Cpu, Accelerator::Wasm]
-            },
+            accelerator_memory: memory_on_each(&accelerators, Some(8_192)),
+            accelerators,
             memory_mb: Some(8_192),
             cores: Some(8),
             gpu_stops_in_background: false,

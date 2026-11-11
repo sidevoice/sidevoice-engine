@@ -6,6 +6,16 @@
 //! - `available_mb`: what this process may still allocate. Where the OS keeps a budget for the process (iOS) that
 //!   figure; elsewhere what the machine has available now. Not the same thing as `total_mb`, and it changes from one
 //!   call to the next. `None` when the OS cannot tell; `Some(0)` is an answer, not a gap.
+//! - `process_mb`: the process's own budget alone, where the OS keeps one (iOS: what it may still allocate before the
+//!   system ends it); `None` where it keeps none. Read when the app starts, it is close to the app's whole limit: what
+//!   the native host reports as the memory models can take there, rather than the phone's.
+//!
+//! And, apart, the memory each GPU or neural engine can give models ([`MemoryObservation::accelerators`]): on macOS
+//! and iOS, Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the memory it has with the CPU; none
+//! elsewhere yet, since no backend runs on another GPU natively (CUDA, Vulkan or DXGI each add their figure when one
+//! does). An accelerator left out has none.
+
+use crate::host::{Accelerator, AcceleratorMemory};
 
 #[cfg(test)]
 mod tests;
@@ -38,6 +48,10 @@ pub trait Observer {
     fn process_bytes() -> Option<u64> {
         None
     }
+
+    /// The memory each GPU or neural engine this OS supports can give models. Every OS says it (no default): an
+    /// accelerator it does not list has none, so no model runs on it.
+    fn accelerator_bytes() -> Vec<(Accelerator, u64)>;
 }
 
 fn refreshed() -> sysinfo::System {
@@ -53,6 +67,8 @@ pub struct MemoryObservation {
     pub total_mb: Option<u32>,
     /// What this process may still allocate, in MiB; `None` when unknown.
     pub available_mb: Option<u32>,
+    /// The process's own budget, in MiB, where the OS keeps one (iOS); `None` where it keeps none.
+    pub process_mb: Option<u32>,
 }
 
 impl MemoryObservation {
@@ -67,10 +83,30 @@ impl MemoryObservation {
     fn observed<O: Observer>() -> Self {
         let limit = O::limit_bytes().filter(|bytes| *bytes > 0);
         let total = [O::physical_bytes(), limit].into_iter().flatten().min();
+        let process = O::process_bytes();
         Self {
             total_mb: total.map(mebibytes).filter(|mb| *mb > 0),
-            available_mb: O::process_bytes().or_else(O::free_bytes).map(mebibytes),
+            available_mb: process.or_else(O::free_bytes).map(mebibytes),
+            process_mb: process.map(mebibytes),
         }
+    }
+
+    /// The memory each GPU or neural engine can give models, in MiB: what the native host reports as
+    /// [`Capabilities::accelerator_memory`](crate::Capabilities::accelerator_memory).
+    #[must_use]
+    pub fn accelerators() -> Vec<AcceleratorMemory> {
+        Self::accelerators_of::<Machine>()
+    }
+
+    fn accelerators_of<O: Observer>() -> Vec<AcceleratorMemory> {
+        O::accelerator_bytes()
+            .into_iter()
+            .map(|(accelerator, bytes)| AcceleratorMemory {
+                accelerator,
+                mb: mebibytes(bytes),
+            })
+            .filter(|memory| memory.mb > 0)
+            .collect()
     }
 }
 
@@ -83,6 +119,9 @@ fn mebibytes(bytes: u64) -> u32 {
 mod android;
 #[cfg(target_os = "android")]
 pub use android::Os as Machine;
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod metal;
 
 #[cfg(target_os = "ios")]
 mod ios;

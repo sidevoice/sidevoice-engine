@@ -126,6 +126,12 @@ whisper-rs = { version = "=0.16.0", features = ["metal"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2.190"
 
+# macOS and iOS: the memory Metal advises a GPU's working set to stay within (`recommendedMaxWorkingSetSize`,
+# src/platform/memory/metal.rs), through objc2's maintained Metal bindings; Metal is a system framework, already
+# linked where whisper.cpp runs on it.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+objc2-metal = { version = "0.3.2", default-features = false, features = ["std", "MTLDevice"] }
+
 # Windows only: the hard-link count of a file (src/platform/links/windows.rs), which std exposes only on Unix, the
 # graphics adapters the system lists (src/platform/accelerators/windows.rs: DXGI, a system library, no vendor's) and the
 # process's ANSI code page (src/platform/narrow_paths/windows.rs).

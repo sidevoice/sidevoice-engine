@@ -8,7 +8,7 @@ use super::Resolver;
 use crate::backend::{Backend, BackendSpec, Library, MinCores};
 use crate::catalog::{BuildEntry, CatalogFragment, CatalogSource, MergedCatalog};
 use crate::install::Installed;
-use crate::test_support::{build, family, model};
+use crate::test_support::{build, family, memory_on_each, model};
 use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
 
 #[cfg(web)]
@@ -79,6 +79,7 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
         accelerators: accelerators.to_vec(),
         memory_mb,
         cores,
+        accelerator_memory: memory_on_each(accelerators, memory_mb),
         gpu_stops_in_background: false,
     }
 }
@@ -254,6 +255,7 @@ fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
             accelerators: accelerators.to_vec(),
             memory_mb: Some(16_384),
             cores: Some(8),
+            accelerator_memory: memory_on_each(accelerators, Some(16_384)),
             gpu_stops_in_background: false,
         };
         [Capability::Stt, Capability::Tts]
@@ -327,6 +329,7 @@ fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
         accelerators: vec![Accelerator::Wasm],
         memory_mb: Some(16_384),
         cores: Some(8),
+        accelerator_memory: Vec::new(),
         gpu_stops_in_background: false,
     };
     only(&catalog, &[Box::new(backend)], &caps)
@@ -527,6 +530,7 @@ fn in_a_page_webgpu_ranks_before_webassembly() {
         accelerators: accelerators.to_vec(),
         memory_mb: Some(16_384),
         cores: Some(8),
+        accelerator_memory: memory_on_each(accelerators, Some(16_384)),
         gpu_stops_in_background: false,
     };
     let at = |id: &str, accelerator| (id.to_owned(), accelerator);
@@ -573,5 +577,44 @@ fn cuda_ranks_as_a_gpu() {
             at("model/whisper-cpp", Accelerator::Cuda),
             at("model/sherpa-onnx", Accelerator::Cpu),
         ]
+    );
+}
+
+#[test]
+fn a_build_is_offered_on_the_first_accelerator_whose_own_memory_takes_it() {
+    let with_own = |own_mb: u32, memory_mb: u32| Capabilities {
+        accelerator_memory: vec![crate::AcceleratorMemory {
+            accelerator: Accelerator::CoreMl,
+            mb: own_mb,
+        }],
+        ..caps(COREML_AND_CPU, Some(memory_mb), None)
+    };
+    // The build takes 2048 MB: Core ML's own memory takes it.
+    assert_eq!(
+        fit(COREML_AND_CPU, &with_own(4_096, 8_192)),
+        Ok(Accelerator::CoreMl)
+    );
+    // Core ML's does not, the machine's does: on the CPU.
+    assert_eq!(
+        fit(COREML_AND_CPU, &with_own(1_024, 8_192)),
+        Ok(Accelerator::Cpu)
+    );
+    // Neither: why the first does not.
+    assert_eq!(
+        fit(COREML_AND_CPU, &with_own(1_024, 1_536)),
+        Err(Rejection::DoesNotFit(Reason::with_numbers(
+            "memory", 2_048, 1_024
+        )))
+    );
+    // An accelerator with no figure has no memory: nothing runs on it, the CPU takes the build.
+    let unlisted = Capabilities {
+        accelerator_memory: Vec::new(),
+        ..caps(COREML_AND_CPU, Some(4_096), None)
+    };
+    assert_eq!(fit(COREML_AND_CPU, &unlisted), Ok(Accelerator::Cpu));
+    // One listed with the memory takes it.
+    assert_eq!(
+        fit(COREML_AND_CPU, &caps(COREML_AND_CPU, Some(4_096), None)),
+        Ok(Accelerator::CoreMl)
     );
 }

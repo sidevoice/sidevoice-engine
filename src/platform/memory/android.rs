@@ -4,4 +4,10 @@
 /// allocation; the process has no budget of its own to read.
 pub struct Os;
 
-impl super::Observer for Os {}
+impl super::Observer for Os {
+    /// The native host lists no GPU or neural engine on Android (only the CPU, which takes the machine's memory), so
+    /// there is nothing to give memory to.
+    fn accelerator_bytes() -> Vec<(crate::host::Accelerator, u64)> {
+        Vec::new()
+    }
+}

@@ -50,11 +50,20 @@ fn a_js_host_names_accelerators_by_id_and_may_leave_numbers_out() {
         read_json(r#"{"os":"web","arch":"wasm32","accelerators":["webgpu","wasm"]}"#).unwrap();
     assert_eq!(caps.accelerators, [Accelerator::WebGpu, Accelerator::Wasm]);
     assert_eq!((caps.memory_mb, caps.cores), (None, None));
+    assert!(caps.accelerator_memory.is_empty());
 
     let caps =
         read_json(r#"{"os":"web","arch":"wasm32","accelerators":[],"memoryMb":4096,"cores":null}"#)
             .unwrap();
     assert_eq!((caps.memory_mb, caps.cores), (Some(4_096), None));
+    // WebGPU says nothing of its memory: it takes the page's, and nothing else gets any.
+    assert_eq!(
+        caps.accelerator_memory,
+        [crate::AcceleratorMemory {
+            accelerator: Accelerator::WebGpu,
+            mb: 4_096
+        }]
+    );
 }
 
 #[wasm_bindgen_test]

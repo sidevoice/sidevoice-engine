@@ -62,13 +62,15 @@ anything, gathered once when the host is built:
 | `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
 | `memory_mb` | memory available to models, in MiB (2^20 bytes; every `_mb` in the engine) | `None` |
 | `cores` | CPU cores | `None` |
+| `accelerator_memory` | an explicit map accelerator to MiB, for the GPUs and neural engines the host lists; one left out has no memory, so no model runs on it (`Capabilities::memory_for`; a CPU always takes `memory_mb`). Natively: Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the machine's memory on macOS and iOS, none elsewhere yet; in a page, WebGPU takes `memoryMb` | leave it out (no GPU or neural engine runs) |
 | `gpu_stops_in_background` | whether the system stops serving the GPU to the app in the background: `true` on iOS (the native host's platform says so), `false` elsewhere and in a page | `false` |
 
 - **The host reports, the backend confirms.** Whether a backend can actually use an accelerator (a CUDA driver, a
   granted WebGPU adapter, a Core ML model that loads) is found out by the backend's probe, never by the host. The
   probe can only narrow what the host reported: an accelerator the host left out is absent.
 - **Memory is one observation, in MiB.** In a native build, `MemoryObservation::now()` gives `total_mb` (physical memory, or
-  its cgroup's limit if lower: what `memory_mb` above is, read once) and `available_mb` (what this process may still
+  its cgroup's limit if lower: what `memory_mb` above is, read once, except on iOS, where it is `process_mb`, the app's
+  own budget when the host is built), `process_mb` (that budget, where the OS keeps one) and `available_mb` (what this process may still
   allocate: the process's own budget on iOS, `os_proc_available_memory()`; the system's figure elsewhere, the kernel's
   memory-pressure estimate on macOS; `/proc/meminfo`'s `MemAvailable` on Android). It changes from call to call; `Some(0)`
   is an answer, `None` a gap.
@@ -86,7 +88,8 @@ anything, gathered once when the host is built:
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
 A build is offered on the first accelerator in its backend's order of preference that the host reports, the probe
-confirms and the build allows: which accelerators a build runs on is its backend's to know, unless the build cannot
+confirms, the build allows and whose memory takes it (`Capabilities::memory_for`: an accelerator with no memory listed takes nothing, and a build too large for Metal's working
+set runs on the CPU when the machine's memory takes it; when none does, it does not run here, `memory`): which accelerators a build runs on is its backend's to know, unless the build cannot
 take some of them, which it says as a hard constraint (`"requires": {"accelerators": ["cpu"]}`).
 
 The builds of a model that run here are ranked by the class of the accelerator each would run on (sidevoice-engine#4):
