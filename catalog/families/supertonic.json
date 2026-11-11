@@ -801,7 +801,7 @@
           "memory": {
             "mb": 245,
             "source": "measured",
-            "basis": "peak resident memory of a process that loaded the build and synthesised 10 sentences (en, es, fr, pt; voices F1 and M1) on the CPU, Linux x86_64, sherpa-onnx 1.13.8, 4 threads"
+            "basis": "peak resident memory of a process that loaded the build and synthesised 10 sentences (en, es, fr, pt; voices F1 (id 0) and M1 (id 5)) on the CPU, Linux x86_64, sherpa-onnx 1.13.8, 4 threads"
           }
         }
       ]
