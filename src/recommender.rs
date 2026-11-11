@@ -6,15 +6,17 @@
 //! recommendation and preselects it.
 //!
 //! The build of a model: of those that run here, ranked by the resolver (a GPU, then a neural engine, then a CPU;
-//! catalogue order within a class), the first that does not stop in the background
-//! ([`ModelBuild::stops_in_background`]) and fits the memory budget on its own; failing that, the first that does not
-//! stop in the background; failing that, the first that runs.
+//! catalogue order within a class), the first that is not to be avoided and fits the memory budget on its own; failing
+//! that, the first not to be avoided; failing that, the first that runs. A build is avoided when it stops in the
+//! background ([`ModelBuild::stops_in_background`]) or needs what nothing here checks (WebGPU features such as
+//! `shader-f16`, which no host reports: `requires.webgpu_features`).
 //!
 //! The models: each capability's list is walked best first, keeping the entries whose model has a recommended build
 //! that runs here, does not stop in the background, runs on the class the entry asks for (if any) and fits the budget
-//! on its own (hard: what cannot run well here is never recommended), then, of those, the ones that speak the person's
-//! language (soft: a model that does not is still selectable, only not recommended; when none does, the hard list
-//! stands, a model rather than none). The pair is the (speech to text i, text to speech j) closest to the top of both
+//! on its own and needs nothing unchecked (hard: what cannot run well here is never recommended), then, of those, the
+//! ones that speak the person's language (a model that does not is never recommended, and stays selectable; when none
+//! does, nothing is recommended for that capability). A model listed twice (two sources' lists) counts once, at its
+//! first place. The pair is the (speech to text i, text to speech j) closest to the top of both
 //! lists whose memory, with the end-of-turn model's, fits the budget together: the least i + j, the better speech to
 //! text on a tie. The models of a call are loaded together, so the budget is the whole set's: [`BUDGET_PERCENT`] of
 //! the memory the host reports (unknown memory sets no budget). When no pair fits, the lightest.
@@ -54,11 +56,11 @@ pub struct Recommendation {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Recommended {
     /// The model to start with and its build: of [`Recommended::ranked`], the one that fits the memory budget with
-    /// the other capability's choice; `None` when no model of the list runs here.
+    /// the other capability's choice; `None` when no model of the list runs here and speaks the person's language.
     pub choice: Option<Pick>,
     /// Every model of the capability's list that can be recommended here, best first, each with its build: those
-    /// that run here as the list asks and fit the budget on their own, and of those, the ones that speak the person's
-    /// language when any does. A family's first here is that family's best for this device.
+    /// that run here as the list asks, fit the budget on their own and speak the person's language. A family's first
+    /// here is that family's best for this device.
     pub ranked: Vec<Pick>,
 }
 
@@ -80,12 +82,13 @@ pub(crate) fn budget_mb(caps: &Capabilities) -> Option<u32> {
 }
 
 /// Of `builds`, ranked as the resolver ranks them (those that run here first), the one the engine recommends: the
-/// first that runs here (`runs_on`), does not stop in the background (`stops`) and takes no more than `budget` MB
-/// (`memory_mb`); else the first that runs and does not stop; else the first that runs; `None` when none runs here.
+/// first that runs here (`runs_on`), is not to be avoided (`avoid`: it stops in the background, or needs what nothing
+/// here checks) and takes no more than `budget` MB (`memory_mb`); else the first that runs and is not avoided; else the
+/// first that runs; `None` when none runs here.
 pub(crate) fn build<T>(
     builds: impl IntoIterator<Item = T>,
     runs_on: impl Fn(&T) -> Option<Accelerator>,
-    stops: impl Fn(&T) -> bool,
+    avoid: impl Fn(&T) -> bool,
     memory_mb: impl Fn(&T) -> u32,
     budget: Option<u32>,
 ) -> Option<T> {
@@ -96,35 +99,35 @@ pub(crate) fn build<T>(
     let fits = |build: &T| budget.is_none_or(|budget| memory_mb(build) <= budget);
     let chosen = running
         .iter()
-        .position(|build| !stops(build) && fits(build))
-        .or_else(|| running.iter().position(|build| !stops(build)))
+        .position(|build| !avoid(build) && fits(build))
+        .or_else(|| running.iter().position(|build| !avoid(build)))
         .unwrap_or(0);
     running.into_iter().nth(chosen)
 }
 
 /// What the engine recommends here for speech to text and text to speech, from the local catalogue's `models` as
-/// listed here (each with its recommended build), its `lists`, the host's `caps` and the person's `languages`.
+/// listed here (each with its recommended build), its `lists`, the host's `caps`, the person's `languages`, and which
+/// builds need what nothing here checks (`unchecked`, by build id).
 pub(crate) fn recommend(
     models: &[LocalModelInfo],
     lists: &RecommendedLists,
     caps: &Capabilities,
     languages: &Languages,
+    unchecked: &dyn Fn(&str) -> bool,
 ) -> Recommendation {
     let budget = budget_mb(caps);
-    let stt = ranked(
-        models,
-        &lists.stt,
-        Capability::Stt,
-        budget,
-        languages.stt.as_deref(),
-    );
-    let tts = ranked(
-        models,
-        &lists.tts,
-        Capability::Tts,
-        budget,
-        languages.tts.as_deref(),
-    );
+    let rank = |list, capability, language: &Option<String>| {
+        ranked(
+            models,
+            list,
+            capability,
+            budget,
+            language.as_deref(),
+            unchecked,
+        )
+    };
+    let stt = rank(&lists.stt, Capability::Stt, &languages.stt);
+    let tts = rank(&lists.tts, Capability::Tts, &languages.tts);
     // The end-of-turn model a call takes when none is chosen: the first that runs here, as the app picks it.
     let turn = models
         .iter()
@@ -167,9 +170,16 @@ fn ranked<'a>(
     capability: Capability,
     budget: Option<u32>,
     language: Option<&str>,
+    unchecked: &dyn Fn(&str) -> bool,
 ) -> Vec<Candidate<'a>> {
+    let mut seen = Vec::new();
     let runnable: Vec<Candidate<'a>> = list
         .iter()
+        .filter(|entry| {
+            let first = !seen.contains(&entry.model.as_str());
+            seen.push(entry.model.as_str());
+            first
+        })
         .filter_map(|entry| {
             let model = models.iter().find(|model| {
                 model.id == entry.model && model.capabilities.contains(&capability)
@@ -178,18 +188,13 @@ fn ranked<'a>(
             let class = build.accelerator_class()?;
             let fits = budget.is_none_or(|budget| build.memory_mb <= budget);
             let wanted = entry.on.is_none_or(|on| on == class);
-            (!build.stops_in_background && wanted && fits).then_some(Candidate { model, build })
+            let usable = !build.stops_in_background && !unchecked(&build.id);
+            (usable && wanted && fits).then_some(Candidate { model, build })
         })
         .collect();
     let Some(language) = language else {
         return runnable;
     };
-    if !runnable
-        .iter()
-        .any(|candidate| speaks(candidate.model, language))
-    {
-        return runnable;
-    }
     runnable
         .into_iter()
         .filter(|candidate| speaks(candidate.model, language))

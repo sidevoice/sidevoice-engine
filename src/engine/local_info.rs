@@ -35,8 +35,9 @@ pub struct LocalModelInfo {
     /// Every build of it, ranked: those that run here first.
     pub builds: Vec<ModelBuild>,
     /// The build the engine recommends, if any runs here: the best ranked of those that run here that keeps working in
-    /// the background ([`ModelBuild::stops_in_background`]) and fits the memory budget on its own (60 % of the memory
-    /// the host reports); else the best ranked that keeps working; else the best ranked. Loading the model without
+    /// the background ([`ModelBuild::stops_in_background`]), needs nothing unchecked (WebGPU features, which no host
+    /// reports) and fits the memory budget on its own (60 % of the memory the host reports); else the best ranked that
+    /// keeps working and needs nothing unchecked; else the best ranked. Loading the model without
     /// naming a build ([`Engine::load`](crate::Engine::load)) loads it, unless another build that runs here is
     /// installed: then that one.
     pub recommended_build: Option<String>,

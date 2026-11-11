@@ -93,8 +93,9 @@ The builds of a model that run here are ranked by the class of the accelerator e
 a GPU first, then a neural engine, then a CPU, the order of `AcceleratorClass`. Within a class
 they keep catalogue order, the documented fallback until measured speed and quality rank them (sidevoice-engine#16).
 The recommended build is the first of them that keeps working in the background (not one on a GPU where the system
-stops serving it to an app in the background: iOS) and fits the memory budget on its own (60 % of the host's memory);
-failing that, the first that keeps working; failing that, the first. So on Apple silicon whisper.cpp on Metal is
+stops serving it to an app in the background: iOS), needs nothing unchecked (WebGPU features, which no host reports)
+and fits the memory budget on its own (60 % of the host's memory); failing that, the first of them that keeps working
+and needs nothing unchecked; failing that, the first. So on Apple silicon whisper.cpp on Metal is
 recommended for every Whisper model, ahead of sherpa-onnx on the CPU; on an iPhone sherpa-onnx is, since Metal stops in
 the background; on Linux and Windows, where whisper.cpp runs on the CPU too, catalogue order keeps sherpa-onnx.
 
@@ -112,10 +113,11 @@ in `src/recommender/tests.rs`):
   (`"on": "gpu"`: Whisper large-v3 turbo is comfortable on a GPU only). Measuring each kind of machine
   (sidevoice-engine#155) is to re-order the lists, not the code. A model the lists leave out can still be chosen.
 - **Hard filters** (never recommended): the model's recommended build must run here (its `available`, the resolver's
-  one "runs here" check), keep working in the background, run on the class its entry asks for, and fit the memory
-  budget on its own.
-- **Soft filter**: of those, the models that speak the person's language (one of the model's or its voices' languages
-  has the same primary subtag). A model that does not is still selectable; when none does, the list stands.
+  one "runs here" check), keep working in the background, need nothing unchecked (WebGPU features such as
+  `shader-f16`: no host reports them), run on the class its entry asks for, and fit the memory budget on its own.
+- **Language**: of those, only the models that speak the person's language (one of the model's or its voices'
+  languages has the same primary subtag) are recommended. A model that does not is still selectable; when none does,
+  nothing is recommended for that capability. A model named twice (two sources' lists) counts at its first place.
 - **The pair** is the (speech to text i, text to speech j) closest to the top of both lists whose memory, with the
   end-of-turn model's, fits the budget together: least i + j, the better speech to text on a tie. The models of a call
   are loaded together, so the budget (60 % of the memory the host reports; none when it cannot tell) is the whole

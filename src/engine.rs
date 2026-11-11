@@ -136,7 +136,7 @@ impl Engine {
     /// Every model of the local catalogue, in catalogue order, each with its builds ranked (those that run here first,
     /// with the accelerator each would use; the rest with why not), whether it is installed, when it was last loaded
     /// (if it is installed), and the build the engine recommends (`recommender::build`): the best ranked of those that
-    /// run here, keep working in the background and fit the memory budget.
+    /// run here, keep working in the background, need nothing unchecked and fit the memory budget.
     ///
     /// # Errors
     ///
@@ -185,7 +185,13 @@ impl Engine {
                 recommended_build: recommender::build(
                     &builds,
                     |build| build.accelerator,
-                    |build| build.stops_in_background,
+                    |build| {
+                        build.stops_in_background
+                            || entry
+                                .builds
+                                .iter()
+                                .any(|b| b.id == build.id && unchecked(b))
+                    },
                     |build| build.memory_mb,
                     budget,
                 )
@@ -209,6 +215,11 @@ impl Engine {
             self.catalog.recommended(),
             &self.host.capabilities(),
             languages,
+            &|id| {
+                self.entries()
+                    .flat_map(|entry| &entry.builds)
+                    .any(|b| b.id == id && unchecked(b))
+            },
         ))
     }
 
@@ -445,7 +456,7 @@ impl Engine {
         let (build, accelerator) = recommender::build(
             available,
             |&(_, accelerator)| Some(accelerator),
-            |&(_, accelerator)| stops_in_background(&caps, accelerator),
+            |&(build, accelerator)| stops_in_background(&caps, accelerator) || unchecked(build),
             |&(build, _)| build.memory.mb,
             recommender::budget_mb(&caps),
         )
@@ -482,6 +493,12 @@ fn download_bytes(build: &BuildEntry) -> u64 {
 /// the system stops serving the GPU to an app in the background ([`Capabilities::gpu_stops_in_background`]).
 fn stops_in_background(caps: &Capabilities, accelerator: Accelerator) -> bool {
     caps.gpu_stops_in_background && accelerator.class() == AcceleratorClass::Gpu
+}
+
+/// Whether `build` needs what no host reports and so nothing here checks: WebGPU features (`shader-f16`, ...). It may
+/// run, and can be chosen; it is not recommended while another build can be.
+fn unchecked(build: &BuildEntry) -> bool {
+    !build.requires.webgpu_features.is_empty()
 }
 
 /// A rejection as the reason a person reads: its stable code and numbers.

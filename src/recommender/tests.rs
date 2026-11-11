@@ -214,12 +214,13 @@ fn each_device_gets_the_best_pair_of_the_lists_that_runs_well_there() {
             pick("whisper-small", "sherpa-onnx-int8"),
             pick("supertonic-3", "sherpa-onnx-int8"),
         ),
-        // A page: turbo on WebGPU; Supertonic 3 has no build for the page, Supertonic 2 does.
+        // A page: turbo on WebGPU, as its q8 build (its fp16 one needs `shader-f16`, which nothing here checks); Supertonic
+        // 3 has no build for the page, Supertonic 2 does.
         (
             "browser",
             browser(),
             &es,
-            pick("whisper-large-v3-turbo", "transformers-js-fp16"),
+            pick("whisper-large-v3-turbo", "transformers-js-q8"),
             pick("supertonic-2", "transformers-js-fp32"),
         ),
     ];
@@ -265,16 +266,17 @@ fn a_model_that_does_not_speak_the_language_is_not_recommended_unless_none_does(
             "piper-es_ES-carlfm-x_low"
         ]
     );
-    // Basque: no voice speaks it, so the list stands as it is (a voice rather than none); Whisper hears it.
+    // Basque: no voice speaks it, so no voice is recommended (all stay selectable); Whisper hears it, and is.
     let basque = block_on(
         engine(cpu_only(8_192))
             .local_catalog()
             .recommend(&speaking("eu", "eu")),
     )
     .expect("eu");
-    assert_eq!(basque.tts.choice, pick("supertonic-3", "sherpa-onnx-int8"));
-    assert_eq!(ranked(&basque.tts.ranked).len(), 5);
+    assert_eq!(basque.tts.choice, None);
+    assert!(basque.tts.ranked.is_empty());
     assert_eq!(ranked(&basque.stt.ranked), ["whisper-small"]);
+    assert_eq!(basque.stt.choice, pick("whisper-small", "sherpa-onnx-int8"));
     // No language: nothing is left out for it.
     let any = block_on(
         engine(cpu_only(8_192))
@@ -349,4 +351,70 @@ fn a_build_is_the_first_that_runs_keeps_working_and_fits_then_the_first_that_kee
         "only one that stops: it still runs"
     );
     assert_eq!(chosen(Some(500), &builds[3..]), None, "nothing runs here");
+}
+
+#[test]
+fn the_end_of_turn_model_is_counted_in_the_set() {
+    // 1750 MB: 1050 MB for the set. Parakeet (840) and Supertonic 3 (190) take 1030 alone, 1080 with smart-turn (50):
+    // over, so Whisper small with Supertonic 3 (710) is the pair.
+    let tight = block_on(
+        engine(cpu_only(1_750))
+            .local_catalog()
+            .recommend(&speaking("es", "es")),
+    )
+    .expect("tight");
+    assert_eq!(ranked(&tight.stt.ranked)[0], "parakeet-tdt-0.6b-v3");
+    assert_eq!(tight.stt.choice, pick("whisper-small", "sherpa-onnx-int8"));
+    assert_eq!(tight.tts.choice, pick("supertonic-3", "sherpa-onnx-int8"));
+}
+
+#[test]
+fn when_no_pair_fits_the_lightest_is_recommended() {
+    // 850 MB: 510 MB for the set. Whisper small (470) fits alone, as every voice does, but with a voice and the end of
+    // turn none does: the lightest pair, Whisper small with the Spanish Piper voice (20), is recommended.
+    let small = block_on(
+        engine(cpu_only(850))
+            .local_catalog()
+            .recommend(&speaking("es", "es")),
+    )
+    .expect("small");
+    assert_eq!(ranked(&small.stt.ranked), ["whisper-small"]);
+    assert_eq!(small.stt.choice, pick("whisper-small", "sherpa-onnx-int8"));
+    assert_eq!(
+        small.tts.choice,
+        pick("piper-es_ES-carlfm-x_low", "sherpa-onnx-int8")
+    );
+}
+
+#[test]
+fn a_model_two_lists_name_counts_once_at_its_first_place() {
+    struct Again;
+    impl crate::CatalogSource for Again {
+        fn load(&self) -> Result<crate::CatalogFragment> {
+            let entry = |model: &str| crate::ListEntry {
+                model: model.to_owned(),
+                on: None,
+            };
+            Ok(crate::CatalogFragment {
+                families: Vec::new(),
+                recommended: crate::RecommendedLists {
+                    basis: "a test".to_owned(),
+                    stt: vec![entry("parakeet-tdt-0.6b-v3")],
+                    tts: Vec::new(),
+                },
+            })
+        }
+    }
+    let (caps, backends) = cpu_only(8_192);
+    let engine = Engine::with_backends(
+        Box::new(Device(caps)),
+        vec![Box::new(BundledCatalog), Box::new(Again)],
+        backends,
+    )
+    .expect("engine");
+    let twice = block_on(engine.local_catalog().recommend(&speaking("es", "es"))).expect("twice");
+    assert_eq!(
+        ranked(&twice.stt.ranked),
+        ["parakeet-tdt-0.6b-v3", "qwen3-asr-0.6b", "whisper-small"]
+    );
 }
