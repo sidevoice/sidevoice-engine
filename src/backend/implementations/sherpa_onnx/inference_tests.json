@@ -93,7 +93,7 @@
     {
       "build": "supertonic-2/sherpa-onnx-int8",
       "language": "en",
-      "sentence": "The quick brown fox jumps over the lazy dog."
+      "sentence": "Hello, I have finished reviewing the code and all the tests pass."
     }
   ]
 }
