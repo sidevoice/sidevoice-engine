@@ -27,7 +27,11 @@ use http::Http;
 /// built:
 ///
 /// - `os` and `arch` from `std::env::consts`, `cores` from `std::thread::available_parallelism`, and `memory_mb`, the
-///   machine's memory (or its cgroup's limit, if lower), in MiB, from the platform's `MemoryObservation` (`sysinfo`);
+///   machine's memory (or its cgroup's limit, if lower), in MiB, from the platform's `MemoryObservation` (`sysinfo`),
+///   or, where the OS keeps a budget for the process (iOS), that budget when the host is built: what the app may take,
+///   not what the phone has;
+/// - `accelerator_memory`, the memory each GPU advises models to stay within (`MemoryObservation::accelerators`:
+///   Metal's working set on macOS and iOS; none elsewhere yet);
 /// - accelerators, from the OS (the platform's `Accelerators`): `Cpu` always; `Metal` and `CoreMl` on macOS and iOS;
 ///   `Cuda` where an NVIDIA driver lists a device (Linux's `/proc` entry, Windows' DXGI adapters). Candidates only:
 ///   each backend's probe confirms what it can actually use.
@@ -103,14 +107,16 @@ impl Host for NativeHost {
 
 /// What this machine has, as far as can be seen without trying anything.
 fn capabilities() -> Capabilities {
+    let memory = MemoryObservation::now();
     Capabilities {
         runs: Runs::Native,
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         accelerators: Machine::detect(),
-        memory_mb: MemoryObservation::now().total_mb,
+        memory_mb: memory.process_mb.or(memory.total_mb),
         cores: thread::available_parallelism()
             .ok()
             .map(|cores| u32::try_from(cores.get()).unwrap_or(u32::MAX)),
+        accelerator_memory: MemoryObservation::accelerators(),
     }
 }

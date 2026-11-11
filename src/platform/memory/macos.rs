@@ -1,9 +1,13 @@
 /// macOS: `available` is the kernel's memory-pressure level (`kern.memorystatus_level`, the percentage of memory the
 /// system still counts as free) of the total, an estimate and not an allocation limit; the machine's other figures
-/// are `sysinfo`'s.
+/// are `sysinfo`'s, and its GPU's working set Metal's.
 pub struct Os;
 
 impl super::Observer for Os {
+    fn accelerator_bytes() -> Vec<(crate::host::Accelerator, u64)> {
+        super::metal::working_set()
+    }
+
     fn free_bytes() -> Option<u64> {
         let mut level: u32 = 0;
         let mut size = std::mem::size_of::<u32>();

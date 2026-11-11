@@ -1,8 +1,9 @@
 //! The funnel, the same for every backend: for each build of the catalogue, is its backend compiled here (which
 //! backends a build of the engine has is decided when it is compiled), which of its accelerators work here (what the
 //! host reports, narrowed by `probe`, cached), is one of them an accelerator the build can take (its `requires`), in a
-//! page does the build fit in what WebAssembly hands it (`requires.wasm_max_mb`), does the machine meet the build's and
-//! the backend's requirements (a value the host cannot tell passes). The builds of a model are listed with those that
+//! page does the build fit in what WebAssembly hands it (`requires.wasm_max_mb`), does the memory of an accelerator it
+//! can run on take it (that accelerator's own, where the host reports one: `Capabilities::memory_for`), does the
+//! machine meet the backend's requirements (a value the host cannot tell passes). The builds of a model are listed with those that
 //! run first, each on its backend's preferred accelerator, and every one that does not with its reason (`rejection`).
 //!
 //! The builds that run are ranked by the class of the accelerator each would run on here ([`Accelerator::class`],
@@ -14,7 +15,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
-use crate::backend::{self, Backend, BackendId, MinMemoryMb, Requirement};
+use crate::backend::{self, Backend, BackendId, MinMemoryMb};
 use crate::catalog::{BuildEntry, ModelEntry};
 use crate::host::{Accelerator, AcceleratorClass, Capabilities, Runs};
 
@@ -111,8 +112,8 @@ impl Resolver {
         Ok(accepted)
     }
 
-    /// The best accelerator this build can run on here, or why it cannot ([`Resolver::accelerators`]'s first), then
-    /// whether the machine meets what the build and the backend need.
+    /// The best accelerator this build can run on here whose memory takes it ([`Resolver::accelerators`], in order), or
+    /// why it cannot, then whether the machine meets what the backend needs.
     fn fit(
         &self,
         build: &BuildEntry,
@@ -120,10 +121,9 @@ impl Resolver {
         caps: &Capabilities,
     ) -> Result<Accelerator, Rejection> {
         let spec = backend.spec();
-        let accelerator = self
-            .accelerators(build, backend, caps)?
-            .into_iter()
-            .next()
+        let accelerators = self.accelerators(build, backend, caps)?;
+        let first = *accelerators
+            .first()
             .ok_or(Rejection::DoesNotFit(Reason::new("build-accelerator")))?;
         // In a page the build runs in WebAssembly, under the cap its catalogue entry declares (`requires.wasm_max_mb`, not
         // measured from the page): a build that needs more does not fit there, whatever the machine has.
@@ -136,12 +136,22 @@ impl Resolver {
                 )));
             }
         }
-        // The build's own needs (catalogue) are checked like the backend's. Its WebGPU features are not checked yet: the
-        // host does not report them.
-        let build_needs = MinMemoryMb(build.memory.mb);
-        let requirements = std::iter::once(&build_needs as &dyn Requirement)
-            .chain(spec.requirements.iter().copied());
-        for requirement in requirements {
+        // The first accelerator whose memory takes the build: its own where the host reports it, the machine's
+        // otherwise (`Capabilities::memory_for`; unknown memory takes it). When none does, why the first does not.
+        let needs = MinMemoryMb(build.memory.mb);
+        let Some(accelerator) = accelerators
+            .into_iter()
+            .find(|accelerator| needs.met_by(caps.memory_for(*accelerator)).is_ok())
+        else {
+            return Err(Rejection::DoesNotFit(
+                needs
+                    .met_by(caps.memory_for(first))
+                    .err()
+                    .unwrap_or_else(|| Reason::new("memory")),
+            ));
+        };
+        // The backend's own needs. The build's WebGPU features are not checked yet: the host does not report them.
+        for requirement in spec.requirements {
             requirement.check(caps).map_err(Rejection::DoesNotFit)?;
         }
         Ok(accelerator)

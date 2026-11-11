@@ -32,6 +32,8 @@ pub(super) fn read(value: &JsValue) -> Result<Capabilities, JsError> {
         accelerators,
         memory_mb: optional_count(value, "memoryMb")?,
         cores: optional_count(value, "cores")?,
+        // A page cannot tell what its GPU has: WebGPU says nothing of its memory.
+        accelerator_memory: Vec::new(),
     })
 }
 

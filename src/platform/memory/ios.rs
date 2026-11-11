@@ -1,5 +1,5 @@
 /// iOS: the system ends a process that goes over its memory limit, and tells it what is left of it. `sysinfo`'s figures
-/// are the machine's, which a process cannot use.
+/// are the machine's, which a process cannot use. Its GPU's working set is Metal's.
 pub struct Os;
 
 extern "C" {
@@ -10,6 +10,10 @@ extern "C" {
 }
 
 impl super::Observer for Os {
+    fn accelerator_bytes() -> Vec<(crate::host::Accelerator, u64)> {
+        super::metal::working_set()
+    }
+
     fn process_bytes() -> Option<u64> {
         // SAFETY: a libSystem function that takes no arguments and has no preconditions.
         let bytes = unsafe { os_proc_available_memory() };

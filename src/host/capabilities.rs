@@ -10,6 +10,9 @@ mod accelerator;
 
 pub use accelerator::{Accelerator, AcceleratorClass, AcceleratorUse};
 
+#[cfg(test)]
+mod tests;
+
 /// What the host knows about the place the engine runs in, gathered once when the host is built.
 ///
 /// Unknown values: `memory_mb` and `cores` are `None` when the host cannot tell (a page cannot read memory reliably),
@@ -31,6 +34,9 @@ pub struct Capabilities {
     pub memory_mb: Option<u32>,
     /// CPU cores, when the host can tell.
     pub cores: Option<u32>,
+    /// The memory a GPU or a neural engine can give models, for each the host can tell; one it leaves out is checked
+    /// against `memory_mb` ([`Capabilities::memory_for`]). Order does not matter.
+    pub accelerator_memory: Vec<AcceleratorMemory>,
 }
 
 impl Capabilities {
@@ -39,6 +45,31 @@ impl Capabilities {
     pub fn has(&self, accelerator: Accelerator) -> bool {
         self.accelerators.contains(&accelerator)
     }
+
+    /// The memory a model running on `accelerator` can take here, in MiB: `memory_mb` for a CPU; for a GPU or a neural
+    /// engine its own figure ([`Capabilities::accelerator_memory`]), else `memory_mb` too (Apple's and the phones'
+    /// GPUs share it, and a discrete GPU no backend reports yet is not refused on a guess). `None` when unknown.
+    #[must_use]
+    pub fn memory_for(&self, accelerator: Accelerator) -> Option<u32> {
+        if accelerator.class() == AcceleratorClass::Cpu {
+            return self.memory_mb;
+        }
+        self.accelerator_memory
+            .iter()
+            .find(|memory| memory.accelerator == accelerator)
+            .map(|memory| memory.mb)
+            .or(self.memory_mb)
+    }
+}
+
+/// The memory an accelerator can give models, in MiB: on Apple, the working set Metal advises a GPU to stay within
+/// (part of the unified memory `memory_mb` is).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AcceleratorMemory {
+    /// The accelerator.
+    pub accelerator: Accelerator,
+    /// Its memory for models, in MiB.
+    pub mb: u32,
 }
 
 /// Whether the engine runs in a native process or in a page.
