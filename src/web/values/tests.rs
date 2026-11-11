@@ -172,7 +172,12 @@ fn a_build_that_runs_here_carries_its_accelerator_and_that_accelerators_class() 
         available: true,
         reasons: Vec::new(),
         installed: false,
+        stops_in_background: true,
     };
+    assert_eq!(
+        get(&build(&gguf), "stopsInBackground").as_bool(),
+        Some(true)
+    );
     let class = |model_build: &ModelBuild| get(&build(model_build), "acceleratorClass").as_string();
     assert_eq!(
         get(&build(&gguf), "accelerator").as_string().as_deref(),

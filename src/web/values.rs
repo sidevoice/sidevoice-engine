@@ -51,7 +51,7 @@ pub(super) fn model(model: &LocalModelInfo) -> JsValue {
 }
 
 /// `{ id, backend, accelerator?, acceleratorClass?, precision, downloadBytes, memoryMb, available, reasons,
-/// installed }`.
+/// installed, stopsInBackground }`.
 fn build(build: &ModelBuild) -> JsValue {
     object(&[
         ("id", Some(build.id.as_str().into())),
@@ -74,6 +74,7 @@ fn build(build: &ModelBuild) -> JsValue {
             Some(build.reasons.iter().map(reason).collect::<Array>().into()),
         ),
         ("installed", Some(build.installed.into())),
+        ("stopsInBackground", Some(build.stops_in_background.into())),
     ])
 }
 

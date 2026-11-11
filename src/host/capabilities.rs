@@ -31,6 +31,11 @@ pub struct Capabilities {
     pub memory_mb: Option<u32>,
     /// CPU cores, when the host can tell.
     pub cores: Option<u32>,
+    /// Whether the system stops serving the GPU to the app while the app is in the background (iOS: a Metal command
+    /// buffer committed then fails). A build that runs on a GPU here then works only while the app is in the
+    /// foreground ([`ModelBuild::stops_in_background`](crate::ModelBuild::stops_in_background)). `false` when the host
+    /// has no such limit, or cannot tell.
+    pub gpu_stops_in_background: bool,
 }
 
 impl Capabilities {

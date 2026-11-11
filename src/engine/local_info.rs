@@ -61,6 +61,12 @@ pub struct ModelBuild {
     pub reasons: Vec<Reason>,
     /// Whether all its files are installed.
     pub installed: bool,
+    /// Whether it runs here on a GPU that the system stops serving to the app in the background
+    /// ([`Capabilities::gpu_stops_in_background`](crate::Capabilities::gpu_stops_in_background), iOS): it then works
+    /// only while the app is in the foreground, and a build on the CPU is the one that keeps working. The app says so
+    /// where such a build can be chosen (sidevoice-web#572), until the engine moves a model to the CPU in the
+    /// background (sidevoice-engine#154). `false` for a build that does not run here.
+    pub stops_in_background: bool,
 }
 
 impl ModelBuild {

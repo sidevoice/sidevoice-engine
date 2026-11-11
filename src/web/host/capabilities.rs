@@ -32,6 +32,8 @@ pub(super) fn read(value: &JsValue) -> Result<Capabilities, JsError> {
         accelerators,
         memory_mb: optional_count(value, "memoryMb")?,
         cores: optional_count(value, "cores")?,
+        // A page's WebGPU is the browser's to keep or drop with a hidden tab; nothing here says it stops.
+        gpu_stops_in_background: false,
     })
 }
 
