@@ -10,9 +10,10 @@
 //!   system ends it); `None` where it keeps none. Read when the app starts, it is close to the app's whole limit: what
 //!   the native host reports as the memory models can take there, rather than the phone's.
 //!
-//! And, apart, the memory each GPU the OS shows advises models to stay within ([`MemoryObservation::accelerators`]):
-//! Metal's `recommendedMaxWorkingSetSize` on macOS and iOS (part of their unified memory); none elsewhere yet, since no
-//! backend runs on another GPU natively (a CUDA, Vulkan or DXGI figure comes with the backend that runs there).
+//! And, apart, the memory each GPU or neural engine can give models ([`MemoryObservation::accelerators`]): on macOS
+//! and iOS, Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the memory it has with the CPU; none
+//! elsewhere yet, since no backend runs on another GPU natively (CUDA, Vulkan or DXGI each add their figure when one
+//! does). An accelerator left out has none.
 
 use crate::host::{Accelerator, AcceleratorMemory};
 
@@ -48,8 +49,8 @@ pub trait Observer {
         None
     }
 
-    /// The memory each GPU this OS shows advises models to stay within; none where it cannot tell. Every OS says it
-    /// (no default): one with no GPU a backend runs on natively says none, on purpose.
+    /// The memory each GPU or neural engine this OS supports can give models. Every OS says it (no default): an
+    /// accelerator it does not list has none, so no model runs on it.
     fn accelerator_bytes() -> Vec<(Accelerator, u64)>;
 }
 
@@ -90,7 +91,7 @@ impl MemoryObservation {
         }
     }
 
-    /// The memory each GPU this OS shows advises models to stay within, in MiB: what the native host reports as
+    /// The memory each GPU or neural engine can give models, in MiB: what the native host reports as
     /// [`Capabilities::accelerator_memory`](crate::Capabilities::accelerator_memory).
     #[must_use]
     pub fn accelerators() -> Vec<AcceleratorMemory> {
