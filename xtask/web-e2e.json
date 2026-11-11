@@ -36,7 +36,7 @@
     {
       "model": "supertonic-2",
       "build": "supertonic-2/transformers-js-fp32",
-      "voice": "F1",
+      "voice": "0",
       "language": "es"
     }
   ]
