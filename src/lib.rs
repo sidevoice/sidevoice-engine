@@ -41,7 +41,8 @@ pub use capability::{
 };
 pub use catalog::{
     BuildEntry, BundledCatalog, Capability, CatalogFragment, CatalogSource, Family, FamilySpeed,
-    Gender, Memory, MemorySource, ModelEntry, ModelFile, Problem, Requires, SpeedRange, Voice,
+    Gender, ListEntry, Memory, MemorySource, ModelEntry, ModelFile, Problem, RecommendedLists,
+    Requires, SpeedRange, Voice,
 };
 pub use engine::{
     Catalog, CatalogStatus, ConfigError, Engine, LocalCatalog, LocalModel, LocalModelInfo, Model,
