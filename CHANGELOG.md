@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.13.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.12.0...v0.13.0) (2026-11-11)
+
+
+### Features
+
+* **catalogue:** Supertonic 2 native CPU build (sherpa-onnx int8) ([#159](https://github.com/sidevoice/sidevoice-engine/issues/159)) ([baef3b8](https://github.com/sidevoice/sidevoice-engine/commit/baef3b8d306157081104a573caca156739140712))
+* **host:** memory per accelerator, and the app's own budget on iOS ([#165](https://github.com/sidevoice/sidevoice-engine/issues/165)) ([4fe8946](https://github.com/sidevoice/sidevoice-engine/commit/4fe8946825e2f6a73f00376b85645b9afc43d9b3))
+* **models:** say which builds stop working in the background ([#163](https://github.com/sidevoice/sidevoice-engine/issues/163)) ([f8e931d](https://github.com/sidevoice/sidevoice-engine/commit/f8e931da153fe5ed0d8ca1cd5fd2230df3b5db42))
+* **recommender:** recommend the models and builds a device runs well ([#164](https://github.com/sidevoice/sidevoice-engine/issues/164)) ([bcd3ada](https://github.com/sidevoice/sidevoice-engine/commit/bcd3ada158963037635d65c8efbc65ecfee39931))
+
 ## [0.12.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.11.0...v0.12.0) (2026-11-02)
 
 
