@@ -10,7 +10,7 @@ use crate::host::{
     Capabilities, Credentials, Fetcher, Host, HttpClient, NoCredentials, Runs, Storage,
 };
 use crate::platform::accelerators::{Accelerators, Machine};
-use crate::platform::background;
+use crate::platform::background::{Background, Machine as BackgroundOs};
 use crate::platform::memory::MemoryObservation;
 use crate::Result;
 
@@ -115,6 +115,6 @@ fn capabilities() -> Capabilities {
         cores: thread::available_parallelism()
             .ok()
             .map(|cores| u32::try_from(cores.get()).unwrap_or(u32::MAX)),
-        gpu_stops_in_background: background::GPU_STOPS_IN_BACKGROUND,
+        gpu_stops_in_background: BackgroundOs::GPU_STOPS_IN_BACKGROUND,
     }
 }
