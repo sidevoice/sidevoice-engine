@@ -20,6 +20,9 @@ const fn some(bytes: u64) -> Option<u64> {
 impl<const PHYSICAL: u64, const LIMIT: u64, const FREE: u64, const PROCESS: u64> Observer
     for Fake<PHYSICAL, LIMIT, FREE, PROCESS>
 {
+    fn accelerator_bytes() -> Vec<(crate::Accelerator, u64)> {
+        Vec::new()
+    }
     fn physical_bytes() -> Option<u64> {
         some(PHYSICAL)
     }
@@ -37,6 +40,9 @@ impl<const PHYSICAL: u64, const LIMIT: u64, const FREE: u64, const PROCESS: u64>
 /// An OS whose machine has no memory left, and one that says zero for everything.
 struct NothingFree;
 impl Observer for NothingFree {
+    fn accelerator_bytes() -> Vec<(crate::Accelerator, u64)> {
+        Vec::new()
+    }
     fn physical_bytes() -> Option<u64> {
         Some(8 * 1024 * MIB)
     }
@@ -50,6 +56,9 @@ impl Observer for NothingFree {
 /// An OS whose process is at its limit while the machine has memory to spare.
 struct AtItsLimit;
 impl Observer for AtItsLimit {
+    fn accelerator_bytes() -> Vec<(crate::Accelerator, u64)> {
+        Vec::new()
+    }
     fn physical_bytes() -> Option<u64> {
         Some(8 * 1024 * MIB)
     }
@@ -65,6 +74,9 @@ impl Observer for AtItsLimit {
 }
 struct AllZero;
 impl Observer for AllZero {
+    fn accelerator_bytes() -> Vec<(crate::Accelerator, u64)> {
+        Vec::new()
+    }
     fn physical_bytes() -> Option<u64> {
         Some(0)
     }

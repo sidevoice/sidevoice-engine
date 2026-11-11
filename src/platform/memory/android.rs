@@ -4,4 +4,9 @@
 /// allocation; the process has no budget of its own to read.
 pub struct Os;
 
-impl super::Observer for Os {}
+impl super::Observer for Os {
+    /// Its GPU shares the machine's memory, and no backend runs on it natively: no figure of its own.
+    fn accelerator_bytes() -> Vec<(crate::host::Accelerator, u64)> {
+        Vec::new()
+    }
+}

@@ -48,10 +48,9 @@ pub trait Observer {
         None
     }
 
-    /// The memory each GPU this OS shows advises models to stay within; none where it cannot tell.
-    fn accelerator_bytes() -> Vec<(Accelerator, u64)> {
-        Vec::new()
-    }
+    /// The memory each GPU this OS shows advises models to stay within; none where it cannot tell. Every OS says it
+    /// (no default): one with no GPU a backend runs on natively says none, on purpose.
+    fn accelerator_bytes() -> Vec<(Accelerator, u64)>;
 }
 
 fn refreshed() -> sysinfo::System {

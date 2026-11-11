@@ -10,8 +10,20 @@ extern "C" {
 }
 
 impl super::Observer for Os {
+    /// Metal's working set, but never more than the process may still allocate: the GPU's memory is the app's on
+    /// iOS, and the system ends the app past its budget whatever Metal advises. A budget of zero (the Simulator,
+    /// Mac Catalyst, where the function answers nothing) caps nothing.
     fn accelerator_bytes() -> Vec<(crate::host::Accelerator, u64)> {
+        let budget = Self::process_bytes().filter(|bytes| *bytes > 0);
         super::metal::working_set()
+            .into_iter()
+            .map(|(accelerator, bytes)| {
+                (
+                    accelerator,
+                    budget.map_or(bytes, |budget| bytes.min(budget)),
+                )
+            })
+            .collect()
     }
 
     fn process_bytes() -> Option<u64> {

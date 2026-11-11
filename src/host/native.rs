@@ -113,7 +113,8 @@ fn capabilities() -> Capabilities {
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         accelerators: Machine::detect(),
-        memory_mb: memory.process_mb.or(memory.total_mb),
+        // A budget of zero is not one: iOS's function answers it on the Simulator and Mac Catalyst.
+        memory_mb: memory.process_mb.filter(|mb| *mb > 0).or(memory.total_mb),
         cores: thread::available_parallelism()
             .ok()
             .map(|cores| u32::try_from(cores.get()).unwrap_or(u32::MAX)),
