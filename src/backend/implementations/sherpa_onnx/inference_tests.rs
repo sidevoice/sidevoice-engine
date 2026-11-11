@@ -3,7 +3,8 @@
 //! from the bundled catalogue, as an app installs it, and transcribes the shared clips it names (LibriSpeech in
 //! English, FLEURS in Spanish, both CC-BY-4.0) within the word error rate `max_wer`: adding such a test is one entry.
 //! Each named under `speak` is installed the same way, has exactly the voices its model declares, and says a sentence
-//! with each of them that Whisper hears back within `max_wer`: one entry too.
+//! with each of them that Whisper hears back within `max_wer` (a voice has three calls, as some models draw fresh
+//! noise on each): one entry too.
 //!
 //! They download the models they need (Whisper tiny.en and Kokoro, about 150 MB, then each build named; several GB),
 //! so they are ignored by default and CI's inference job runs them, with the plain tests beside them:
@@ -538,33 +539,44 @@ fn catalogue_builds_speak_with_every_voice_their_model_declares() {
         assert!(!declared.is_empty(), "{}: declares no voice", model.id);
         assert_eq!(tts.voices(), declared, "{}: its voices", build.id);
         for voice in &model.voices {
-            let said = ready(tts.speak(&entry.sentence, voice, Some(entry.language.as_str()), 1.0));
-            let audio = match said {
-                Ok(audio) if !audio.is_empty() => audio,
-                Ok(_) => {
-                    failed.push(format!("{} {}: no audio", build.id, voice.id));
-                    continue;
-                }
-                Err(error) => {
-                    failed.push(format!("{} {}: {}", build.id, voice.id, error.code));
-                    continue;
-                }
-            };
-            let seconds = audio.len() as f32 / tts.sample_rate() as f32;
-            let rms = (audio.iter().map(|s| s * s).sum::<f32>() / audio.len() as f32).sqrt();
-            let heard = ready(stt.transcribe(&to_16k(&audio, tts.sample_rate()), Some("en")))
-                .unwrap_or_else(|error| format!("<{}>", error.code));
-            let rate = wer(&entry.sentence, &heard);
-            let name = voice.name.as_deref().unwrap_or_default();
-            println!(
-                "| {} | {} | {name} | {seconds:.2} | {rms:.3} | {rate:.2} | {heard} |",
-                build.id, voice.id
-            );
-            if !(0.5..10.0).contains(&seconds) || rms <= 0.01 || rate > fixtures.max_wer {
-                failed.push(format!(
-                    "{} {} ({name}): {seconds:.2} s, RMS {rms:.3}, WER {rate:.2}",
+            // Some models draw fresh noise on every call (Supertonic: the same voice and sentence gave a different
+            // waveform on each of 250 calls), so one call can be misheard by tiny.en though the voice is fine: a
+            // voice passes with any of `SPEAK_ATTEMPTS` calls, and fails only if every one does.
+            let mut last = String::new();
+            for attempt in 1..=SPEAK_ATTEMPTS {
+                let said =
+                    ready(tts.speak(&entry.sentence, voice, Some(entry.language.as_str()), 1.0));
+                let audio = match said {
+                    Ok(audio) if !audio.is_empty() => audio,
+                    Ok(_) => {
+                        last = "no audio".to_owned();
+                        continue;
+                    }
+                    Err(error) => {
+                        last = error.code.to_owned();
+                        continue;
+                    }
+                };
+                let seconds = audio.len() as f32 / tts.sample_rate() as f32;
+                let rms = (audio.iter().map(|s| s * s).sum::<f32>() / audio.len() as f32).sqrt();
+                let heard = ready(stt.transcribe(&to_16k(&audio, tts.sample_rate()), Some("en")))
+                    .unwrap_or_else(|error| format!("<{}>", error.code));
+                let rate = wer(&entry.sentence, &heard);
+                let name = voice.name.as_deref().unwrap_or_default();
+                println!(
+                    "| {} | {} | {name} | {seconds:.2} | {rms:.3} | {rate:.2} | {heard} |",
                     build.id, voice.id
-                ));
+                );
+                if (0.5..10.0).contains(&seconds) && rms > 0.01 && rate <= fixtures.max_wer {
+                    last.clear();
+                    break;
+                }
+                last = format!(
+                    "attempt {attempt}: {seconds:.2} s, RMS {rms:.3}, WER {rate:.2} ({name})"
+                );
+            }
+            if !last.is_empty() {
+                failed.push(format!("{} {}: {last}", build.id, voice.id));
             }
         }
         drop(loaded);
@@ -575,6 +587,9 @@ fn catalogue_builds_speak_with_every_voice_their_model_declares() {
     let _ = fs::remove_dir_all(&data);
     assert!(failed.is_empty(), "{failed:#?}");
 }
+
+/// How many times a voice may speak the sentence before it fails: see the loop that uses it.
+const SPEAK_ATTEMPTS: usize = 3;
 
 /// The voice `id`, declaring no language: what these tests speak with.
 fn voice(id: &str) -> Voice {
