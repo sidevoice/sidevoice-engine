@@ -35,6 +35,7 @@ impl Host for FakeHost {
             },
             memory_mb: Some(8_192),
             cores: Some(8),
+            gpu_stops_in_background: false,
         }
     }
 

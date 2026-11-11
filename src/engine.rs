@@ -152,16 +152,19 @@ impl Engine {
             let mut builds = Vec::new();
             for (build, fit) in self.resolver.builds(entry, &self.backends, &caps) {
                 let installed = self.is_installed(build).await?;
+                let accelerator = fit.as_ref().ok().copied();
                 builds.push(ModelBuild {
                     id: build.id.clone(),
                     backend: build.backend.clone(),
-                    accelerator: fit.as_ref().ok().copied(),
+                    accelerator,
                     precision: build.precision.clone(),
                     download_bytes: download_bytes(build),
                     memory_mb: build.memory.mb,
                     available: fit.is_ok(),
                     reasons: fit.err().map(reason).into_iter().collect(),
                     installed,
+                    stops_in_background: caps.gpu_stops_in_background
+                        && accelerator.is_some_and(|on| on.class() == AcceleratorClass::Gpu),
                 });
             }
             let installed = builds.iter().any(|build| build.installed);

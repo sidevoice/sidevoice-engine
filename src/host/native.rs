@@ -10,6 +10,7 @@ use crate::host::{
     Capabilities, Credentials, Fetcher, Host, HttpClient, NoCredentials, Runs, Storage,
 };
 use crate::platform::accelerators::{Accelerators, Machine};
+use crate::platform::background;
 use crate::platform::memory::MemoryObservation;
 use crate::Result;
 
@@ -30,7 +31,9 @@ use http::Http;
 ///   machine's memory (or its cgroup's limit, if lower), in MiB, from the platform's `MemoryObservation` (`sysinfo`);
 /// - accelerators, from the OS (the platform's `Accelerators`): `Cpu` always; `Metal` and `CoreMl` on macOS and iOS;
 ///   `Cuda` where an NVIDIA driver lists a device (Linux's `/proc` entry, Windows' DXGI adapters). Candidates only:
-///   each backend's probe confirms what it can actually use.
+///   each backend's probe confirms what it can actually use;
+/// - `gpu_stops_in_background`, from the platform: `true` on iOS, which stops serving the GPU to an app in the
+///   background.
 ///
 /// Downloads go through `reqwest`, with rustls: the HTTP client sidevoice-core and the desktop app use. **The engine's
 /// futures expect a Tokio runtime** in a native build: `reqwest` needs one, and archives are unpacked on its blocking
@@ -112,5 +115,6 @@ fn capabilities() -> Capabilities {
         cores: thread::available_parallelism()
             .ok()
             .map(|cores| u32::try_from(cores.get()).unwrap_or(u32::MAX)),
+        gpu_stops_in_background: background::GPU_STOPS_IN_BACKGROUND,
     }
 }

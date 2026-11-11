@@ -62,6 +62,7 @@ anything, gathered once when the host is built:
 | `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
 | `memory_mb` | memory available to models, in MiB (2^20 bytes; every `_mb` in the engine) | `None` |
 | `cores` | CPU cores | `None` |
+| `gpu_stops_in_background` | whether the system stops serving the GPU to the app in the background: `true` on iOS (the native host's platform says so), `false` elsewhere and in a page | `false` |
 
 - **The host reports, the backend confirms.** Whether a backend can actually use an accelerator (a CUDA driver, a
   granted WebGPU adapter, a Core ML model that loads) is found out by the backend's probe, never by the host. The
@@ -122,8 +123,10 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 - **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, when it was last loaded,
   every build ranked (those that run here first; each with its backend, the accelerator it would use and that
   accelerator's class (`ModelBuild::accelerator_class()`; `acceleratorClass` on the web: `"gpu"`, `"neural-engine"`,
-  `"cpu"`), its precision, what it downloads, its memory, whether it runs here and why not, and whether it is
-  installed) and the build the engine recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
+  `"cpu"`), its precision, what it downloads, its memory, whether it runs here and why not, whether it is
+  installed, and whether it stops working in the background (`stops_in_background`, `stopsInBackground` on the web: it
+  runs here on a GPU the system stops serving to an app in the background, iOS, so a build on the CPU is the one that
+  keeps working; sidevoice-web#572, until sidevoice-engine#154)) and the build the engine recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
   removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
   refuses a build that is loaded (`model-in-use`). When a model was last loaded (`last_used_at`; `lastUsedAt` on the
   web) is in milliseconds since the Unix epoch, by the host's clock (`Host::now_ms`): every load that succeeds notes it

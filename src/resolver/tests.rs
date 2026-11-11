@@ -78,6 +78,7 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
         accelerators: accelerators.to_vec(),
         memory_mb,
         cores,
+        gpu_stops_in_background: false,
     }
 }
 
@@ -252,6 +253,7 @@ fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
             accelerators: accelerators.to_vec(),
             memory_mb: Some(16_384),
             cores: Some(8),
+            gpu_stops_in_background: false,
         };
         [Capability::Stt, Capability::Tts]
             .into_iter()
@@ -323,6 +325,7 @@ fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
         accelerators: vec![Accelerator::Wasm],
         memory_mb: Some(16_384),
         cores: Some(8),
+        gpu_stops_in_background: false,
     };
     only(&catalog, &[Box::new(backend)], &caps)
 }
@@ -521,6 +524,7 @@ fn in_a_page_webgpu_ranks_before_webassembly() {
         accelerators: accelerators.to_vec(),
         memory_mb: Some(16_384),
         cores: Some(8),
+        gpu_stops_in_background: false,
     };
     let at = |id: &str, accelerator| (id.to_owned(), accelerator);
     assert_eq!(

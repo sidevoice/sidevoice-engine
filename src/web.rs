@@ -49,10 +49,12 @@ export interface Voice { id: string; name?: string; languages: string[]; gender?
 /** One build of a model, here. `accelerator` and `acceleratorClass` are present when it runs here: the accelerator it
  * would run on (`cpu`, `cuda`, `coreml`, `metal`, `webgpu`, `wasm`) and that accelerator's class, which the engine
  * ranks the builds that run by first (a GPU, then a neural engine, then a CPU). Show the class as it is: do not derive
- * it from `accelerator`. */
+ * it from `accelerator`. `stopsInBackground`: it runs here on a GPU the system stops serving to the app in the
+ * background (iOS), so it works only while the app is in the foreground. */
 export interface ModelBuild {
   id: string; backend: string; accelerator?: string; acceleratorClass?: AcceleratorClass; precision: string;
   downloadBytes: number; memoryMb: number; available: boolean; reasons: Reason[]; installed: boolean;
+  stopsInBackground: boolean;
 }
 /** The kind of hardware an accelerator is. */
 export type AcceleratorClass = "gpu" | "neural-engine" | "cpu";
