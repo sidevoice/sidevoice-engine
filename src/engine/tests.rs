@@ -333,6 +333,7 @@ impl CatalogSource for FakeModels {
             ..file("ear-1")
         });
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "fake",
                 vec![
@@ -1186,6 +1187,7 @@ impl CatalogSource for GpuModels {
             ..build("gpu-1", "fake-gpu", 0)
         };
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "fake",
                 vec![model("gpu-ear", Capability::Stt, vec![build])],

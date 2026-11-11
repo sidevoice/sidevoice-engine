@@ -13,6 +13,7 @@ struct Families(Vec<Family>);
 impl CatalogSource for Families {
     fn load(&self) -> Result<CatalogFragment> {
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: self.0.clone(),
         })
     }
@@ -258,4 +259,64 @@ fn a_familys_speed_range_must_be_positive_ordered_and_sourced() {
 fn a_familys_speed_needs_both_bounds() {
     let json = r#"{"min": 0.5, "source": "https://example.com"}"#;
     assert!(serde_json::from_str::<crate::FamilySpeed>(json).is_err());
+}
+
+/// A source of lists of models to recommend, and no family.
+struct Lists(&'static [&'static str], &'static [&'static str]);
+
+impl CatalogSource for Lists {
+    fn load(&self) -> Result<CatalogFragment> {
+        let entries = |ids: &[&str]| {
+            ids.iter()
+                .map(|id| super::ListEntry {
+                    model: (*id).to_owned(),
+                    on: None,
+                })
+                .collect()
+        };
+        Ok(CatalogFragment {
+            families: Vec::new(),
+            recommended: super::RecommendedLists {
+                basis: "a test".to_owned(),
+                stt: entries(self.0),
+                tts: entries(self.1),
+            },
+        })
+    }
+}
+
+#[test]
+fn the_lists_of_models_to_recommend_append_in_source_order_and_name_models_of_their_capability() {
+    let merged = MergedCatalog::merge(&[
+        Box::new(FakeCatalog) as Box<dyn CatalogSource>,
+        Box::new(Lists(&["whisper-small"], &["kokoro"])),
+        Box::new(Lists(&["whisper-large"], &[])),
+    ])
+    .expect("catalogue");
+    let stt: Vec<_> = merged
+        .recommended()
+        .stt
+        .iter()
+        .map(|entry| entry.model.as_str())
+        .collect();
+    assert_eq!(stt, ["whisper-small", "whisper-large"]);
+    assert_eq!(merged.check(&crate::backend::is_known), []);
+
+    // A model the catalogue does not have, and one that does not have the list's capability.
+    let wrong = MergedCatalog::merge(&[
+        Box::new(FakeCatalog) as Box<dyn CatalogSource>,
+        Box::new(Lists(&["nowhere", "kokoro"], &[])),
+    ])
+    .expect("catalogue");
+    assert_eq!(
+        wrong.check(&crate::backend::is_known),
+        [
+            Problem::UnknownRecommendedModel {
+                model: "nowhere".to_owned()
+            },
+            Problem::UnknownRecommendedModel {
+                model: "kokoro".to_owned()
+            },
+        ]
+    );
 }

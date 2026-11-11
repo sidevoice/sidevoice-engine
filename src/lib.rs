@@ -28,6 +28,7 @@ mod install;
 mod maybe_send;
 mod platform;
 mod provider;
+mod recommender;
 mod resolver;
 #[cfg(test)]
 mod test_support;
@@ -58,6 +59,7 @@ pub use maybe_send::{MaybeSend, MaybeSync};
 #[cfg(native)]
 pub use platform::memory::MemoryObservation;
 pub use provider::{RemoteModel, RemoteModelInfo};
+pub use recommender::{Languages, Pick, Recommendation, Recommended};
 pub use resolver::Reason;
 
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it. One that a

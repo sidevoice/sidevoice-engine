@@ -819,6 +819,7 @@ pub(crate) fn family(id: &str, models: Vec<ModelEntry>) -> Family {
 impl CatalogSource for FakeCatalog {
     fn load(&self) -> Result<CatalogFragment> {
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![
                 family(
                     "whisper",
