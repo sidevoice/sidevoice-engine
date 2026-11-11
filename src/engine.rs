@@ -17,10 +17,11 @@ use crate::capability::Resident;
 use crate::catalog::{
     BuildEntry, CatalogSource, FamilySpeed, MergedCatalog, ModelEntry, ModelFile,
 };
-use crate::host::{Accelerator, AcceleratorClass, AcceleratorUse, Host};
+use crate::host::{Accelerator, AcceleratorClass, AcceleratorUse, Capabilities, Host};
 use crate::install::{Artifact, Cancel, Installed, Installer, ProgressSink};
 use crate::provider::listing::Listings;
 use crate::provider::{self, Adapter};
+use crate::recommender::{self, Languages, Recommendation};
 use crate::resolver::{Reason, Rejection, Resolver};
 use crate::{Error, Result};
 
@@ -134,13 +135,15 @@ impl Engine {
 
     /// Every model of the local catalogue, in catalogue order, each with its builds ranked (those that run here first,
     /// with the accelerator each would use; the rest with why not), whether it is installed, when it was last loaded
-    /// (if it is installed), and the build the engine recommends: the best ranked of those that run here.
+    /// (if it is installed), and the build the engine recommends (`recommender::build`): the best ranked of those that
+    /// run here, keep working in the background, need nothing unchecked and fit the memory budget.
     ///
     /// # Errors
     ///
     /// What the host's storage fails with, asked what is installed.
     pub(crate) async fn models(&self) -> Result<Vec<LocalModelInfo>> {
         let caps = self.host.capabilities();
+        let budget = recommender::budget_mb(&caps);
         let last_used = self.last_used.read(self.host.storage()).await;
         let mut models = Vec::new();
         let mut entries = Vec::new();
@@ -163,8 +166,8 @@ impl Engine {
                     available: fit.is_ok(),
                     reasons: fit.err().map(reason).into_iter().collect(),
                     installed,
-                    stops_in_background: caps.gpu_stops_in_background
-                        && accelerator.is_some_and(|on| on.class() == AcceleratorClass::Gpu),
+                    stops_in_background: accelerator
+                        .is_some_and(|on| stops_in_background(&caps, on)),
                 });
             }
             let installed = builds.iter().any(|build| build.installed);
@@ -179,14 +182,45 @@ impl Engine {
                 speed: family_speed.as_ref().map(FamilySpeed::range),
                 installed,
                 last_used_at: last_used.get(&entry.id).copied().filter(|_| installed),
-                recommended_build: builds
-                    .iter()
-                    .find(|build| build.available)
-                    .map(|build| build.id.clone()),
+                recommended_build: recommender::build(
+                    &builds,
+                    |build| build.accelerator,
+                    |build| {
+                        build.stops_in_background
+                            || entry
+                                .builds
+                                .iter()
+                                .any(|b| b.id == build.id && unchecked(b))
+                    },
+                    |build| build.memory_mb,
+                    budget,
+                )
+                .map(|build| build.id.clone()),
                 builds,
             });
         }
         Ok(models)
+    }
+
+    /// What the engine recommends here for speech to text and text to speech, for a person who speaks `languages`: the
+    /// model to start with for each, with its build, and each capability's list as it stands here (`crate::recommender`).
+    ///
+    /// # Errors
+    ///
+    /// What the host's storage fails with, asked what is installed.
+    pub(crate) async fn recommend(&self, languages: &Languages) -> Result<Recommendation> {
+        let models = self.models().await?;
+        Ok(recommender::recommend(
+            &models,
+            self.catalog.recommended(),
+            &self.host.capabilities(),
+            languages,
+            &|id| {
+                self.entries()
+                    .flat_map(|entry| &entry.builds)
+                    .any(|b| b.id == id && unchecked(b))
+            },
+        ))
     }
 
     /// Installs `build` of the model `model`, or, with `None`, the build [`Engine::load`] would use: its files and its
@@ -392,16 +426,16 @@ impl Engine {
     }
 
     /// The build to install or load and the accelerator it runs on: `build` if it is one of `model`'s and runs here,
-    /// else the best ranked build that runs here and is installed, else the best ranked that runs here.
+    /// else the best ranked build that runs here and is installed, else the one the engine recommends
+    /// (`recommender::build`, as [`LocalModelInfo::recommended_build`] names it).
     async fn choose(
         &self,
         model: &str,
         build: Option<&str>,
     ) -> Result<(&ModelEntry, &BuildEntry, Accelerator)> {
         let entry = self.entry(model)?;
-        let ranked = self
-            .resolver
-            .builds(entry, &self.backends, &self.host.capabilities());
+        let caps = self.host.capabilities();
+        let ranked = self.resolver.builds(entry, &self.backends, &caps);
         if let Some(wanted) = build {
             let (build, fit) = ranked
                 .into_iter()
@@ -419,10 +453,14 @@ impl Engine {
                 return Ok((entry, build, accelerator));
             }
         }
-        let (build, accelerator) = available
-            .first()
-            .copied()
-            .ok_or(Error::new("no-build-available"))?;
+        let (build, accelerator) = recommender::build(
+            available,
+            |&(_, accelerator)| Some(accelerator),
+            |&(build, accelerator)| stops_in_background(&caps, accelerator) || unchecked(build),
+            |&(build, _)| build.memory.mb,
+            recommender::budget_mb(&caps),
+        )
+        .ok_or(Error::new("no-build-available"))?;
         Ok((entry, build, accelerator))
     }
 
@@ -449,6 +487,18 @@ fn download_bytes(build: &BuildEntry) -> u64 {
         })
         .map(|file| file.bytes)
         .sum()
+}
+
+/// Whether a build that runs on `accelerator` here stops working while the app is in the background: it is a GPU, and
+/// the system stops serving the GPU to an app in the background ([`Capabilities::gpu_stops_in_background`]).
+fn stops_in_background(caps: &Capabilities, accelerator: Accelerator) -> bool {
+    caps.gpu_stops_in_background && accelerator.class() == AcceleratorClass::Gpu
+}
+
+/// Whether `build` needs what no host reports and so nothing here checks: WebGPU features (`shader-f16`, ...). It may
+/// run, and can be chosen; it is not recommended while another build can be.
+fn unchecked(build: &BuildEntry) -> bool {
+    !build.requires.webgpu_features.is_empty()
 }
 
 /// A rejection as the reason a person reads: its stable code and numbers.

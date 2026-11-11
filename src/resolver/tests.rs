@@ -62,6 +62,7 @@ impl CatalogSource for OneBuildCatalog {
         build.requires.accelerators = self.0.to_vec();
         let builds = vec![build];
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "family",
                 vec![model("model", Capability::Stt, builds)],
@@ -293,6 +294,7 @@ impl CatalogSource for WasmCatalog {
         let mut build = build("model/transformers-js-q8", "transformers-js", self.0);
         build.requires.wasm_max_mb = Some(2_048);
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "family",
                 vec![model("model", Capability::Stt, vec![build])],
@@ -413,6 +415,7 @@ impl CatalogSource for ManyBuildsCatalog {
             })
             .collect();
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "family",
                 vec![model("model", Capability::Stt, builds)],

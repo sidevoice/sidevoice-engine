@@ -14,6 +14,7 @@ use crate::install::{Cancel, ProgressSink};
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::provider::listing::Listed;
 use crate::provider::{Adapter, RemoteModel, RemoteModelInfo};
+use crate::recommender::{Languages, Recommendation};
 use crate::resolver::Reason;
 use crate::{Engine, Error, Result};
 
@@ -202,6 +203,18 @@ impl LocalCatalog<'_> {
     /// What the host's storage fails with, asked what is installed.
     pub async fn models(&self, capability: Option<Capability>) -> Result<Vec<LocalModelInfo>> {
         Ok(of_capability(self.engine.models().await?, capability))
+    }
+
+    /// What the engine recommends here for speech to text and text to speech, for a person who speaks `languages`: for
+    /// each, the model to start with and its build (the pair closest to the top of the catalogue's hand-written lists
+    /// that runs here and fits the memory budget together), and the list as it stands here, best first. The app
+    /// shows it and preselects it; nothing is downloaded for it.
+    ///
+    /// # Errors
+    ///
+    /// What the host's storage fails with, asked what is installed.
+    pub async fn recommend(&self, languages: &Languages) -> Result<Recommendation> {
+        self.engine.recommend(languages).await
     }
 
     /// The model `model`, loaded as [`Catalog::load`] does: as [`Engine::load`] with no build named.

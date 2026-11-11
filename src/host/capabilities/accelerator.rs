@@ -47,9 +47,10 @@ impl Accelerator {
 /// sidevoice-engine#4); within a class, catalogue order stands until measured speed and quality rank them
 /// (sidevoice-engine#16). An app shows it as it is and does not derive it again.
 ///
-/// A JavaScript app gets it by its stable id ([`AcceleratorClass::id`]): "gpu", "neural-engine", "cpu". It is
-/// `#[non_exhaustive]`: match it with a wildcard arm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// A JavaScript app gets it by its stable id ([`AcceleratorClass::id`]): "gpu", "neural-engine", "cpu"; the catalogue
+/// names it by the same ids. It is `#[non_exhaustive]`: match it with a wildcard arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 #[non_exhaustive]
 pub enum AcceleratorClass {
     /// A GPU: Metal, CUDA, WebGPU.

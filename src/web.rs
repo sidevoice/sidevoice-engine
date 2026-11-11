@@ -77,6 +77,14 @@ export interface LocalModelInfo extends ModelInfo {
   lastUsedAt?: number;
   builds: ModelBuild[]; recommendedBuild?: string;
 }
+/** A model and the build to run it as. */
+export interface Pick { model: string; build: string; }
+/** What the engine recommends here for one capability: the model to start with and its build (`choice`, absent when
+ * nothing of its list runs here), and its list as it stands here, best first (`ranked`): a family's first entry is
+ * that family's best for this device. */
+export interface Recommended { choice?: Pick; ranked: Pick[]; }
+/** What the engine recommends here for speech to text and text to speech (`LocalCatalog.recommend`). */
+export interface Recommendation { stt: Recommended; tts: Recommended; }
 /** A model of a remote provider, as listed. */
 export interface RemoteModelInfo extends ModelInfo {}
 /** A model ready to use, from a catalogue's `load`: either hands out the same capabilities. */
@@ -295,6 +303,26 @@ impl WebLocalCatalog {
             let capability = capability_of(capability)?;
             let models = engine.local_catalog().models(capability).await?;
             Ok(models.iter().map(values::model).collect::<Array>().into())
+        })
+    }
+
+    /// What the engine recommends here for a person whose speech to text hears `sttLanguage` and whose text to speech
+    /// says `ttsLanguage` (BCP 47 tags; absent, no language to prefer): for each, the model to start with and its
+    /// build (`choice`), and the list as it stands here, best first (`ranked`).
+    #[wasm_bindgen(unchecked_return_type = "Promise<Recommendation>")]
+    pub fn recommend(
+        &self,
+        #[wasm_bindgen(js_name = sttLanguage)] stt_language: Option<String>,
+        #[wasm_bindgen(js_name = ttsLanguage)] tts_language: Option<String>,
+    ) -> Promise {
+        let engine = Rc::clone(&self.engine);
+        promise(async move {
+            let languages = crate::Languages {
+                stt: stt_language,
+                tts: tts_language,
+            };
+            let recommendation = engine.local_catalog().recommend(&languages).await?;
+            Ok(values::recommendation(&recommendation))
         })
     }
 

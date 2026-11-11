@@ -2,8 +2,9 @@
 //! kokoro, ...), its models, and each model's builds, one per way to run it (whisper-small: ONNX for sherpa-onnx and
 //! transformers.js, GGML for whisper.cpp, MLX for Apple).
 //!
-//! Inside: `family` and `model` (the shape, read strictly: an unknown or a missing key is an error) and `bundled`
-//! (the families this repository ships, `catalog/families/<family>.json`, compiled in).
+//! Inside: `family` and `model` (the shape, read strictly: an unknown or a missing key is an error), `recommended` (the
+//! hand-written lists of the models to recommend, best first) and `bundled` (the families this repository ships,
+//! `catalog/families/<family>.json`, and its lists, `catalog/recommended.json`, compiled in).
 
 use std::collections::{HashMap, HashSet};
 
@@ -14,6 +15,7 @@ use model::CALL_ARGUMENTS;
 mod bundled;
 mod family;
 mod model;
+mod recommended;
 mod speed;
 #[cfg(test)]
 mod tests;
@@ -23,6 +25,7 @@ pub use family::Family;
 pub use model::{
     BuildEntry, Capability, Gender, Memory, MemorySource, ModelEntry, ModelFile, Requires, Voice,
 };
+pub use recommended::{ListEntry, RecommendedLists};
 pub use speed::{FamilySpeed, SpeedRange};
 
 /// Where catalogue entries come from: the catalogue bundled in the engine, a remote one pinned by digest, the
@@ -41,12 +44,16 @@ pub trait CatalogSource: MaybeSend + MaybeSync {
 pub struct CatalogFragment {
     /// Its families, with their models.
     pub families: Vec<Family>,
+    /// Its lists of models to recommend; empty for a source that has none. The merge appends each source's entries
+    /// after the earlier sources'.
+    pub recommended: RecommendedLists,
 }
 
 /// The merged catalogue.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct MergedCatalog {
     families: Vec<Family>,
+    recommended: RecommendedLists,
 }
 
 /// Something wrong with the merged catalogue.
@@ -130,6 +137,11 @@ pub enum Problem {
         /// The argument as written.
         argument: String,
     },
+    /// An entry of a list of models to recommend that names no model of the catalogue with that list's capability.
+    UnknownRecommendedModel {
+        /// The model it names.
+        model: String,
+    },
     /// A language of a model or of one of its voices that is not a BCP 47 tag ("multi", "spanish", "es_ES").
     InvalidLanguage {
         /// The model.
@@ -150,10 +162,22 @@ impl MergedCatalog {
     /// Every source's families, in the order of `sources`.
     pub(crate) fn merge(sources: &[Box<dyn CatalogSource>]) -> Result<Self> {
         let mut families = Vec::new();
+        let mut recommended = RecommendedLists::default();
         for source in sources {
-            families.extend(source.load()?.families);
+            let fragment = source.load()?;
+            families.extend(fragment.families);
+            recommended.stt.extend(fragment.recommended.stt);
+            recommended.tts.extend(fragment.recommended.tts);
         }
-        Ok(Self { families })
+        Ok(Self {
+            families,
+            recommended,
+        })
+    }
+
+    /// The lists of models to recommend, every source's.
+    pub(crate) fn recommended(&self) -> &RecommendedLists {
+        &self.recommended
     }
 
     /// Every family, with its models, in catalogue order.
@@ -212,6 +236,22 @@ impl MergedCatalog {
                         });
                     }
                     check_build(build, known, &mut problems);
+                }
+            }
+        }
+        let lists = [
+            (Capability::Stt, &self.recommended.stt),
+            (Capability::Tts, &self.recommended.tts),
+        ];
+        for (capability, list) in lists {
+            for entry in list {
+                let listed = self.entries().any(|model| {
+                    model.id == entry.model && model.capabilities.contains(&capability)
+                });
+                if !listed {
+                    problems.push(Problem::UnknownRecommendedModel {
+                        model: entry.model.clone(),
+                    });
                 }
             }
         }
