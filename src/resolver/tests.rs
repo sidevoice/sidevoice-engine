@@ -62,6 +62,7 @@ impl CatalogSource for OneBuildCatalog {
         build.requires.accelerators = self.0.to_vec();
         let builds = vec![build];
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "family",
                 vec![model("model", Capability::Stt, builds)],
@@ -79,6 +80,7 @@ fn caps(accelerators: &[Accelerator], memory_mb: Option<u32>, cores: Option<u32>
         memory_mb,
         cores,
         accelerator_memory: Vec::new(),
+        gpu_stops_in_background: false,
     }
 }
 
@@ -254,6 +256,7 @@ fn a_bundled_transformers_js_fp16_build_runs_on_webgpu_only() {
             memory_mb: Some(16_384),
             cores: Some(8),
             accelerator_memory: Vec::new(),
+            gpu_stops_in_background: false,
         };
         [Capability::Stt, Capability::Tts]
             .into_iter()
@@ -293,6 +296,7 @@ impl CatalogSource for WasmCatalog {
         let mut build = build("model/transformers-js-q8", "transformers-js", self.0);
         build.requires.wasm_max_mb = Some(2_048);
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "family",
                 vec![model("model", Capability::Stt, vec![build])],
@@ -326,6 +330,7 @@ fn fit_wasm(memory_mb: u32, runs: Runs) -> Result<Accelerator, Rejection> {
         memory_mb: Some(16_384),
         cores: Some(8),
         accelerator_memory: Vec::new(),
+        gpu_stops_in_background: false,
     };
     only(&catalog, &[Box::new(backend)], &caps)
 }
@@ -413,6 +418,7 @@ impl CatalogSource for ManyBuildsCatalog {
             })
             .collect();
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "family",
                 vec![model("model", Capability::Stt, builds)],
@@ -525,6 +531,7 @@ fn in_a_page_webgpu_ranks_before_webassembly() {
         memory_mb: Some(16_384),
         cores: Some(8),
         accelerator_memory: Vec::new(),
+        gpu_stops_in_background: false,
     };
     let at = |id: &str, accelerator| (id.to_owned(), accelerator);
     assert_eq!(

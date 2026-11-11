@@ -36,6 +36,7 @@ impl Host for FakeHost {
             memory_mb: Some(8_192),
             cores: Some(8),
             accelerator_memory: Vec::new(),
+            gpu_stops_in_background: false,
         }
     }
 
@@ -819,6 +820,7 @@ pub(crate) fn family(id: &str, models: Vec<ModelEntry>) -> Family {
 impl CatalogSource for FakeCatalog {
     fn load(&self) -> Result<CatalogFragment> {
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![
                 family(
                     "whisper",

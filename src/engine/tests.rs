@@ -333,6 +333,7 @@ impl CatalogSource for FakeModels {
             ..file("ear-1")
         });
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "fake",
                 vec![
@@ -1186,6 +1187,7 @@ impl CatalogSource for GpuModels {
             ..build("gpu-1", "fake-gpu", 0)
         };
         Ok(CatalogFragment {
+            recommended: Default::default(),
             families: vec![family(
                 "fake",
                 vec![model("gpu-ear", Capability::Stt, vec![build])],
@@ -1372,4 +1374,70 @@ fn a_cancelled_load_does_not_fall_back() {
     let (loaded, asked) = load_on_gpu_host(behaviour);
     assert!(loaded.is_err());
     assert_eq!(asked, [Accelerator::Cuda]);
+}
+
+/// A phone's host: a GPU next to the CPU, which the system stops serving to the app in the background.
+struct PhoneHost(MemoryHost);
+
+impl crate::Host for PhoneHost {
+    fn capabilities(&self) -> crate::Capabilities {
+        crate::Capabilities {
+            gpu_stops_in_background: true,
+            ..GpuHost(MemoryHost::serving(&[])).capabilities()
+        }
+    }
+
+    fn storage(&self) -> &dyn crate::Storage {
+        self.0.storage()
+    }
+
+    fn fetcher(&self) -> &dyn crate::Fetcher {
+        self.0.fetcher()
+    }
+
+    fn http(&self) -> &dyn crate::HttpClient {
+        self.0.http()
+    }
+
+    fn credentials(&self) -> &dyn crate::Credentials {
+        self.0.credentials()
+    }
+}
+
+/// Whether each build of `gpu-ear` stops in the background, listed by an engine over `host`, with a second build of
+/// it that takes the CPU only.
+fn stops_in_background(host: Box<dyn crate::Host>) -> Vec<(String, bool)> {
+    struct TwoBuilds;
+    impl CatalogSource for TwoBuilds {
+        fn load(&self) -> Result<CatalogFragment> {
+            let mut fragment = GpuModels.load()?;
+            let mut cpu = BuildEntry {
+                files: vec![file("cpu-1")],
+                ..build("cpu-1", "fake-gpu", 0)
+            };
+            cpu.requires.accelerators = vec![Accelerator::Cpu];
+            fragment.families[0].models[0].builds.push(cpu);
+            Ok(fragment)
+        }
+    }
+    let engine = Engine::with_backends(
+        host,
+        vec![Box::new(TwoBuilds)],
+        vec![Box::new(GpuBackend(GpuBehaviour::default()))],
+    )
+    .expect("engine");
+    let models = block_on(engine.models()).expect("models");
+    models[0]
+        .builds
+        .iter()
+        .map(|build| (build.id.clone(), build.stops_in_background))
+        .collect()
+}
+
+#[test]
+fn a_build_on_a_gpu_the_system_stops_in_the_background_says_so_and_one_on_the_cpu_does_not() {
+    let phone = stops_in_background(Box::new(PhoneHost(MemoryHost::serving(&[]))));
+    assert_eq!(phone, [pair("gpu-1", true), pair("cpu-1", false)]);
+    let desktop = stops_in_background(Box::new(GpuHost(MemoryHost::serving(&[]))));
+    assert_eq!(desktop, [pair("gpu-1", false), pair("cpu-1", false)]);
 }

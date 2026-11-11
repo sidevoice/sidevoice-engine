@@ -1,0 +1,16 @@
+{
+  "basis": "Hand-written, decided with the operator on 2026-11-10 (sidevoice-engine#124, sidevoice-core#33): best first, from public leaderboards and model cards (Whisper large-v3 turbo about large-v3's quality; Parakeet TDT 0.6B v3 at the top of the Open ASR leaderboard among small models; Qwen3-ASR 0.6B for the languages Parakeet lacks) and from listening (Supertonic over Kokoro, also in English). Whisper large-v3 turbo is comfortable on a GPU only, so its entry asks for one. Measurements on each kind of machine (sidevoice-engine#155) are to re-order these lists, not the code.",
+  "stt": [
+    { "model": "whisper-large-v3-turbo", "on": "gpu" },
+    { "model": "parakeet-tdt-0.6b-v3" },
+    { "model": "qwen3-asr-0.6b" },
+    { "model": "whisper-small" }
+  ],
+  "tts": [
+    { "model": "supertonic-3" },
+    { "model": "supertonic-2" },
+    { "model": "kokoro-82m-v1.0" },
+    { "model": "piper-es_ES-carlfm-x_low" },
+    { "model": "piper-en_US-ljspeech-medium" }
+  ]
+}

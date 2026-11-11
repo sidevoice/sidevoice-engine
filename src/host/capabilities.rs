@@ -37,6 +37,11 @@ pub struct Capabilities {
     /// The memory a GPU or a neural engine can give models, for each the host can tell; one it leaves out is checked
     /// against `memory_mb` ([`Capabilities::memory_for`]). Order does not matter.
     pub accelerator_memory: Vec<AcceleratorMemory>,
+    /// Whether the system stops serving the GPU to the app while the app is in the background (iOS: a Metal command
+    /// buffer committed then fails). A build that runs on a GPU here then works only while the app is in the
+    /// foreground ([`ModelBuild::stops_in_background`](crate::ModelBuild::stops_in_background)). `false` when the host
+    /// has no such limit, or cannot tell.
+    pub gpu_stops_in_background: bool,
 }
 
 impl Capabilities {

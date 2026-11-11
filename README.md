@@ -63,6 +63,7 @@ anything, gathered once when the host is built:
 | `memory_mb` | memory available to models, in MiB (2^20 bytes; every `_mb` in the engine) | `None` |
 | `cores` | CPU cores | `None` |
 | `accelerator_memory` | the memory a GPU or neural engine can give models, each the host can tell: natively Metal's `recommendedMaxWorkingSetSize` on macOS and iOS; a build on an accelerator left out is checked against `memory_mb` (`Capabilities::memory_for`) | leave it out |
+| `gpu_stops_in_background` | whether the system stops serving the GPU to the app in the background: `true` on iOS (the native host's platform says so), `false` elsewhere and in a page | `false` |
 
 - **The host reports, the backend confirms.** Whether a backend can actually use an accelerator (a CUDA driver, a
   granted WebGPU adapter, a Core ML model that loads) is found out by the backend's probe, never by the host. The
@@ -94,9 +95,37 @@ take some of them, which it says as a hard constraint (`"requires": {"accelerato
 The builds of a model that run here are ranked by the class of the accelerator each would run on (sidevoice-engine#4):
 a GPU first, then a neural engine, then a CPU, the order of `AcceleratorClass`. Within a class
 they keep catalogue order, the documented fallback until measured speed and quality rank them (sidevoice-engine#16).
-The first is the recommended build. So on Apple silicon whisper.cpp on Metal is recommended for every Whisper model,
-ahead of sherpa-onnx on the CPU; on Linux and Windows, where whisper.cpp runs on the CPU too, catalogue order keeps
-sherpa-onnx.
+The recommended build is the first of them that keeps working in the background (not one on a GPU where the system
+stops serving it to an app in the background: iOS), needs nothing unchecked (WebGPU features, which no host reports)
+and fits the memory budget on its own (60 % of the host's memory); failing that, the first of them that keeps working
+and needs nothing unchecked; failing that, the first. So on Apple silicon whisper.cpp on Metal is
+recommended for every Whisper model, ahead of sherpa-onnx on the CPU; on an iPhone sherpa-onnx is, since Metal stops in
+the background; on Linux and Windows, where whisper.cpp runs on the CPU too, catalogue order keeps sherpa-onnx.
+
+### The models the engine recommends
+
+`LocalCatalog::recommend(&Languages { stt, tts })` (`localCatalog().recommend(sttLanguage?, ttsLanguage?)` on the web)
+says which model to start with for speech to text and for text to speech, each with its build, and each capability's
+list as it stands here (sidevoice-engine#124, sidevoice-core#33). The app passes the person's language for each (what
+transcription hears: the one set for it, else the system's; what the voice says: the system's); the engine picks none.
+It is a pure function of what the local catalogue lists here (`src/recommender.rs`, table-tested over example devices
+in `src/recommender/tests.rs`):
+
+- **The lists are data.** `catalog/recommended.json` names, best first, the models to recommend for each capability,
+  hand-written with the evidence they rest on (`basis`); an entry may ask for its build to run on a class of hardware
+  (`"on": "gpu"`: Whisper large-v3 turbo is comfortable on a GPU only). Measuring each kind of machine
+  (sidevoice-engine#155) is to re-order the lists, not the code. A model the lists leave out can still be chosen.
+- **Hard filters** (never recommended): the model's recommended build must run here (its `available`, the resolver's
+  one "runs here" check), keep working in the background, need nothing unchecked (WebGPU features such as
+  `shader-f16`: no host reports them), run on the class its entry asks for, and fit the memory budget on its own.
+- **Language**: of those, only the models that speak the person's language (one of the model's or its voices'
+  languages has the same primary subtag) are recommended. A model that does not is still selectable; when none does,
+  nothing is recommended for that capability. A model named twice (two sources' lists) counts at its first place.
+- **The pair** is the (speech to text i, text to speech j) closest to the top of both lists whose memory, with the
+  end-of-turn model's, fits the budget together: least i + j, the better speech to text on a tie. The models of a call
+  are loaded together, so the budget (60 % of the memory the host reports; none when it cannot tell) is the whole
+  set's. When no pair fits, the lightest.
+- `ranked` is each list as it stands here: a family's first entry in it is that family's best for this device.
 
 ## Using a model, and what stays in memory
 
@@ -125,8 +154,10 @@ let p = smart_turn.as_end_of_turn().expect("end of turn").probability(&turn_so_f
 - **The local catalogue's `models`** (`Engine::local_catalog().models()`, each a `LocalModelInfo`) lists every model of the catalogue with its catalogue data, whether it is installed, when it was last loaded,
   every build ranked (those that run here first; each with its backend, the accelerator it would use and that
   accelerator's class (`ModelBuild::accelerator_class()`; `acceleratorClass` on the web: `"gpu"`, `"neural-engine"`,
-  `"cpu"`), its precision, what it downloads, its memory, whether it runs here and why not, and whether it is
-  installed) and the build the engine recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
+  `"cpu"`), its precision, what it downloads, its memory, whether it runs here and why not, whether it is
+  installed, and whether it stops working in the background (`stops_in_background`, `stopsInBackground` on the web: it
+  runs here on a GPU the system stops serving to an app in the background, iOS, so a build on the CPU is the one that
+  keeps working; sidevoice-web#572, until sidevoice-engine#154)) and the build the engine recommends. `Engine::install` and `Engine::uninstall` take a model id and a build id or `None`; uninstalling
   removes that build's folder (with `None`, each of the model's), keeps any file another build's folder links, and
   refuses a build that is loaded (`model-in-use`). When a model was last loaded (`last_used_at`; `lastUsedAt` on the
   web) is in milliseconds since the Unix epoch, by the host's clock (`Host::now_ms`): every load that succeeds notes it

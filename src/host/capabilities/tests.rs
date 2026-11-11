@@ -14,6 +14,7 @@ fn caps(memory_mb: Option<u32>, accelerator_memory: Vec<AcceleratorMemory>) -> C
         memory_mb,
         cores: Some(8),
         accelerator_memory,
+        gpu_stops_in_background: false,
     }
 }
 

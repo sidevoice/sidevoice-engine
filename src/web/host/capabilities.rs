@@ -34,6 +34,8 @@ pub(super) fn read(value: &JsValue) -> Result<Capabilities, JsError> {
         cores: optional_count(value, "cores")?,
         // A page cannot tell what its GPU has: WebGPU says nothing of its memory.
         accelerator_memory: Vec::new(),
+        // A page's WebGPU is the browser's to keep or drop with a hidden tab; nothing here says it stops.
+        gpu_stops_in_background: false,
     })
 }
 

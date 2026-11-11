@@ -6,8 +6,8 @@ use wasm_bindgen::JsValue;
 
 use crate::{
     Accelerator, AcceleratorUse, Audio, Capability, CatalogStatus, Error, Gender, LocalModelInfo,
-    ModelBuild, Progress, Reason, RemoteModelInfo, SpeedRange, VadEvent, VadOptions, VadOutput,
-    Voice,
+    ModelBuild, Pick, Progress, Reason, Recommendation, Recommended, RemoteModelInfo, SpeedRange,
+    VadEvent, VadOptions, VadOutput, Voice,
 };
 
 #[cfg(test)]
@@ -51,7 +51,7 @@ pub(super) fn model(model: &LocalModelInfo) -> JsValue {
 }
 
 /// `{ id, backend, accelerator?, acceleratorClass?, precision, downloadBytes, memoryMb, available, reasons,
-/// installed }`.
+/// installed, stopsInBackground }`.
 fn build(build: &ModelBuild) -> JsValue {
     object(&[
         ("id", Some(build.id.as_str().into())),
@@ -74,6 +74,37 @@ fn build(build: &ModelBuild) -> JsValue {
             Some(build.reasons.iter().map(reason).collect::<Array>().into()),
         ),
         ("installed", Some(build.installed.into())),
+        ("stopsInBackground", Some(build.stops_in_background.into())),
+    ])
+}
+
+/// `{ stt: { choice?, ranked }, tts: { choice?, ranked } }`, each pick `{ model, build }`.
+pub(super) fn recommendation(recommendation: &Recommendation) -> JsValue {
+    let pick = |pick: &Pick| {
+        object(&[
+            ("model", Some(pick.model.as_str().into())),
+            ("build", Some(pick.build.as_str().into())),
+        ])
+    };
+    let recommended = |recommended: &Recommended| {
+        object(&[
+            ("choice", recommended.choice.as_ref().map(pick)),
+            (
+                "ranked",
+                Some(
+                    recommended
+                        .ranked
+                        .iter()
+                        .map(pick)
+                        .collect::<Array>()
+                        .into(),
+                ),
+            ),
+        ])
+    };
+    object(&[
+        ("stt", Some(recommended(&recommendation.stt))),
+        ("tts", Some(recommended(&recommendation.tts))),
     ])
 }
 
