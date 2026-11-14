@@ -185,9 +185,9 @@ fn a_provider_that_names_a_refusal_is_read_by_what_it_names_on_a_call_and_on_a_l
 }
 
 /// What a refused call leaves in the log: its span and event, and nothing of the key, the provider's words or the
-/// request's query (docs/logging.md, the canary rule).
+/// request's query (the Sidevoice logging guideline, sidevoice/.github-private docs/logging.md).
 #[test]
-fn a_refused_call_logs_its_code_and_none_of_what_it_carried() {
+fn a_refused_call_logs_its_error_type_and_none_of_what_it_carried() {
     let (api, provider) = remote_api("example");
     provider.key("example", "canary-secret-7f3a");
     provider.answer(
@@ -210,9 +210,9 @@ fn a_refused_call_logs_its_code_and_none_of_what_it_carried() {
     for expected in [
         "provider_request",
         "provider=\"example\"",
-        "http_status=401",
-        "provider refused",
-        "code=\"credential-rejected\"",
+        "http.response.status_code=401",
+        "provider refused the call, which fails",
+        "error.type=\"credential-rejected\"",
     ] {
         assert!(log.contains(expected), "{expected} in {log}");
     }

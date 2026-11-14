@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 
-use crate::log_safe::UrlPath;
+use crate::log_safe::Origin;
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
 
@@ -25,12 +25,12 @@ pub struct HttpRequest {
 }
 
 impl std::fmt::Debug for HttpRequest {
-    /// Without the headers' values, which may hold a key.
+    /// Without the headers' values (which may hold a key) and without the path and query (which can be the secret).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let headers: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
         f.debug_struct("HttpRequest")
             .field("method", &self.method)
-            .field("url", &format_args!("{}", UrlPath(&self.url)))
+            .field("origin", &format_args!("{}", Origin::of(&self.url)))
             .field("headers", &headers)
             .field("body", &self.body.len())
             .finish()

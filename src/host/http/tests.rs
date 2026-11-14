@@ -7,12 +7,13 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 fn a_request_shows_no_query_header_value_or_body() {
     let request = HttpRequest {
         method: "POST",
-        url: "https://u:canary-pass@x.test/v1/a?key=canary-secret-7f3a".into(),
+        url: "https://u:canary-pass@huggingface.co/v1/a?key=canary-secret-7f3a".into(),
         headers: vec![("Authorization".into(), "Bearer canary-secret-7f3a".into())],
         body: b"canary words 7f3a".to_vec(),
     };
     let shown = format!("{request:?}");
-    assert!(shown.contains("https://x.test/v1/a"), "{shown}");
+    assert!(shown.contains("huggingface.co"), "{shown}");
+    assert!(!shown.contains("/v1/a"), "{shown}");
     for canary in ["canary-secret", "canary-pass", "canary words", "key="] {
         assert!(!shown.contains(canary), "{shown}");
     }

@@ -315,7 +315,11 @@ fn linked<L: Links>(path: &Path) -> bool {
         }
     };
     inspect().unwrap_or_else(|error| {
-        tracing::warn!(kind = ?error.kind(), "blob kept: hard links not inspectable");
+        tracing::warn!(
+            kind = ?error.kind(),
+            os_error = error.raw_os_error(),
+            "could not tell whether the model file is shared, so it is kept"
+        );
         true
     })
 }

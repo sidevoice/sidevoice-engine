@@ -1020,7 +1020,7 @@ pub(crate) fn openai_spec() -> serde_json::Value {
 }
 
 /// What `run` logs on this thread, at every level, one line per event, without timestamps: the capture the canary
-/// tests read (docs/logging.md, section 10). One global subscriber for the whole test binary, writing to a buffer per
+/// tests read (the Sidevoice logging guideline, sidevoice/.github-private docs/logging.md). One global subscriber for the whole test binary, writing to a buffer per
 /// thread: a scoped subscriber per test races with the other tests' threads over tracing's callsite cache, and a callsite
 /// that met no subscriber first is never enabled again.
 pub(crate) fn logged<R>(run: impl FnOnce() -> R) -> (R, String) {

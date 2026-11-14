@@ -90,7 +90,7 @@ impl Api {
     #[instrument(
         name = "provider_request",
         skip_all,
-        fields(provider = self.id, kind = kind.name(), http_status, duration_ms)
+        fields(provider = self.id, kind = kind.name(), http.response.status_code, duration_ms)
     )]
     async fn send(&self, request: HttpRequest, kind: Kind) -> Result<Vec<u8>> {
         let started = Instant::now();
@@ -103,18 +103,18 @@ impl Api {
                 Listing if error.code == "request-failed" => "provider-unreachable",
                 _ => error.code,
             };
-            warn!(code, "provider unreachable");
+            warn!(error.type = code, "the request to the provider failed, so the call fails");
         })?;
-        span.record("http_status", response.status);
+        span.record("http.response.status_code", response.status);
         match response.status {
             200..=299 => {
-                debug!(result = "ok", "provider answered");
+                debug!(result = "ok", "provider answered the call");
                 Ok(response.body)
             }
             status => {
                 let said = said(&response.body);
                 let error = failed(status, &response.body, said.as_ref(), kind);
-                warn!(code = error.code, "provider refused");
+                warn!(error.type = error.code, "provider refused the call, which fails");
                 Err(error)
             }
         }

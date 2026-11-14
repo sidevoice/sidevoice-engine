@@ -27,23 +27,22 @@ pub(super) struct WebFetcher;
 #[async_trait(?Send)]
 impl Fetcher for WebFetcher {
     async fn fetch(&self, url: &str) -> Result<Box<dyn Download>> {
-        let controller = AbortController::new().map_err(|error| failed(url, &error))?;
+        let controller = AbortController::new().map_err(|_| failed())?;
         let init = js_sys::Object::new();
         Reflect::set(&init, &"signal".into(), &controller.signal()).expect("a plain object");
         let fetch = Reflect::get(&js_sys::global(), &"fetch".into())
             .ok()
             .and_then(|fetch| fetch.dyn_into::<js_sys::Function>().ok())
-            .ok_or_else(|| failed(url, &"no fetch here".into()))?;
+            .ok_or_else(failed)?;
         let promise = fetch
             .call2(&JsValue::UNDEFINED, &url.into(), &init)
-            .map_err(|error| failed(url, &error))?;
+            .map_err(|_| failed())?;
         let response: Response = JsFuture::from(js_sys::Promise::from(promise))
             .await
-            .map_err(|error| failed(url, &error))?
+            .map_err(|_| failed())?
             .unchecked_into();
         if !response.ok() {
-            let status = JsValue::from(response.status());
-            return Err(failed(url, &status));
+            return Err(failed());
         }
         let size = response
             .headers()
@@ -179,27 +178,19 @@ impl Drop for StreamDownload {
     }
 }
 
-/// `download-failed`, with what failed in the console.
-fn failed(what: &str, cause: &JsValue) -> Error {
-    web_sys::console::warn_3(
-        &"sidevoice-engine: download failed:".into(),
-        &crate::log_safe::UrlPath(what).to_string().into(),
-        cause,
-    );
+/// `download-failed`, with a fixed sentence in the console: neither the URL nor the cause, which can quote it.
+fn failed() -> Error {
+    web_sys::console::warn_1(&"sidevoice-engine: download failed".into());
     Error::new("download-failed")
 }
 
 #[async_trait(?Send)]
 impl HttpClient for WebFetcher {
     /// Through the global `fetch`; the page's CORS rules apply, and the remote providers allow it.
-    /// Fails with `request-failed` when there is no answer, the cause in the console (never the headers).
+    /// Fails with `request-failed` when there is no answer, a fixed sentence in the console (never the URL, the cause or the headers).
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse> {
-        let failed = |cause: &JsValue| {
-            web_sys::console::warn_3(
-                &"sidevoice-engine: request failed:".into(),
-                &crate::log_safe::UrlPath(&request.url).to_string().into(),
-                cause,
-            );
+        let failed = || {
+            web_sys::console::warn_1(&"sidevoice-engine: request failed".into());
             Error::new("request-failed")
         };
         let headers = js_sys::Object::new();
@@ -216,18 +207,16 @@ impl HttpClient for WebFetcher {
         let fetch = Reflect::get(&js_sys::global(), &"fetch".into())
             .ok()
             .and_then(|fetch| fetch.dyn_into::<js_sys::Function>().ok())
-            .ok_or_else(|| failed(&"no fetch here".into()))?;
+            .ok_or_else(failed)?;
         let promise = fetch
             .call2(&JsValue::UNDEFINED, &request.url.as_str().into(), &init)
-            .map_err(|error| failed(&error))?;
+            .map_err(|_| failed())?;
         let response: Response = JsFuture::from(js_sys::Promise::from(promise))
             .await
-            .map_err(|error| failed(&error))?
+            .map_err(|_| failed())?
             .unchecked_into();
-        let buffer = response.array_buffer().map_err(|error| failed(&error))?;
-        let buffer = JsFuture::from(buffer)
-            .await
-            .map_err(|error| failed(&error))?;
+        let buffer = response.array_buffer().map_err(|_| failed())?;
+        let buffer = JsFuture::from(buffer).await.map_err(|_| failed())?;
         Ok(HttpResponse {
             status: response.status(),
             body: Uint8Array::new(&buffer).to_vec(),

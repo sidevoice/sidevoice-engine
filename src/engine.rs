@@ -247,8 +247,12 @@ impl Engine {
         let installed = self.install_build(model, build, progress, cancel).await;
         match &installed {
             Ok(()) => info!(duration_ms = elapsed_ms(started), "model installed"),
-            Err(error) if error.code == "cancelled" => info!("install cancelled"),
-            Err(error) => warn!(code = error.code, "install failed"),
+            Err(error) if error.code == "cancelled" => {
+                info!("model install cancelled, so the model is not available")
+            }
+            Err(error) => {
+                warn!(error.type = error.code, "model install failed, so the model is not available")
+            }
         }
         installed
     }
@@ -263,8 +267,8 @@ impl Engine {
     ) -> Result<()> {
         let (entry, build, _) = self.choose(model, build).await?;
         let span = Span::current();
-        span.record("model", entry.id.as_str());
-        span.record("build", build.id.as_str());
+        span.record("model", crate::log_safe::id(&entry.id));
+        span.record("build", crate::log_safe::id(&build.id));
         let (_, artifacts) = self.artifacts(build)?;
         let _files = self.files.read().await;
         self.installer
@@ -366,8 +370,8 @@ impl Engine {
     ) -> Result<LocalModel> {
         let (entry, build, accelerator) = self.choose(model, build).await?;
         let span = Span::current();
-        span.record("model", entry.id.as_str());
-        span.record("build", build.id.as_str());
+        span.record("model", crate::log_safe::id(&entry.id));
+        span.record("build", crate::log_safe::id(&build.id));
         if let Some(resident) = lock(&self.memory).model(&build.id) {
             return Ok(LocalModel::new(&entry.id, &build.id, resident));
         }
