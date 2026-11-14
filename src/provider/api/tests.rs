@@ -3,7 +3,7 @@
 
 use super::{pcm16, primary_subtag, text, wav, Form};
 use crate::host::HttpRequest;
-use crate::test_support::{block_on, remote_api};
+use crate::test_support::{block_on, logged, remote_api};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -182,4 +182,42 @@ fn a_provider_that_names_a_refusal_is_read_by_what_it_names_on_a_call_and_on_a_l
         let listed = block_on(api.list(request())).map_err(|e| e.code);
         assert_eq!((called, listed), (Err(call), Err(listing)), "{http} {said}");
     }
+}
+
+/// What a refused call leaves in the log: its span and event, and nothing of the key, the provider's words or the
+/// request's query (docs/logging.md, the canary rule).
+#[test]
+fn a_refused_call_logs_its_code_and_none_of_what_it_carried() {
+    let (api, provider) = remote_api("example");
+    provider.key("example", "canary-secret-7f3a");
+    provider.answer(
+        "https://api.example/",
+        401,
+        br#"{"error":{"message":"Incorrect API key provided: canary-secret-7f3a"}}"#,
+    );
+    let request = HttpRequest {
+        method: "GET",
+        url: "https://api.example/v1/x?key=canary-secret-7f3a".into(),
+        headers: vec![("Authorization".into(), "Bearer canary-secret-7f3a".into())],
+        body: Vec::new(),
+    };
+    let (error, log) = logged(|| {
+        let key = block_on(api.key()).expect("a key");
+        assert!(!format!("{key:?}").contains("canary"));
+        block_on(api.list(request)).expect_err("refused")
+    });
+    assert_eq!(error.code, "credential-rejected");
+    for expected in [
+        "provider_request",
+        "provider=\"example\"",
+        "http_status=401",
+        "provider refused",
+        "code=\"credential-rejected\"",
+    ] {
+        assert!(log.contains(expected), "{expected} in {log}");
+    }
+    for canary in ["canary-secret", "Incorrect API key", "key="] {
+        assert!(!log.contains(canary), "{canary} in {log}");
+    }
+    assert!(!format!("{error:?}").contains("canary"));
 }

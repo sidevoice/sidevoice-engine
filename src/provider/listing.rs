@@ -55,7 +55,7 @@ struct Listing {
 }
 
 /// A provider as it stands: how its listing went, its models with their voices, and the facts to make them with.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct Listed {
     /// Why it is not current, as a stable code; `None` when it is.
     pub(crate) status: Option<&'static str>,
@@ -65,6 +65,25 @@ pub(crate) struct Listed {
     pub(crate) stale: bool,
     pub(crate) models: Vec<RemoteModelInfo>,
     pub(crate) facts: Option<Arc<Facts>>,
+}
+
+impl std::fmt::Debug for Listed {
+    /// Without `detail`, the provider's own words: its length only.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Listed")
+            .field("status", &self.status)
+            .field(
+                "detail",
+                &self
+                    .detail
+                    .as_ref()
+                    .map(|detail| format!("<{} chars>", detail.chars().count())),
+            )
+            .field("stale", &self.stale)
+            .field("models", &self.models.len())
+            .field("facts", &self.facts.is_some())
+            .finish()
+    }
 }
 
 impl Listings {

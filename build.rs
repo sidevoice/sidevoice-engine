@@ -8,6 +8,9 @@
 //!
 //! And, when CI asks, on Windows, the manifest that makes UTF-8 the tests' ANSI code page.
 
+// A build script talks to Cargo through stdout.
+#![allow(clippy::disallowed_macros, reason = "the cargo: build-script protocol")]
+
 use std::path::Path;
 use std::{env, fs};
 

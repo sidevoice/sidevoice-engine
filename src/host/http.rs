@@ -4,8 +4,12 @@
 
 use async_trait::async_trait;
 
+use crate::log_safe::UrlPath;
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::Result;
+
+#[cfg(test)]
+mod tests;
 
 /// One HTTP request: its method, URL, headers and body.
 #[derive(Clone, PartialEq, Eq)]
@@ -26,7 +30,7 @@ impl std::fmt::Debug for HttpRequest {
         let headers: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
         f.debug_struct("HttpRequest")
             .field("method", &self.method)
-            .field("url", &self.url)
+            .field("url", &format_args!("{}", UrlPath(&self.url)))
             .field("headers", &headers)
             .field("body", &self.body.len())
             .finish()
@@ -35,12 +39,22 @@ impl std::fmt::Debug for HttpRequest {
 
 /// What the server answered: its status and its whole body. A status that is not a success is an answer, not an
 /// error: what it means is the caller's to say.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpResponse {
     /// The HTTP status: 200, 401, ...
     pub status: u16,
     /// The body, whole.
     pub body: Vec<u8>,
+}
+
+impl std::fmt::Debug for HttpResponse {
+    /// Without the body, which is a transcript, audio or a provider's message: its size only.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpResponse")
+            .field("status", &self.status)
+            .field("body", &format_args!("<{} bytes>", self.body.len()))
+            .finish()
+    }
 }
 
 /// Where API calls go out. Implemented with [`async_trait`](crate::async_trait), as [`Host`](crate::Host) shows.

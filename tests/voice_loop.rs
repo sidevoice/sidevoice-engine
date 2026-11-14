@@ -28,6 +28,7 @@
 //! host's storage), `clips/`, `speech/` (what each model said, as WAV files, to be listened to) and `summary.md` (the
 //! table, for the job's summary).
 
+#![allow(clippy::disallowed_macros, reason = "test output")]
 // NativeHost, and the models it runs, are native only.
 #![cfg(native)]
 

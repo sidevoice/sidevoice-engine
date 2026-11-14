@@ -4,6 +4,10 @@
 
 use std::sync::Arc;
 
+use secrecy::SecretString;
+use tracing::{debug, instrument, warn, Span};
+use web_time::Instant;
+
 use crate::host::{Host, HttpRequest};
 use crate::{Error, Result};
 
@@ -51,11 +55,12 @@ impl Api {
     }
 
     /// The provider's key, asked of the host for this call alone: `credential-missing` when it has none.
-    pub(crate) async fn key(&self) -> Result<String> {
+    pub(crate) async fn key(&self) -> Result<SecretString> {
         self.host
             .credentials()
             .credential(self.id)
             .await?
+            .map(SecretString::from)
             .ok_or(Error::new("credential-missing"))
     }
 
@@ -82,13 +87,35 @@ impl Api {
         }
     }
 
+    #[instrument(
+        name = "provider_request",
+        skip_all,
+        fields(provider = self.id, kind = kind.name(), http_status, duration_ms)
+    )]
     async fn send(&self, request: HttpRequest, kind: Kind) -> Result<Vec<u8>> {
-        let response = self.host.http().send(request).await?;
+        let started = Instant::now();
+        let sent = self.host.http().send(request).await;
+        let span = Span::current();
+        span.record("duration_ms", started.elapsed().as_millis() as u64);
+        let response = sent.inspect_err(|error| {
+            // The code `Api::list` gives a listing that got no answer.
+            let code = match kind {
+                Listing if error.code == "request-failed" => "provider-unreachable",
+                _ => error.code,
+            };
+            warn!(code, "provider unreachable");
+        })?;
+        span.record("http_status", response.status);
         match response.status {
-            200..=299 => Ok(response.body),
+            200..=299 => {
+                debug!(result = "ok", "provider answered");
+                Ok(response.body)
+            }
             status => {
                 let said = said(&response.body);
-                Err(failed(self.id, status, &response.body, said.as_ref(), kind))
+                let error = failed(status, &response.body, said.as_ref(), kind);
+                warn!(code = error.code, "provider refused");
+                Err(error)
             }
         }
     }
@@ -99,6 +126,15 @@ impl Api {
 enum Kind {
     Call(&'static str),
     Listing,
+}
+
+impl Kind {
+    fn name(self) -> &'static str {
+        match self {
+            Call(_) => "call",
+            Listing => "listing",
+        }
+    }
 }
 
 /// What a provider says when it refuses: its own status or code, and its message. ElevenLabs answers
@@ -171,19 +207,13 @@ fn said(body: &[u8]) -> Option<Said> {
 }
 
 /// The code for an answer of `status` to a request of `kind`, carrying what the provider said (its own code and
-/// message, or the start of a body that is not its JSON error), also in the console on the web.
-fn failed(provider: &str, status: u16, body: &[u8], said: Option<&Said>, kind: Kind) -> Error {
+/// message, or the start of a body that is not its JSON error); the console on the web gets the status alone.
+fn failed(status: u16, body: &[u8], said: Option<&Said>, kind: Kind) -> Error {
     #[cfg(web)]
-    web_sys::console::warn_4(
+    web_sys::console::warn_2(
         &"sidevoice-engine: the provider answered".into(),
-        &provider.into(),
         &status.into(),
-        &String::from_utf8_lossy(&body[..body.len().min(500)])
-            .as_ref()
-            .into(),
     );
-    #[cfg(not(web))]
-    let _ = provider;
     let detail = match said {
         Some(said) => Some(said.text()),
         None => {

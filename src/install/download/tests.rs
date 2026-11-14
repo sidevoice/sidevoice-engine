@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use super::download;
 use crate::install::{Cancel, Progress};
-use crate::test_support::{block_on, sha256, MemoryHost};
+use crate::test_support::{block_on, logged, sha256, MemoryHost};
 use crate::Result;
 
 #[cfg(web)]
@@ -163,4 +163,40 @@ fn a_cancelled_download_leaves_nothing_kept_for_the_next_one() {
     assert_eq!(result.expect_err("cancelled").code, "cancelled");
     assert_eq!(host.partial(&sha256(MODEL)), None);
     assert!(host.stored().is_empty());
+}
+
+/// A download's log line names the file by scheme, host and path: the URL's userinfo and query (a signed link's
+/// token) never reach it (docs/logging.md, the canary rule).
+#[test]
+fn a_download_logs_its_url_without_userinfo_or_query() {
+    let url = "https://u:canary-pass@models/model.onnx?canary-q=1#canary-f";
+    let host = MemoryHost::serving(&[(url, MODEL)]);
+    let progress = |_: Progress| {};
+    let start = Progress {
+        files: 1,
+        done: 0,
+        received: 0,
+        size: None,
+    };
+    let (result, log) = logged(|| {
+        block_on(download(
+            url,
+            &sha256(b"something else"),
+            &host,
+            &progress,
+            &Cancel::new(),
+            start,
+        ))
+    });
+    assert_eq!(result.expect_err("mismatch").code, "digest-mismatch");
+    for expected in [
+        "download",
+        "url=https://models/model.onnx",
+        "download started",
+    ] {
+        assert!(log.contains(expected), "{expected} in {log}");
+    }
+    for canary in ["canary-pass", "canary-q", "canary-f"] {
+        assert!(!log.contains(canary), "{canary} in {log}");
+    }
 }
