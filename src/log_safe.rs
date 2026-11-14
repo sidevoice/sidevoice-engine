@@ -74,15 +74,19 @@ const KNOWN_HOSTS: [&str; 4] = [
     "githubusercontent.com",
 ];
 
-/// A DNS name as is when it is one of our known hosts (a dotted name can still be a tailnet or a user's own domain).
-/// Else `loopback` or `private` for a local name, `public` for any other.
+/// A DNS name as is when it is one of our known hosts (a dotted name can still be a tailnet or a user's own domain),
+/// and only if it holds nothing but `[a-z0-9.-]`; else `public`. Otherwise `loopback` or `private` for a local name,
+/// `public` for any other.
 fn domain_address(name: &str) -> String {
     let name = name.trim_end_matches('.').to_ascii_lowercase();
     if KNOWN_HOSTS
         .iter()
         .any(|known| name == *known || name.ends_with(&format!(".{known}")))
     {
-        return name;
+        let plain = name
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'.' | b'-'));
+        return if plain { name } else { "public".to_owned() };
     }
     if name == "localhost" || name.ends_with(".localhost") {
         return "loopback".to_owned();

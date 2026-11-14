@@ -31,6 +31,17 @@ fn only_a_known_host_is_shown_as_a_host() {
 }
 
 #[test]
+fn a_known_host_with_a_character_outside_the_hostname_grammar_is_public() {
+    use super::Origin;
+    for url in [
+        "https://evil_name.huggingface.co/a",
+        "https://huggingface%2Eco%5Fx.co/a",
+    ] {
+        assert_eq!(Origin::of(url).address, "public", "{url}");
+    }
+}
+
+#[test]
 fn an_id_outside_the_grammar_is_invalid() {
     use super::id;
     assert_eq!(
