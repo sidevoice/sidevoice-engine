@@ -1020,14 +1020,22 @@ pub(crate) fn openai_spec() -> serde_json::Value {
 }
 
 /// What `run` logs on this thread, at every level, one line per event, without timestamps: the capture the canary
-/// tests read (docs/logging.md, section 10).
+/// tests read (docs/logging.md, section 10). One global subscriber for the whole test binary, writing to a buffer per
+/// thread: a scoped subscriber per test races with the other tests' threads over tracing's callsite cache, and a callsite
+/// that met no subscriber first is never enabled again.
 pub(crate) fn logged<R>(run: impl FnOnce() -> R) -> (R, String) {
+    use std::cell::RefCell;
     use std::io::Write;
+    use std::sync::Once;
 
-    struct Capture(Arc<Mutex<Vec<u8>>>);
+    thread_local! {
+        static LOG: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    }
+
+    struct Capture;
     impl Write for Capture {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            lock(&self.0).extend_from_slice(bytes);
+            LOG.with(|log| log.borrow_mut().extend_from_slice(bytes));
             Ok(bytes.len())
         }
         fn flush(&mut self) -> std::io::Result<()> {
@@ -1035,19 +1043,19 @@ pub(crate) fn logged<R>(run: impl FnOnce() -> R) -> (R, String) {
         }
     }
 
-    let captured = Arc::new(Mutex::new(Vec::new()));
-    let writer = Arc::clone(&captured);
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .with_ansi(false)
-        .without_time()
-        .with_writer(move || Capture(Arc::clone(&writer)))
-        .finish();
-    let result = tracing::subscriber::with_default(subscriber, || {
-        // Another test's thread may have met these callsites with no subscriber, and tracing caches that.
-        tracing::callsite::rebuild_interest_cache();
-        run()
+    static INSTALLED: Once = Once::new();
+    INSTALLED.call_once(|| {
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .without_time()
+            .with_writer(|| Capture)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber).expect("no other global subscriber");
     });
-    let log = String::from_utf8(lock(&captured).clone()).expect("text");
+    LOG.with(|log| log.borrow_mut().clear());
+    let result = run();
+    let log =
+        LOG.with(|log| String::from_utf8(std::mem::take(&mut *log.borrow_mut())).expect("text"));
     (result, log)
 }
