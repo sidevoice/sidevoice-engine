@@ -185,7 +185,7 @@ fn a_provider_that_names_a_refusal_is_read_by_what_it_names_on_a_call_and_on_a_l
 }
 
 /// What a refused call leaves in the log: its span and event, and nothing of the key, the provider's words or the
-/// request's query (docs/logging.md, the canary rule).
+/// request's query (the Sidevoice logging guideline, sidevoice/.github-private docs/logging.md).
 #[test]
 fn a_refused_call_logs_its_error_type_and_none_of_what_it_carried() {
     let (api, provider) = remote_api("example");

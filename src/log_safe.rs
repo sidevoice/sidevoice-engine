@@ -1,4 +1,4 @@
-//! What a log line may show of a value (docs/logging.md in sidevoice/.github-private, section 8). Small typed wrappers,
+//! What a log line may show of a value (the Sidevoice logging guideline, sidevoice/.github-private docs/logging.md, section 8). Small typed wrappers,
 //! so the rule is in the type and not at the call site.
 
 use std::fmt;
@@ -7,37 +7,17 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 #[cfg(test)]
 mod tests;
 
-/// A URL from our code or the catalogue, as a log field (`%UrlPath(url)`): scheme, host, port and path, never the
-/// userinfo, the query or the fragment. A string that does not parse, or has no host, prints `<unparsable url>`.
-pub(crate) struct UrlPath<'a>(pub(crate) &'a str);
-
-impl fmt::Display for UrlPath<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match url::Url::parse(self.0) {
-            Ok(url) if url.host_str().is_some() => {
-                write!(
-                    f,
-                    "{}://{}",
-                    url.scheme(),
-                    url.host_str().unwrap_or_default()
-                )?;
-                if let Some(port) = url.port() {
-                    write!(f, ":{port}")?;
-                }
-                f.write_str(url.path())
-            }
-            _ => f.write_str("<unparsable url>"),
-        }
-    }
-}
-
-/// An id that came from a catalogue entry, which can be a third party's: as is if it matches `[a-z0-9_.-]{1,64}`,
-/// else `invalid`. A hostile id could forge lines or inject instructions into an agent reading the log.
+/// An id that came from a catalogue entry, which can be a third party's: as is if every `/`-separated segment (a build
+/// id is `model/build`) matches `[a-z0-9_.-]{1,64}` and the whole is at most 128 bytes, else `invalid`. A hostile id
+/// could forge lines or inject instructions into an agent reading the log.
 pub(crate) fn id(value: &str) -> &str {
-    let fits = (1..=64).contains(&value.len())
-        && value
-            .bytes()
-            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'-'));
+    let fits = value.len() <= 128
+        && value.split('/').all(|segment| {
+            (1..=64).contains(&segment.len())
+                && segment
+                    .bytes()
+                    .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'-'))
+        });
     if fits {
         value
     } else {
@@ -46,12 +26,12 @@ pub(crate) fn id(value: &str) -> &str {
 }
 
 /// Where a URL that can be the user's own points, as log fields: scheme, host and port, never the path (it can be
-/// the secret), userinfo, query or fragment. The host is shown only when it is a public DNS name; an IP address or a
-/// local name shows its class (`loopback`, `private`, `public`) instead (docs/logging.md, 7.1).
+/// the secret), userinfo, query or fragment. The host is shown only when it is one of our known hosts; any other name, an IP address or a
+/// local name shows its class (`loopback`, `private`, `public`) instead (the Sidevoice logging guideline, 7.1).
 pub(crate) struct Origin {
     /// `url.scheme`, or `<unparsable url>`.
     pub(crate) scheme: String,
-    /// `server.address`: a public DNS name or a host class, or `<unparsable url>`.
+    /// `server.address`: one of our known hosts or a host class, or `<unparsable url>`.
     pub(crate) address: String,
     /// `server.port`, when the URL names one.
     pub(crate) port: Option<u16>,
@@ -86,9 +66,24 @@ impl Origin {
     }
 }
 
-/// A DNS name as is when it is public: more than one label and no local suffix. Else its class.
+/// The hosts our catalogue and its redirects use: a name equal to one of these, or under it, is shown as is.
+const KNOWN_HOSTS: [&str; 4] = [
+    "huggingface.co",
+    "hf.co",
+    "github.com",
+    "githubusercontent.com",
+];
+
+/// A DNS name as is when it is one of our known hosts (a dotted name can still be a tailnet or a user's own domain).
+/// Else `loopback` or `private` for a local name, `public` for any other.
 fn domain_address(name: &str) -> String {
     let name = name.trim_end_matches('.').to_ascii_lowercase();
+    if KNOWN_HOSTS
+        .iter()
+        .any(|known| name == *known || name.ends_with(&format!(".{known}")))
+    {
+        return name;
+    }
     if name == "localhost" || name.ends_with(".localhost") {
         return "loopback".to_owned();
     }
@@ -96,13 +91,8 @@ fn domain_address(name: &str) -> String {
         "local", "lan", "home", "internal", "intranet", "corp", "private", "arpa",
     ];
     let last = name.rsplit('.').next().unwrap_or_default();
-    let public = name.contains('.')
-        && !local.contains(&last)
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.');
-    if public {
-        name
+    if name.contains('.') && !local.contains(&last) {
+        "public".to_owned()
     } else {
         "private".to_owned()
     }
@@ -138,5 +128,19 @@ fn v6_class(ip: Ipv6Addr) -> &'static str {
         "private"
     } else {
         "public"
+    }
+}
+
+impl fmt::Display for Origin {
+    /// `scheme://address[:port]`, nothing of the path.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.port.is_none() && self.scheme == "<unparsable url>" {
+            return f.write_str(&self.scheme);
+        }
+        write!(f, "{}://{}", self.scheme, self.address)?;
+        if let Some(port) = self.port {
+            write!(f, ":{port}")?;
+        }
+        Ok(())
     }
 }

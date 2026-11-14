@@ -166,16 +166,16 @@ fn a_cancelled_download_leaves_nothing_kept_for_the_next_one() {
 }
 
 /// A download's log line names the file by scheme, host and port, never its path: the URL's userinfo and query (a
-/// signed link's token) never reach it either (docs/logging.md, the canary rule).
+/// signed link's token) never reach it either (the Sidevoice logging guideline, sidevoice/.github-private docs/logging.md).
 #[test]
 fn a_download_logs_its_url_without_userinfo_or_query() {
-    let url = "https://u:canary-pass@models.example.com:8443/model.onnx?canary-q=1#canary-f";
+    let url = "https://u:canary-pass@huggingface.co:8443/model.onnx?canary-q=1#canary-f";
     let (result, log) = logged_download(url);
     assert_eq!(result.expect_err("mismatch").code, "digest-mismatch");
     for expected in [
         "download",
         "url.scheme=\"https\"",
-        "server.address=\"models.example.com\"",
+        "server.address=\"huggingface.co\"",
         "server.port=8443",
         "download started",
     ] {
