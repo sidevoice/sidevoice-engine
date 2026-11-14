@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.13.0...v0.14.0) (2026-11-14)
+
+
+### Features
+
+* **logging:** adopt tracing per the shared guideline ([#171](https://github.com/sidevoice/sidevoice-engine/issues/171)) ([de5da96](https://github.com/sidevoice/sidevoice-engine/commit/de5da968583ab7d270e1d3ace3b5e2c9feeae936))
+
 ## [0.13.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.12.0...v0.13.0) (2026-11-11)
 
 
