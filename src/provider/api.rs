@@ -103,7 +103,7 @@ impl Api {
                 Listing if error.code == "request-failed" => "provider-unreachable",
                 _ => error.code,
             };
-            warn!(error.type = code, "provider did not answer, so the call fails");
+            warn!(error.type = code, "the request to the provider failed, so the call fails");
         })?;
         span.record("http.response.status_code", response.status);
         match response.status {

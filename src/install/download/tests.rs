@@ -165,11 +165,45 @@ fn a_cancelled_download_leaves_nothing_kept_for_the_next_one() {
     assert!(host.stored().is_empty());
 }
 
-/// A download's log line names the file by scheme, host and path: the URL's userinfo and query (a signed link's
-/// token) never reach it (docs/logging.md, the canary rule).
+/// A download's log line names the file by scheme, host and port, never its path: the URL's userinfo and query (a
+/// signed link's token) never reach it either (docs/logging.md, the canary rule).
 #[test]
 fn a_download_logs_its_url_without_userinfo_or_query() {
-    let url = "https://u:canary-pass@models/model.onnx?canary-q=1#canary-f";
+    let url = "https://u:canary-pass@models.example.com:8443/model.onnx?canary-q=1#canary-f";
+    let (result, log) = logged_download(url);
+    assert_eq!(result.expect_err("mismatch").code, "digest-mismatch");
+    for expected in [
+        "download",
+        "url.scheme=\"https\"",
+        "server.address=\"models.example.com\"",
+        "server.port=8443",
+        "download started",
+    ] {
+        assert!(log.contains(expected), "{expected} in {log}");
+    }
+    for canary in ["canary-pass", "canary-q", "canary-f", "model.onnx"] {
+        assert!(!log.contains(canary), "{canary} in {log}");
+    }
+}
+
+/// A model URL of the user's own (a LAN server, a private path) shows its host class, never the address or the path.
+#[test]
+fn a_download_from_a_lan_address_logs_only_its_class() {
+    let url = "http://192.168.7.23:9000/alice-private/secret-ft/model.onnx";
+    let (_, log) = logged_download(url);
+    for expected in [
+        "url.scheme=\"http\"",
+        "server.address=\"private\"",
+        "server.port=9000",
+    ] {
+        assert!(log.contains(expected), "{expected} in {log}");
+    }
+    for canary in ["192.168", "alice-private", "secret-ft"] {
+        assert!(!log.contains(canary), "{canary} in {log}");
+    }
+}
+
+fn logged_download(url: &str) -> (Result<()>, String) {
     let host = MemoryHost::serving(&[(url, MODEL)]);
     let progress = |_: Progress| {};
     let start = Progress {
@@ -178,7 +212,7 @@ fn a_download_logs_its_url_without_userinfo_or_query() {
         received: 0,
         size: None,
     };
-    let (result, log) = logged(|| {
+    logged(|| {
         block_on(download(
             url,
             &sha256(b"something else"),
@@ -187,18 +221,5 @@ fn a_download_logs_its_url_without_userinfo_or_query() {
             &Cancel::new(),
             start,
         ))
-    });
-    assert_eq!(result.expect_err("mismatch").code, "digest-mismatch");
-    for expected in [
-        "download",
-        "url.scheme=\"https\"",
-        "server.address=\"models\"",
-        "url.path=\"/model.onnx\"",
-        "download started",
-    ] {
-        assert!(log.contains(expected), "{expected} in {log}");
-    }
-    for canary in ["canary-pass", "canary-q", "canary-f"] {
-        assert!(!log.contains(canary), "{canary} in {log}");
-    }
+    })
 }
