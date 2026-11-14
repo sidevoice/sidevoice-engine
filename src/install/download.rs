@@ -18,7 +18,11 @@ mod tests;
 
 /// Downloads `url` into storage as `sha256`, which its bytes must hash to (`digest-mismatch` otherwise). `report` is
 /// the progress so far, before this file; `progress` hears of each part, and `cancel` is checked between parts.
-#[instrument(skip_all, fields(url = %UrlPath(url)))]
+#[instrument(skip_all, fields(
+    url.scheme = UrlPath(url).scheme(),
+    server.address = UrlPath(url).address(),
+    url.path = UrlPath(url).path(),
+))]
 pub(super) async fn download(
     url: &str,
     sha256: &str,

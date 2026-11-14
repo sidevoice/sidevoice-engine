@@ -191,7 +191,9 @@ fn a_download_logs_its_url_without_userinfo_or_query() {
     assert_eq!(result.expect_err("mismatch").code, "digest-mismatch");
     for expected in [
         "download",
-        "url=https://models/model.onnx",
+        "url.scheme=\"https\"",
+        "server.address=\"models\"",
+        "url.path=\"/model.onnx\"",
         "download started",
     ] {
         assert!(log.contains(expected), "{expected} in {log}");

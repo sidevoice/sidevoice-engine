@@ -10,6 +10,33 @@ mod tests;
 /// userinfo, the query or the fragment. A string that does not parse, or has no host, prints `<unparsable url>`.
 pub(crate) struct UrlPath<'a>(pub(crate) &'a str);
 
+impl UrlPath<'_> {
+    /// The scheme (`url.scheme`), or `<unparsable url>`.
+    pub(crate) fn scheme(&self) -> String {
+        self.part(|url| url.scheme().to_owned())
+    }
+
+    /// The host and port (`server.address`), or `<unparsable url>`.
+    pub(crate) fn address(&self) -> String {
+        self.part(|url| match url.port() {
+            Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
+            None => url.host_str().unwrap_or_default().to_owned(),
+        })
+    }
+
+    /// The path (`url.path`), or `<unparsable url>`.
+    pub(crate) fn path(&self) -> String {
+        self.part(|url| url.path().to_owned())
+    }
+
+    fn part(&self, of: impl FnOnce(&url::Url) -> String) -> String {
+        match url::Url::parse(self.0) {
+            Ok(url) if url.host_str().is_some() => of(&url),
+            _ => "<unparsable url>".to_owned(),
+        }
+    }
+}
+
 impl fmt::Display for UrlPath<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match url::Url::parse(self.0) {

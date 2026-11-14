@@ -247,8 +247,12 @@ impl Engine {
         let installed = self.install_build(model, build, progress, cancel).await;
         match &installed {
             Ok(()) => info!(duration_ms = elapsed_ms(started), "model installed"),
-            Err(error) if error.code == "cancelled" => info!("install cancelled"),
-            Err(error) => warn!(code = error.code, "install failed"),
+            Err(error) if error.code == "cancelled" => {
+                info!("model install cancelled, so the model is not available")
+            }
+            Err(error) => {
+                warn!(error.type = error.code, "model install failed, so the model is not available")
+            }
         }
         installed
     }
