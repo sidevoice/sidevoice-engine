@@ -3,7 +3,7 @@
 
 use super::{pcm16, primary_subtag, text, wav, Form};
 use crate::host::HttpRequest;
-use crate::test_support::{block_on, remote_api};
+use crate::test_support::{block_on, logged, remote_api};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -188,28 +188,6 @@ fn a_provider_that_names_a_refusal_is_read_by_what_it_names_on_a_call_and_on_a_l
 /// request's query (docs/logging.md, the canary rule).
 #[test]
 fn a_refused_call_logs_its_code_and_none_of_what_it_carried() {
-    use std::io::Write;
-    use std::sync::{Arc, Mutex};
-
-    struct Capture(Arc<Mutex<Vec<u8>>>);
-    impl Write for Capture {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    let captured = Arc::new(Mutex::new(Vec::new()));
-    let writer = Arc::clone(&captured);
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .with_ansi(false)
-        .without_time()
-        .with_writer(move || Capture(Arc::clone(&writer)))
-        .finish();
     let (api, provider) = remote_api("example");
     provider.key("example", "canary-secret-7f3a");
     provider.answer(
@@ -223,12 +201,11 @@ fn a_refused_call_logs_its_code_and_none_of_what_it_carried() {
         headers: vec![("Authorization".into(), "Bearer canary-secret-7f3a".into())],
         body: Vec::new(),
     };
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let (error, log) = logged(|| {
         let key = block_on(api.key()).expect("a key");
         assert!(!format!("{key:?}").contains("canary"));
         block_on(api.list(request)).expect_err("refused")
     });
-    let log = String::from_utf8(captured.lock().unwrap().clone()).expect("text");
     assert_eq!(error.code, "credential-rejected");
     for expected in [
         "provider_request",

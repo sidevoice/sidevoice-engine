@@ -1018,3 +1018,32 @@ pub(crate) fn openai_spec() -> serde_json::Value {
         "VoiceIdsShared": { "anyOf": [{ "type": "string" }, { "type": "string", "enum": ["alloy", "ash"] }] },
     }}})
 }
+
+/// What `run` logs on this thread, at every level, one line per event, without timestamps: the capture the canary
+/// tests read (docs/logging.md, section 10).
+pub(crate) fn logged<R>(run: impl FnOnce() -> R) -> (R, String) {
+    use std::io::Write;
+
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            lock(&self.0).extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let writer = Arc::clone(&captured);
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .without_time()
+        .with_writer(move || Capture(Arc::clone(&writer)))
+        .finish();
+    let result = tracing::subscriber::with_default(subscriber, run);
+    let log = String::from_utf8(lock(&captured).clone()).expect("text");
+    (result, log)
+}

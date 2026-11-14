@@ -25,6 +25,7 @@
 //!
 //! Its table goes to `$SIDEVOICE_REMOTE_LIVE` (`summary.md`) when that is set. No key is ever printed.
 
+#![allow(clippy::disallowed_macros, reason = "test output")]
 // NativeHost is native only.
 #![cfg(native)]
 

@@ -1,5 +1,8 @@
 use super::{HttpRequest, HttpResponse};
 
+#[cfg(web)]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 #[test]
 fn a_request_shows_no_query_header_value_or_body() {
     let request = HttpRequest {

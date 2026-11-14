@@ -243,7 +243,10 @@ impl Engine {
         progress: &dyn ProgressSink,
         cancel: &Cancel,
     ) -> Result<()> {
-        let (entry, build, _) = self.choose(model, build).await?;
+        let (entry, build, _) = self
+            .choose(model, build)
+            .await
+            .inspect_err(|error| warn!(code = error.code, "install failed"))?;
         let span = Span::current();
         span.record("model", entry.id.as_str());
         span.record("build", build.id.as_str());
@@ -385,7 +388,8 @@ impl Engine {
         };
         let (model, used) = self
             .load_on(backend, &*library, build, accelerator, &files, cancel)
-            .await?;
+            .await
+            .inspect_err(|error| warn!(code = error.code, "model load failed"))?;
         span.record("accelerator", tracing::field::debug(used.actual));
         span.record("duration_ms", started.elapsed().as_millis() as u64);
         info!("model loaded");

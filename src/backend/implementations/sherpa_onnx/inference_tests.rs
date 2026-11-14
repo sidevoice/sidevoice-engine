@@ -18,6 +18,8 @@
 //! the clips are kept there too. The catalogue builds are installed in a directory of their own, one at a time. They
 //! run on the CPU, the one accelerator the linked libraries have.
 
+#![allow(clippy::disallowed_macros, reason = "test output")]
+
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};

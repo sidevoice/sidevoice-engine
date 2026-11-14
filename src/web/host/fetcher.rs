@@ -183,7 +183,7 @@ impl Drop for StreamDownload {
 fn failed(what: &str, cause: &JsValue) -> Error {
     web_sys::console::warn_3(
         &"sidevoice-engine: download failed:".into(),
-        &what.into(),
+        &crate::log_safe::UrlPath(what).to_string().into(),
         cause,
     );
     Error::new("download-failed")

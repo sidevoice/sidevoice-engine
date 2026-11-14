@@ -71,7 +71,7 @@ pub trait Catalog: MaybeSend + MaybeSync {
 }
 
 /// How a catalogue stands.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CatalogStatus {
     /// Why it is not current, as a stable code the app translates; `None` when it is. The local catalogue always is. A
     /// provider without a usable key (`credential-missing`, `credential-rejected`, `listing-not-permitted`: a key the
@@ -85,6 +85,23 @@ pub struct CatalogStatus {
     /// What the provider said when it last refused (its own status, and its message): for a developer to read, never
     /// UI and never parsed.
     pub detail: Option<String>,
+}
+
+impl std::fmt::Debug for CatalogStatus {
+    /// Without `detail`, the provider's own words: its length only.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CatalogStatus")
+            .field("reason", &self.reason)
+            .field("stale", &self.stale)
+            .field(
+                "detail",
+                &self
+                    .detail
+                    .as_ref()
+                    .map(|detail| format!("<{} chars>", detail.chars().count())),
+            )
+            .finish()
+    }
 }
 
 impl CatalogStatus {

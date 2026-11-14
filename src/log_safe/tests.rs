@@ -1,5 +1,8 @@
 use super::UrlPath;
 
+#[cfg(web)]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 #[test]
 fn a_url_shows_no_userinfo_query_or_fragment() {
     let shown = UrlPath("https://u:canary-pass@x.test:8443/a/b?canary-q=1#canary-f").to_string();
