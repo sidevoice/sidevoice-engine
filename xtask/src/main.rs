@@ -34,6 +34,9 @@
 //! - `web-e2e [DIR]`: the voice loop for real in a headless Chrome, through the npm package: Whisper transcribes the
 //!   recorded clips, and hears Kokoro and Supertonic back (xtask/src/web_e2e.rs, plan in xtask/web-e2e.json).
 
+// A command-line tool: what it prints is its output, not logging.
+#![allow(clippy::disallowed_macros, reason = "the tool's own output")]
+
 mod android;
 mod catalog;
 mod consumer_check;

@@ -183,3 +183,64 @@ fn a_provider_that_names_a_refusal_is_read_by_what_it_names_on_a_call_and_on_a_l
         assert_eq!((called, listed), (Err(call), Err(listing)), "{http} {said}");
     }
 }
+
+/// What a refused call leaves in the log: its span and event, and nothing of the key, the provider's words or the
+/// request's query (docs/logging.md, the canary rule).
+#[test]
+fn a_refused_call_logs_its_code_and_none_of_what_it_carried() {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let writer = Arc::clone(&captured);
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .without_time()
+        .with_writer(move || Capture(Arc::clone(&writer)))
+        .finish();
+    let (api, provider) = remote_api("example");
+    provider.key("example", "canary-secret-7f3a");
+    provider.answer(
+        "https://api.example/",
+        401,
+        br#"{"error":{"message":"Incorrect API key provided: canary-secret-7f3a"}}"#,
+    );
+    let request = HttpRequest {
+        method: "GET",
+        url: "https://api.example/v1/x?key=canary-secret-7f3a".into(),
+        headers: vec![("Authorization".into(), "Bearer canary-secret-7f3a".into())],
+        body: Vec::new(),
+    };
+    let error = tracing::subscriber::with_default(subscriber, || {
+        let key = block_on(api.key()).expect("a key");
+        assert!(!format!("{key:?}").contains("canary"));
+        block_on(api.list(request)).expect_err("refused")
+    });
+    let log = String::from_utf8(captured.lock().unwrap().clone()).expect("text");
+    assert_eq!(error.code, "credential-rejected");
+    for expected in [
+        "provider_request",
+        "provider=\"example\"",
+        "http_status=401",
+        "provider refused",
+        "code=\"credential-rejected\"",
+    ] {
+        assert!(log.contains(expected), "{expected} in {log}");
+    }
+    for canary in ["canary-secret", "Incorrect API key", "key="] {
+        assert!(!log.contains(canary), "{canary} in {log}");
+    }
+    assert!(!format!("{error:?}").contains("canary"));
+}

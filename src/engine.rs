@@ -12,6 +12,9 @@
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use tracing::{info, instrument, warn, Span};
+use web_time::Instant;
+
 use crate::backend::{self, Backend, BackendInfo, BackendModel, Library};
 use crate::capability::Resident;
 use crate::catalog::{
@@ -232,6 +235,7 @@ impl Engine {
     /// `model-not-found`, `build-not-found` (not a build of that model), `no-build-available` (none runs here), the
     /// reason a build asked for does not run here (`backend-not-in-this-build`, `memory`, ...), `cancelled`, and what
     /// installing fails with (`digest-mismatch`, `download-failed`, ...). It waits for an uninstall in progress.
+    #[instrument(name = "model_install", skip_all, fields(model, build))]
     pub async fn install(
         &self,
         model: &str,
@@ -239,13 +243,25 @@ impl Engine {
         progress: &dyn ProgressSink,
         cancel: &Cancel,
     ) -> Result<()> {
-        let (_, build, _) = self.choose(model, build).await?;
+        let (entry, build, _) = self.choose(model, build).await?;
+        let span = Span::current();
+        span.record("model", entry.id.as_str());
+        span.record("build", build.id.as_str());
         let (_, artifacts) = self.artifacts(build)?;
         let _files = self.files.read().await;
-        self.installer
+        let started = Instant::now();
+        let installed = self
+            .installer
             .install(&build.id, &artifacts, &*self.host, progress, cancel)
             .await
-            .map(drop)
+            .map(drop);
+        let duration_ms = started.elapsed().as_millis() as u64;
+        match &installed {
+            Ok(()) => info!(duration_ms, "model installed"),
+            Err(error) if error.code == "cancelled" => info!("install cancelled"),
+            Err(error) => warn!(code = error.code, "install failed"),
+        }
+        installed
     }
 
     /// Removes `build` of the model `model` from storage, or, with `None`, every build of it: each build's folder, then
@@ -327,6 +343,11 @@ impl Engine {
     }
 
     /// [`Engine::load`], but for noting when the model was loaded.
+    #[instrument(
+        name = "model_load",
+        skip_all,
+        fields(model, build, backend, accelerator, duration_ms)
+    )]
     async fn load_build(
         &self,
         model: &str,
@@ -335,6 +356,9 @@ impl Engine {
         cancel: &Cancel,
     ) -> Result<LocalModel> {
         let (entry, build, accelerator) = self.choose(model, build).await?;
+        let span = Span::current();
+        span.record("model", entry.id.as_str());
+        span.record("build", build.id.as_str());
         if let Some(resident) = lock(&self.memory).model(&build.id) {
             return Ok(LocalModel::new(&entry.id, &build.id, resident));
         }
@@ -351,7 +375,9 @@ impl Engine {
         if let Some(resident) = lock(&self.memory).model(&build.id) {
             return Ok(LocalModel::new(&entry.id, &build.id, resident));
         }
+        let started = Instant::now();
         let id = backend.spec().id;
+        span.record("backend", id);
         let open = lock(&self.memory).library(id);
         let library = match open {
             Some(library) => library,
@@ -360,6 +386,9 @@ impl Engine {
         let (model, used) = self
             .load_on(backend, &*library, build, accelerator, &files, cancel)
             .await?;
+        span.record("accelerator", tracing::field::debug(used.actual));
+        span.record("duration_ms", started.elapsed().as_millis() as u64);
+        info!("model loaded");
         let languages = entry.languages.clone();
         let resident = Resident::new(
             model,

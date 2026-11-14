@@ -28,6 +28,7 @@
 //! Streaming is not used (sidevoice-engine#35).
 
 use async_trait::async_trait;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{json, Value};
 
 use super::api::{self, Form};
@@ -61,11 +62,12 @@ const SPEC: ProviderSpec = ProviderSpec {
 inventory::submit! { ProviderFactory(|| Box::new(ElevenLabs)) }
 
 /// A request with the key.
-fn request(method: &'static str, url: String, key: String) -> HttpRequest {
+#[allow(clippy::disallowed_methods, reason = "the key is sent")]
+fn request(method: &'static str, url: String, key: &SecretString) -> HttpRequest {
     HttpRequest {
         method,
         url,
-        headers: vec![("xi-api-key".into(), key)],
+        headers: vec![("xi-api-key".into(), key.expose_secret().to_owned())],
         body: Vec::new(),
     }
 }
@@ -166,7 +168,7 @@ impl Adapter for ElevenLabs {
     async fn models(&self, api: &Api, facts: &Facts) -> Result<Vec<RemoteModelInfo>> {
         let key = api.key().await?;
         let answer = api
-            .list(request("GET", format!("{API}/models"), key))
+            .list(request("GET", format!("{API}/models"), &key))
             .await?;
         let listed = api::listed(&answer)?;
         let listed = array(&listed, None)?;
@@ -200,7 +202,7 @@ impl Adapter for ElevenLabs {
     async fn voices(&self, api: &Api, _facts: &Facts) -> Result<Vec<Voice>> {
         let key = api.key().await?;
         let answer = api
-            .list(request("GET", format!("{API}/voices"), key))
+            .list(request("GET", format!("{API}/voices"), &key))
             .await?;
         let listed = api::listed(&answer)?;
         Ok(array(&listed, Some("voices"))?
@@ -297,7 +299,7 @@ impl SttModel for Scribe {
             form = form.text(field, &api::primary_subtag(language));
         }
         let (content_type, body) = form.finish();
-        let mut request = request("POST", format!("{API}/speech-to-text"), key);
+        let mut request = request("POST", format!("{API}/speech-to-text"), &key);
         request.headers.push(("Content-Type".into(), content_type));
         request.body = body;
         let answer = self.api.call(request, "transcription-failed").await?;
@@ -359,7 +361,7 @@ impl TtsModel for Speaker {
             "{API}/text-to-speech/{}?output_format={SPEECH_FORMAT}",
             voice.id
         );
-        let mut request = request("POST", url, key);
+        let mut request = request("POST", url, &key);
         request
             .headers
             .push(("Content-Type".into(), "application/json".into()));

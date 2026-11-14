@@ -315,10 +315,7 @@ fn linked<L: Links>(path: &Path) -> bool {
         }
     };
     inspect().unwrap_or_else(|error| {
-        eprintln!(
-            "Keeping blob at {}: cannot inspect hard links: {error}",
-            path.display()
-        );
+        tracing::warn!(kind = ?error.kind(), "blob kept: hard links not inspectable");
         true
     })
 }

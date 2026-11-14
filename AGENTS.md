@@ -12,6 +12,7 @@ Rules for any coding agent (and person) working in this repository.
   its English text. No other language, Spanish included, is ever hard-coded, and nothing here picks a language for
   the person.
 - Logs and developer-facing errors are English; they are not UI.
+- Logging: see docs/logging.md in sidevoice/.github-private. The engine is a library: it emits `tracing` spans and events and never installs a subscriber.
 
 ## Before changing things
 

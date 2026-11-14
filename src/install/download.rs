@@ -5,9 +5,12 @@
 //! always checked over the whole file. A server that sends the whole file anyway, or bytes kept that turn out wrong,
 //! start it over. A cancel removes what arrived: it is the person's, and the install it was part of is cancelled.
 
+use tracing::{debug, instrument};
+
 use super::digest::Hasher;
 use super::{Cancel, Progress, ProgressSink};
 use crate::host::{Download, Host, Resumed};
+use crate::log_safe::UrlPath;
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -15,6 +18,7 @@ mod tests;
 
 /// Downloads `url` into storage as `sha256`, which its bytes must hash to (`digest-mismatch` otherwise). `report` is
 /// the progress so far, before this file; `progress` hears of each part, and `cancel` is checked between parts.
+#[instrument(skip_all, fields(url = %UrlPath(url)))]
 pub(super) async fn download(
     url: &str,
     sha256: &str,
@@ -83,6 +87,7 @@ async fn transfer(
         drop(kept);
         writer.restart().await?;
     }
+    debug!(resumed_from = offset, "download started");
     report.received += offset;
     report.size = download.size().map(|size| size + offset);
     progress.progress(report);

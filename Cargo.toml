@@ -26,6 +26,12 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 # Each downloaded file is checked against its digest as it arrives (src/install.rs), on every target.
 sha2 = { version = "0.11.0", default-features = false }
+# Logging (docs/logging.md in sidevoice/.github-private): the engine emits spans and events and never installs a
+# subscriber; the process that runs it does. `secrecy` keeps a provider's key out of every Debug, `url` parses what a
+# log line shows of a URL.
+tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes"] }
+secrecy = "0.10.3"
+url = "2.5.8"
 # smart-turn's input, Whisper's log-mel features (src/backend/smart_turn.rs), on every target: an FFT of any size in pure
 # Rust, which compiles to wasm32 too.
 rustfft = "6.4.1"
@@ -146,6 +152,10 @@ tokio = { version = "1.53.2", default-features = false, features = ["rt-multi-th
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3.79"
+
+# Captures the events a test checks (src/provider/api/tests.rs); the engine itself never installs a subscriber.
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [build-dependencies]
 cfg_aliases = "0.2.2"

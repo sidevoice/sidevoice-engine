@@ -1,0 +1,9 @@
+# Logging rules (docs/logging.md in sidevoice/.github-private, section 10).
+disallowed-macros = [
+    { path = "std::dbg", reason = "log through tracing; never dbg!" },
+    { path = "std::eprintln", reason = "a library emits tracing events, it never writes to stderr" },
+    { path = "std::println", reason = "a library emits tracing events, it never writes to stdout" },
+]
+disallowed-methods = [
+    { path = "secrecy::ExposeSecret::expose_secret", reason = "only where the secret is sent or stored: #[allow] there, with the reason" },
+]

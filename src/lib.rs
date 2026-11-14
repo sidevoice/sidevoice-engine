@@ -25,6 +25,7 @@ mod catalog;
 mod engine;
 mod host;
 mod install;
+mod log_safe;
 mod maybe_send;
 mod platform;
 mod provider;
@@ -32,6 +33,8 @@ mod recommender;
 mod resolver;
 #[cfg(test)]
 mod test_support;
+#[cfg(test)]
+mod tests;
 #[cfg(web)]
 mod web;
 
@@ -66,13 +69,29 @@ pub use resolver::Reason;
 /// What the engine's operations fail with. Errors carry a stable code, never text: clients translate it. One that a
 /// remote provider caused also carries what the provider said, its own code and message (`detail`), for the app to
 /// show as it is (a toast, say): the engine remembers none of it, and reads only its status, to pick the code.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Error {
     /// The stable code, such as `"not-implemented"`.
     pub code: &'static str,
     /// What a remote provider said when it refused a call, in its own words: `"<its code>: <its message>"`, or either.
     /// `None` for an error no provider answered.
     pub detail: Option<String>,
+}
+
+impl std::fmt::Debug for Error {
+    /// Without `detail`, which is a provider's own words and may repeat a masked key: its length only.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Error")
+            .field("code", &self.code)
+            .field(
+                "detail",
+                &self
+                    .detail
+                    .as_ref()
+                    .map(|detail| format!("<{} chars>", detail.chars().count())),
+            )
+            .finish()
+    }
 }
 
 impl Error {

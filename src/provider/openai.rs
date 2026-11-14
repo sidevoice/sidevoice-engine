@@ -22,6 +22,7 @@
 //! Streaming is not used (sidevoice-engine#35).
 
 use async_trait::async_trait;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{json, Value};
 
 use super::api::{self, Form};
@@ -59,11 +60,15 @@ const SPEC: ProviderSpec = ProviderSpec {
 inventory::submit! { ProviderFactory(|| Box::new(OpenAi)) }
 
 /// A request with the key.
-fn request(method: &'static str, url: String, key: &str) -> HttpRequest {
+#[allow(clippy::disallowed_methods, reason = "the key is sent")]
+fn request(method: &'static str, url: String, key: &SecretString) -> HttpRequest {
     HttpRequest {
         method,
         url,
-        headers: vec![("Authorization".into(), format!("Bearer {key}"))],
+        headers: vec![(
+            "Authorization".into(),
+            format!("Bearer {}", key.expose_secret()),
+        )],
         body: Vec::new(),
     }
 }
