@@ -1043,7 +1043,11 @@ pub(crate) fn logged<R>(run: impl FnOnce() -> R) -> (R, String) {
         .without_time()
         .with_writer(move || Capture(Arc::clone(&writer)))
         .finish();
-    let result = tracing::subscriber::with_default(subscriber, run);
+    let result = tracing::subscriber::with_default(subscriber, || {
+        // Another test's thread may have met these callsites with no subscriber, and tracing caches that.
+        tracing::callsite::rebuild_interest_cache();
+        run()
+    });
     let log = String::from_utf8(lock(&captured).clone()).expect("text");
     (result, log)
 }

@@ -97,8 +97,14 @@ impl Api {
         let sent = self.host.http().send(request).await;
         let span = Span::current();
         span.record("duration_ms", started.elapsed().as_millis() as u64);
-        let response =
-            sent.inspect_err(|error| warn!(code = error.code, "provider unreachable"))?;
+        let response = sent.inspect_err(|error| {
+            // The code `Api::list` gives a listing that got no answer.
+            let code = match kind {
+                Listing if error.code == "request-failed" => "provider-unreachable",
+                _ => error.code,
+            };
+            warn!(code, "provider unreachable");
+        })?;
         span.record("http_status", response.status);
         match response.status {
             200..=299 => {
