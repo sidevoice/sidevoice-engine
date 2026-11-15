@@ -2,18 +2,16 @@
 //! capabilities, answering yes or no with a reason. This file is the interface; the common requirements the engine
 //! ships are in requirement/, one file each, and a backend can write its own without changing the contract.
 //!
-//! The engine ships only what hosts report: memory and cores. A check on something they do not report (GPU memory,
-//! an OS version, a driver version) comes with the field in `Capabilities` that the first backend needing it adds;
-//! until then, what only trying can tell is that backend's `probe`.
+//! The engine ships only a check on what every host reports and a backend needs: memory. A check on anything else
+//! (cores, GPU memory, an OS version, a driver version) is written by the first backend needing it, next to its file;
+//! what only trying can tell is that backend's `probe`.
 
 use crate::host::Capabilities;
 use crate::maybe_send::{MaybeSend, MaybeSync};
 use crate::resolver::Reason;
 
-mod min_cores;
 mod min_memory_mb;
 
-pub(crate) use min_cores::MinCores;
 pub(crate) use min_memory_mb::MinMemoryMb;
 
 /// One condition the machine must meet. A value the host cannot tell (`None`) passes: the engine does not reject a

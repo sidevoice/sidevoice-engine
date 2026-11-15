@@ -34,10 +34,6 @@ impl BackendModel for FakeVad {
     fn as_vad(&mut self) -> Option<&mut dyn VadModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
 }
 
 impl VadModel for FakeVad {

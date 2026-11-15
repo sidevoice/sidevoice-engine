@@ -30,11 +30,7 @@ impl Library for NoLibrary {
 
 struct NoModel;
 
-impl BackendModel for NoModel {
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
-}
+impl BackendModel for NoModel {}
 
 fn resident(library: &Arc<dyn Library>) -> Arc<Resident> {
     Resident::new(

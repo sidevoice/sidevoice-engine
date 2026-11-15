@@ -83,10 +83,6 @@ impl BackendModel for Whisper {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
 }
 
 #[async_trait::async_trait(?Send)]

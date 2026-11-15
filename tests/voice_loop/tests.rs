@@ -5,9 +5,10 @@ use std::fs;
 
 use sidevoice_engine::{BundledCatalog, CatalogSource, ModelEntry};
 
-use super::audio::{read_wav, resample, wav};
+use super::audio::{resample, wav};
 use super::end_of_turn::{self, EndOfTurnPlan};
 use super::vad::{judge, padded, VadPlan};
+use super::wav_reader::read_wav;
 use super::wer::{normalised, wer};
 use super::{plan, plan_path, primary};
 

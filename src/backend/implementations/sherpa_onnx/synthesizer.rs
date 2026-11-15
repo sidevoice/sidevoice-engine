@@ -109,10 +109,6 @@ impl BackendModel for Synthesizer {
     fn as_tts(&mut self) -> Option<&mut dyn TtsModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
 }
 
 #[cfg_attr(native, async_trait)]

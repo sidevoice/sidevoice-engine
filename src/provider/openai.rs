@@ -211,10 +211,6 @@ impl BackendModel for Transcriber {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        Some(0)
-    }
 }
 
 #[cfg_attr(native, async_trait)]
@@ -254,10 +250,6 @@ struct Speaker {
 impl BackendModel for Speaker {
     fn as_tts(&mut self) -> Option<&mut dyn TtsModel> {
         Some(self)
-    }
-
-    fn memory_mb(&self) -> Option<u32> {
-        Some(0)
     }
 }
 

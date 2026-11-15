@@ -33,11 +33,8 @@ pub(crate) const STT_RATE: u32 = 16_000;
 /// One model in memory, local or remote. Fields drop in order: the model before the library it was loaded with.
 pub(crate) struct Resident {
     model: Mutex<Box<dyn BackendModel>>,
-    #[allow(
-        dead_code,
-        reason = "held: it keeps a local model's library open while the model is in memory"
-    )]
-    library: Option<Arc<dyn Library>>,
+    /// Held, never read: it keeps a local model's library open while the model is in memory.
+    _library: Option<Arc<dyn Library>>,
     capabilities: Vec<Capability>,
     /// How many seconds of a turn it hears, for an end-of-turn classifier.
     end_of_turn_seconds: Option<u32>,
@@ -90,7 +87,7 @@ impl Resident {
         }
         Arc::new(Self {
             model: Mutex::new(model),
-            library,
+            _library: library,
             capabilities,
             end_of_turn_seconds,
             languages,

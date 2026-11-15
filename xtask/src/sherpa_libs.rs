@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{metadata, read, repo, run_in, sha256, sherpa_fields, write, Result};
+use crate::{metadata, platform, read, repo, run_in, sha256, sherpa_fields, write, Result};
 
 /// The pinned archives, relative to the repository.
 const PINS: &str = "xtask/sherpa-onnx-libs.json";
@@ -61,7 +61,7 @@ struct Archive {
 
 /// `cargo xtask sherpa-libs [DIR]`.
 pub(crate) fn fetch(dir: Option<&str>) -> Result<()> {
-    let platform = format!("{}-{}", env::consts::OS, env::consts::ARCH);
+    let platform = format!("{}-{}", platform::HOST_OS, env::consts::ARCH);
     let (archive, dir, bytes) = pinned_archive(&platform, dir)?;
     let stem = archive
         .name

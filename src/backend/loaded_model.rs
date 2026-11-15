@@ -36,9 +36,6 @@ pub(crate) trait BackendModel: MaybeSend {
     fn confirmed_accelerator(&self) -> Option<Accelerator> {
         None
     }
-    /// The memory it takes, when the backend can tell.
-    #[allow(dead_code, reason = "the engine does not read it yet")]
-    fn memory_mb(&self) -> Option<u32>;
 }
 
 /// A speech-to-text model: one whole turn at a time.

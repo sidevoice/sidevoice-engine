@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use super::Rejection;
 use super::Resolver;
-use crate::backend::{Backend, BackendSpec, Library, MinCores};
+use crate::backend::{Backend, BackendSpec, Library, Requirement};
 use crate::catalog::{BuildEntry, CatalogFragment, CatalogSource, MergedCatalog};
 use crate::install::Installed;
 use crate::test_support::{build, family, memory_on_each, model};
@@ -13,6 +13,18 @@ use crate::{Accelerator, Capabilities, Capability, Error, Reason, Result, Runs};
 
 #[cfg(web)]
 use wasm_bindgen_test::wasm_bindgen_test as test;
+
+/// A requirement of at least this many CPU cores, to check a requirement that can fail on a number the host reports.
+struct MinCores(u32);
+
+impl Requirement for MinCores {
+    fn check(&self, caps: &Capabilities) -> Result<(), Reason> {
+        match caps.cores {
+            Some(has) if has < self.0 => Err(Reason::with_numbers("cores", self.0, has)),
+            _ => Ok(()),
+        }
+    }
+}
 
 /// A backend that runs on CoreML or the CPU, needs 4 cores, and whose probe confirms `probe`. It borrows the id
 /// "sherpa-onnx", a known one.

@@ -106,10 +106,6 @@ impl BackendModel for Recognizer {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
 }
 
 #[cfg_attr(native, async_trait)]

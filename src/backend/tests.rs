@@ -4,6 +4,7 @@
 use super::{built_in, is_known, KNOWN};
 use crate::host::Host;
 use crate::platform::local_engines::WHISPER_CPP;
+use crate::platform::system::{Current, System};
 use crate::test_support::FakeHost;
 
 #[cfg(web)]
@@ -17,7 +18,7 @@ fn built_in_is_exactly_this_platforms_backends() {
     if cfg!(target_arch = "wasm32") {
         expected.push("transformers-js");
     } else {
-        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        if Current::APPLE_SILICON {
             expected.push("mlx");
         }
         expected.push("onnxruntime");

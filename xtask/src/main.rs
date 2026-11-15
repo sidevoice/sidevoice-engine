@@ -44,6 +44,7 @@ mod e2e;
 mod ios;
 mod link_size;
 mod npm;
+mod platform;
 mod platform_guard;
 mod release;
 mod remote_live;

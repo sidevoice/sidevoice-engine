@@ -1,5 +1,5 @@
-//! The engine's platform aliases, named once: `web`, `native` and `apple_silicon`. They name platforms only; which
-//! of them a module needs is that module's own `#[cfg]` to say.
+//! The engine's build aliases, named once: `web` and `native`. They name builds only; which of them a module needs is
+//! that module's own `#[cfg]` to say.
 //!
 //! And the bundled catalogue's list of families (`src/catalog/bundled.rs`): every `catalog/families/<family>.json`, in
 //! name order, so that adding a family is adding its file.
@@ -20,7 +20,6 @@ fn main() {
     cfg_aliases! {
         web: { target_arch = "wasm32" },
         native: { not(target_arch = "wasm32") },
-        apple_silicon: { all(target_os = "macos", target_arch = "aarch64") },
     }
     bundled_families();
     onnxruntime_framework();

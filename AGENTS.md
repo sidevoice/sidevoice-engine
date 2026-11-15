@@ -77,7 +77,7 @@ How the crate (`src/`) is laid out; `README.md` maps where each package is.
   unit tests: an rlib linked into an integration test loses its `inventory` registrations there
   (`src/backend/registry.rs`).
 - **Host selection uses the crate's aliases** (`web`, `native`, from `build.rs`), except in a test
-  that checks the aliases themselves. OS conditions, including the `apple_silicon` alias, belong only in `platform`
+  that checks the aliases themselves. OS conditions belong only in `platform`
   as specified below. A crate-level module's condition goes on its declaration (`#[cfg(web)] mod web;`);
   a backend file carries its own `#![cfg]`.
 - **Closed by default**, as above.

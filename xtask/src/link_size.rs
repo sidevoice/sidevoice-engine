@@ -5,7 +5,7 @@
 use std::env;
 use std::path::Path;
 
-use crate::{empty_dir, metadata, read, repo, run_in, write, Result};
+use crate::{empty_dir, metadata, platform, read, repo, run_in, write, Result};
 
 const PROBE: &str = include_str!("link_size/probe.rs");
 
@@ -14,7 +14,7 @@ pub(crate) fn measure() -> Result<()> {
     let (_, target) = metadata()?;
     let root = target.join("link-size");
     let (bytes, backends) = build(&root)?;
-    let platform = format!("{} {}", env::consts::OS, env::consts::ARCH);
+    let platform = format!("{} {}", platform::HOST_OS, env::consts::ARCH);
     let table = format!(
         "| Platform | Size | Backends |\n|---|---|---|\n| {platform} | {:.1} MB ({bytes} B) | {} |\n",
         bytes as f64 / 1_048_576.0,

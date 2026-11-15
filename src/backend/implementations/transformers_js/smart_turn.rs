@@ -90,10 +90,6 @@ impl BackendModel for SmartTurn {
     fn as_end_of_turn(&mut self) -> Option<&mut dyn EndOfTurnModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
 }
 
 #[async_trait::async_trait(?Send)]

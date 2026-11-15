@@ -1,5 +1,4 @@
-// MLX only exists on Apple silicon.
-#![cfg(apple_silicon)]
+// MLX only exists on Apple silicon: `platform::local_engines` gates the module's declaration.
 
 use async_trait::async_trait;
 

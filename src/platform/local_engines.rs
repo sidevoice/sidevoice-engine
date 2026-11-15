@@ -9,20 +9,6 @@
 #[cfg(test)]
 pub const WHISPER_CPP: bool = cfg!(not(target_os = "android"));
 
-/// Whether the whisper.cpp backend is built with ggml's Metal backend: on macOS on Apple silicon and on iOS, where
-/// Cargo.toml turns on whisper-rs's `metal` feature (the same condition). Elsewhere it runs on the CPU only.
-#[cfg_attr(
-    any(web, target_os = "android"),
-    allow(
-        dead_code,
-        reason = "whisper.cpp is built natively only, and not on Android"
-    )
-)]
-pub const WHISPER_CPP_METAL: bool = cfg!(any(
-    all(target_os = "macos", target_arch = "aarch64"),
-    target_os = "ios"
-));
-
 /// The items it is given, where [`WHISPER_CPP`] is true.
 macro_rules! where_whisper_cpp_builds {
     ($($item:item)*) => {
@@ -33,3 +19,25 @@ macro_rules! where_whisper_cpp_builds {
     };
 }
 pub(crate) use where_whisper_cpp_builds;
+
+/// The items it is given, where the MLX backend exists: on a Mac on Apple silicon, the same condition as
+/// [`System::APPLE_SILICON`](super::system::System::APPLE_SILICON).
+macro_rules! where_mlx_builds {
+    ($($item:item)*) => {
+        $(
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            $item
+        )*
+    };
+}
+pub(crate) use where_mlx_builds;
+
+where_whisper_cpp_builds! {
+    /// Whether the whisper.cpp backend is built with ggml's Metal backend: on a Mac on Apple silicon and on iOS, where
+    /// Cargo.toml turns on whisper-rs's `metal` feature (the same condition). Elsewhere it runs on the CPU only.
+    #[cfg(native)]
+    pub const WHISPER_CPP_METAL: bool = cfg!(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        target_os = "ios"
+    ));
+}
