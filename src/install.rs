@@ -87,9 +87,7 @@ pub(crate) struct Installed {
 }
 
 impl Installed {
-    /// Where the host keeps the file or directory whose key is `name`, if it is installed. The native backends read `files`
-    /// whole; the web build's and the tests' way to ask for one.
-    #[cfg(any(web, test))]
+    /// Where the host keeps the file or directory whose key is `name`, if it is installed.
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)
     }

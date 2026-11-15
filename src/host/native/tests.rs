@@ -9,7 +9,7 @@ use crate::host::{Accelerator, Host, Runs};
 use crate::install::{Artifact, Cancel, Installer};
 use crate::platform::accelerators::{Accelerators, Machine};
 use crate::platform::links::{Files, Links};
-use crate::platform::system::{Current, System};
+use crate::platform::system::OS;
 use crate::test_support::block_on;
 
 /// A fresh directory under the system's temporary one, removed when dropped.
@@ -42,7 +42,7 @@ fn it_reports_this_machine() {
     let caps = NativeHost::new(&scratch.0).expect("host").capabilities();
 
     assert_eq!(caps.runs, Runs::Native);
-    assert_eq!(caps.os, Current::OS);
+    assert_eq!(caps.os, OS);
     assert_eq!(caps.arch, std::env::consts::ARCH);
     assert!(caps.has(Accelerator::Cpu));
     assert_eq!(caps.accelerators, Machine::detect());

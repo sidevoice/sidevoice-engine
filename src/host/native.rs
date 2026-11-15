@@ -12,7 +12,7 @@ use crate::host::{
 use crate::platform::accelerators::{Accelerators, Machine};
 use crate::platform::background::{Background, Machine as BackgroundOs};
 use crate::platform::memory::MemoryObservation;
-use crate::platform::system::{Current, System};
+use crate::platform::system::OS;
 use crate::Result;
 
 mod directory;
@@ -114,7 +114,7 @@ fn capabilities() -> Capabilities {
     let memory = MemoryObservation::now();
     Capabilities {
         runs: Runs::Native,
-        os: Current::OS.to_owned(),
+        os: OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         accelerators: Machine::detect(),
         // A budget of zero is not one: iOS's function answers it on the Simulator and Mac Catalyst.

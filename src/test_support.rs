@@ -11,7 +11,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use sha2::Digest;
 
-use crate::platform::system::{Current, System};
+use crate::platform::local_engines::MLX;
+use crate::platform::system::OS;
 #[cfg(native)]
 use crate::TreeWriter;
 use crate::{
@@ -42,14 +43,14 @@ pub(crate) struct FakeHost;
 
 impl Host for FakeHost {
     fn capabilities(&self) -> Capabilities {
-        let accelerators = if Current::APPLE_SILICON {
+        let accelerators = if MLX {
             vec![Accelerator::Metal, Accelerator::Cpu]
         } else {
             vec![Accelerator::Cpu, Accelerator::Wasm]
         };
         Capabilities {
             runs: if cfg!(web) { Runs::Page } else { Runs::Native },
-            os: Current::OS.to_owned(),
+            os: OS.to_owned(),
             arch: std::env::consts::ARCH.to_owned(),
             accelerator_memory: memory_on_each(&accelerators, Some(8_192)),
             accelerators,
