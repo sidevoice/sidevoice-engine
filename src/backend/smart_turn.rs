@@ -37,10 +37,7 @@ const BINS: usize = WINDOW / 2 + 1;
 
 /// `input_features` for the turn `pcm` (mono, 16 kHz): [`MELS`] rows of [`FRAMES`], all at once on the calling thread
 /// (a native backend's call runs there: the app decides where).
-#[cfg_attr(
-    web,
-    allow(dead_code, reason = "the web build extracts a chunk at a time")
-)]
+#[cfg(any(native, test))]
 pub(crate) fn features(pcm: &[f32]) -> Vec<f32> {
     let mut extractor = Extractor::new(pcm);
     extractor.frames(0..FRAMES);
@@ -49,10 +46,7 @@ pub(crate) fn features(pcm: &[f32]) -> Vec<f32> {
 
 /// The same, [`CHUNK`] frames at a time, letting the page run between chunks: in a page the engine runs on the page's
 /// own thread, as all of its work there does, so a long computation is cut into short ones rather than block it.
-#[cfg_attr(
-    native,
-    allow(dead_code, reason = "native backends extract on the caller's thread")
-)]
+#[cfg(any(web, test))]
 pub(crate) async fn features_yielding(pcm: &[f32]) -> Vec<f32> {
     let mut extractor = Extractor::new(pcm);
     for start in (0..FRAMES).step_by(CHUNK) {
@@ -63,6 +57,7 @@ pub(crate) async fn features_yielding(pcm: &[f32]) -> Vec<f32> {
 }
 
 /// How many frames are computed between two chances for the page to run.
+#[cfg(any(web, test))]
 pub(crate) const CHUNK: usize = 100;
 
 /// One extraction under way: the signal, centred, and the log-mel energies computed so far.
@@ -161,7 +156,7 @@ export function yieldToPage() {
 }
 
 /// Natively the caller's thread is the caller's: nothing to yield to.
-#[cfg(native)]
+#[cfg(all(native, test))]
 async fn yield_now() {}
 
 /// The last [`SECONDS`] of `pcm`, zero-padded at the start when shorter.

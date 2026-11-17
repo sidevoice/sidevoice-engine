@@ -39,6 +39,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::{env, fs};
 
+use serde::de::IgnoredAny;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sidevoice_engine::{
@@ -54,6 +55,8 @@ mod end_of_turn;
 mod tests;
 #[path = "voice_loop/vad.rs"]
 mod vad;
+#[path = "voice_loop/wav_reader.rs"]
+mod wav_reader;
 #[path = "voice_loop/wer.rs"]
 mod wer;
 
@@ -99,11 +102,11 @@ struct Clip {
     sha256: String,
     /// What is said in it, as its source transcribes it.
     text: String,
-    /// Where it comes from, and its licence: for people, not read.
-    #[allow(dead_code, reason = "for people reading the plan")]
-    source: String,
-    #[allow(dead_code, reason = "for people reading the plan")]
-    license: String,
+    /// Where it comes from, and its licence: for people reading the plan; the loop ignores them.
+    #[serde(rename = "source")]
+    _source: IgnoredAny,
+    #[serde(rename = "license")]
+    _license: IgnoredAny,
 }
 
 /// One comparison: who said it to whom, in which language, what was said and what was heard.
@@ -146,6 +149,8 @@ fn run() -> Result<()> {
         .map_err(|e| format!("the engine: {e:?}"))?;
     // A second host on the same directory, for the clips: only its fetcher is used.
     let fetcher = NativeHost::new(dir.join("engine")).map_err(|e| format!("NativeHost: {e}"))?;
+    let caps = fetcher.capabilities();
+    let platform = format!("{} {}", caps.os, caps.arch);
 
     let mut rows = Vec::new();
     let mut loaded_on = BTreeMap::new();
@@ -199,7 +204,8 @@ fn run() -> Result<()> {
     let mut recorded = Vec::new();
     for clip in &plan.clips {
         let bytes = fetch(&fetcher, &dir.join("clips"), clip)?;
-        let (samples, rate) = audio::read_wav(&bytes).map_err(|e| format!("{}: {e}", clip.url))?;
+        let (samples, rate) =
+            wav_reader::read_wav(&bytes).map_err(|e| format!("{}: {e}", clip.url))?;
         let what = format!("clip {}", clip.url.rsplit('/').next().unwrap_or_default());
         println!("{what}: {:?}", clip.text);
         for listener in plan.stt.get(&clip.language).into_iter().flatten() {
@@ -278,6 +284,7 @@ fn run() -> Result<()> {
         &turns,
         &loaded_on,
         &dir.join("summary.md"),
+        &platform,
     )?;
     lifecycle
 }
@@ -580,7 +587,7 @@ fn fetch(host: &NativeHost, clips: &Path, clip: &Clip) -> Result<Vec<u8>> {
 }
 
 /// Prints the tables (transcripts, detections, turns) and the accelerator each build was loaded on, writes them to
-/// `summary` with a heading for this platform, and fails if any row failed or is above `max_wer`, or any detection or
+/// `summary` with a heading for `platform`, and fails if any row failed or is above `max_wer`, or any detection or
 /// turn failed.
 fn report(
     rows: &[Row],
@@ -589,6 +596,7 @@ fn report(
     turns: &[end_of_turn::Turn],
     loaded_on: &BTreeMap<String, Option<Accelerator>>,
     summary: &Path,
+    platform: &str,
 ) -> Result<()> {
     let mut table =
         String::from("| Model pair | Language | Expected | Got | WER |\n|---|---|---|---|---|\n");
@@ -638,7 +646,7 @@ fn report(
         builds.push_str(&format!("- `{build}`: {on}\n"));
     }
     println!("\n{table}\n{verdict}\n\n{detected}\n{ended}\n{builds}");
-    let heading = format!("## Voice loop ({} {})", env::consts::OS, env::consts::ARCH);
+    let heading = format!("## Voice loop ({platform})");
     write(
         summary,
         format!("{heading}\n\n{table}\n{verdict}\n\n{detected}\n{ended}\n{builds}").as_bytes(),

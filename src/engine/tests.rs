@@ -17,6 +17,7 @@ use std::task::{Context, Poll};
 use crate::backend::{Backend, BackendModel, BackendSpec, Library, SttModel, TtsModel};
 use crate::catalog::{CatalogFragment, CatalogSource};
 use crate::install::Installed;
+use crate::platform::local_engines::MLX;
 use crate::test_support::{
     block_on, build, family, model, sha256, FakeCatalog, FakeHost, MemoryHost,
 };
@@ -44,7 +45,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     // sherpa-onnx on the CPU (sidevoice-engine#4); elsewhere both are on the CPU, and catalogue order stands.
     let recommended = if cfg!(web) {
         "whisper-small-web"
-    } else if cfg!(apple_silicon) {
+    } else if MLX {
         "whisper-small-gguf"
     } else {
         "whisper-small-onnx"
@@ -53,7 +54,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     assert_eq!(small.builds[0].id, recommended);
     assert!(small.builds[0].available && small.builds[0].accelerator.is_some());
     // Each build that runs says its accelerator's class; one that does not, none.
-    let class = if cfg!(apple_silicon) {
+    let class = if MLX {
         AcceleratorClass::Gpu
     } else {
         AcceleratorClass::Cpu
@@ -70,7 +71,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
     let last = small.builds.last().expect("builds");
     assert!(!last.available && last.accelerator_class().is_none());
     assert!(small.builds[0].reasons.is_empty());
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    if MLX {
         let mlx = small
             .builds
             .iter()
@@ -84,7 +85,7 @@ fn models_rank_the_builds_that_run_here_first_and_say_why_the_rest_do_not() {
         .iter()
         .find(|b| b.id == "whisper-small-gguf")
         .expect("gguf");
-    if cfg!(apple_silicon) {
+    if MLX {
         assert_eq!(gguf.accelerator, Some(Accelerator::Metal));
     } else if cfg!(not(target_arch = "wasm32")) {
         assert_eq!(gguf.accelerator, Some(Accelerator::Cpu));
@@ -143,24 +144,26 @@ fn a_native_engine_its_futures_and_its_loaded_models_can_cross_threads() {
 /// What a loaded model's calls return can cross threads natively: an app awaits them on its own runtime's tasks. Checked
 /// when this compiles; never called.
 #[cfg(native)]
-#[allow(dead_code, reason = "a check at compile time")]
-fn a_loaded_models_futures_are_send(loaded: &LocalModel, stream: &mut VadStream) {
+const _: fn() = || {
     fn sent<T: Send>(_: T) {}
-    if let Some(stt) = loaded.as_stt() {
-        sent(stt.transcribe(&[], 16_000, None));
-    }
-    if let Some(tts) = loaded.as_tts() {
-        sent(tts.voices());
-        sent(tts.speak("", "", None, None));
-    }
-    if let Some(vad) = loaded.as_vad() {
-        sent(vad.stream(VadOptions::default()));
-    }
-    if let Some(end_of_turn) = loaded.as_end_of_turn() {
-        sent(end_of_turn.probability(&[], 16_000));
-    }
-    sent(stream.accept(&[]));
-}
+    let check = |loaded: &LocalModel, stream: &mut VadStream| {
+        if let Some(stt) = loaded.as_stt() {
+            sent(stt.transcribe(&[], 16_000, None));
+        }
+        if let Some(tts) = loaded.as_tts() {
+            sent(tts.voices());
+            sent(tts.speak("", "", None, None));
+        }
+        if let Some(vad) = loaded.as_vad() {
+            sent(vad.stream(VadOptions::default()));
+        }
+        if let Some(end_of_turn) = loaded.as_end_of_turn() {
+            sent(end_of_turn.probability(&[], 16_000));
+        }
+        sent(stream.accept(&[]));
+    };
+    let _ = check;
+};
 
 /// What each CI platform offers with the catalogue this repository ships: every bundled model of a capability, each
 /// on a backend this platform compiles, and which of a model's builds the ranking makes win (sidevoice-engine#4).
@@ -183,7 +186,7 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     };
     let backends: &[&str] = if cfg!(target_arch = "wasm32") {
         &["transformers-js"]
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    } else if MLX {
         &["mlx", "sherpa-onnx", "whisper-cpp", "onnxruntime"]
     } else {
         &["sherpa-onnx", "whisper-cpp", "onnxruntime"]
@@ -226,7 +229,7 @@ fn the_bundled_catalogue_offers_every_model_on_this_platforms_backends() {
     // (sidevoice-engine#4); natively elsewhere both run on the CPU and catalogue order keeps sherpa-onnx.
     let whisper = if cfg!(web) {
         "transformers-js"
-    } else if cfg!(apple_silicon) {
+    } else if MLX {
         "whisper-cpp"
     } else {
         "sherpa-onnx"
@@ -431,10 +434,6 @@ impl BackendModel for FakeModel {
 
     fn as_tts(&mut self) -> Option<&mut dyn TtsModel> {
         Some(self)
-    }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
     }
 }
 
@@ -1271,10 +1270,6 @@ struct GpuModel(Option<Accelerator>);
 impl BackendModel for GpuModel {
     fn confirmed_accelerator(&self) -> Option<Accelerator> {
         self.0
-    }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
     }
 }
 

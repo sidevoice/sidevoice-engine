@@ -128,10 +128,6 @@ impl BackendModel for SmartTurn {
     fn as_end_of_turn(&mut self) -> Option<&mut dyn EndOfTurnModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
 }
 
 #[cfg_attr(native, async_trait)]

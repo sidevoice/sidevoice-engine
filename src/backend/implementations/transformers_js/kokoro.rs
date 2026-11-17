@@ -161,10 +161,6 @@ impl BackendModel for Kokoro {
     fn as_tts(&mut self) -> Option<&mut dyn TtsModel> {
         Some(self)
     }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
-    }
 }
 
 #[async_trait::async_trait(?Send)]

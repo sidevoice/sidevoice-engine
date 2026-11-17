@@ -88,10 +88,6 @@ pub(crate) struct Installed {
 
 impl Installed {
     /// Where the host keeps the file or directory whose key is `name`, if it is installed.
-    #[allow(
-        dead_code,
-        reason = "for a backend that takes a file by its key: a build with no such backend has no caller"
-    )]
     pub(crate) fn file(&self, name: &str) -> Option<&str> {
         self.files.get(name).map(String::as_str)
     }

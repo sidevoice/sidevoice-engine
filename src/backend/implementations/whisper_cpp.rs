@@ -119,7 +119,9 @@ impl Whisper {
     /// `model-load-failed`.
     fn load(files: &Installed, accelerator: Accelerator) -> Result<Self> {
         let path = files
-            .file("model")
+            .files
+            .get("model")
+            .map(String::as_str)
             .ok_or(Error::new("file-not-installed"))?;
         let context = context_params(accelerator)?;
         if path.contains('\0') {
@@ -199,10 +201,6 @@ fn language_id(tag: &str) -> Result<c_int> {
 impl BackendModel for Whisper {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
-    }
-
-    fn memory_mb(&self) -> Option<u32> {
-        None
     }
 }
 

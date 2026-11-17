@@ -42,12 +42,8 @@ use sidevoice_engine::{
     Result as EngineResult, Storage,
 };
 
-#[path = "voice_loop/audio.rs"]
-#[allow(
-    dead_code,
-    reason = "the voice loop's audio: this test only reads a WAV file"
-)]
-mod audio;
+#[path = "voice_loop/wav_reader.rs"]
+mod wav_reader;
 #[path = "voice_loop/wer.rs"]
 mod wer;
 
@@ -304,7 +300,7 @@ fn transcribe(
         .iter()
         .find(|clip| clip.language == "en")
         .ok_or("no English clip")?;
-    let (samples, rate) = audio::read_wav(&download(clip)?)?;
+    let (samples, rate) = wav_reader::read_wav(&download(clip)?)?;
     let id = pick(listed, Capability::Stt, preferred)?;
     let model = load(engine, provider, id)?;
     let stt = model.as_stt().ok_or("not speech to text")?;

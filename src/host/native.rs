@@ -12,6 +12,7 @@ use crate::host::{
 use crate::platform::accelerators::{Accelerators, Machine};
 use crate::platform::background::{Background, Machine as BackgroundOs};
 use crate::platform::memory::MemoryObservation;
+use crate::platform::system::OS;
 use crate::Result;
 
 mod directory;
@@ -27,7 +28,7 @@ use http::Http;
 /// (its own data directory, say) and should keep for the engine alone; everything else it finds out once, when it is
 /// built:
 ///
-/// - `os` and `arch` from `std::env::consts`, `cores` from `std::thread::available_parallelism`, and `memory_mb`, the
+/// - `os` from the platform's `System` and `arch` from `std::env::consts`, `cores` from `std::thread::available_parallelism`, and `memory_mb`, the
 ///   machine's memory (or its cgroup's limit, if lower), in MiB, from the platform's `MemoryObservation` (`sysinfo`),
 ///   or, where the OS keeps a budget for the process (iOS), that budget when the host is built: what the app may take,
 ///   not what the phone has;
@@ -113,7 +114,7 @@ fn capabilities() -> Capabilities {
     let memory = MemoryObservation::now();
     Capabilities {
         runs: Runs::Native,
-        os: std::env::consts::OS.to_owned(),
+        os: OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         accelerators: Machine::detect(),
         // A budget of zero is not one: iOS's function answers it on the Simulator and Mac Catalyst.

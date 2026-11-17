@@ -26,7 +26,7 @@
 //! [`Engine::backends`](crate::Engine::backends) lists it; and its `accelerators` and `requirements` hold whatever
 //! the model: a build's own needs, such as its memory, are the catalogue's. A requirement fails with a stable
 //! [`Reason`](crate::Reason) code and its numbers, never with a sentence (AGENTS.md); the engine ships
-//! [`MinMemoryMb`] and [`MinCores`], and a backend that needs another check writes its own [`Requirement`] next to
+//! [`MinMemoryMb`], and a backend that needs another check writes its own [`Requirement`] next to
 //! its file without changing the contract.
 //!
 //! ## `probe`: which accelerators work here
@@ -122,6 +122,7 @@ mod library;
 mod loaded_model;
 mod registry;
 mod requirement;
+#[cfg(any(web, test))]
 mod segmenter;
 pub(crate) mod smart_turn;
 #[cfg(test)]
@@ -131,19 +132,8 @@ pub(crate) use library::Library;
 pub(crate) use loaded_model::{BackendModel, EndOfTurnModel, VadModel, VadStreamModel, Window};
 pub(crate) use loaded_model::{SttModel, TtsModel};
 pub(crate) use registry::{built_in, find};
-#[allow(
-    unused_imports,
-    reason = "a common requirement no backend declares yet"
-)]
-pub(crate) use requirement::MinCores;
 pub(crate) use requirement::{MinMemoryMb, Requirement};
-#[cfg_attr(
-    native,
-    allow(
-        unused_imports,
-        reason = "only the web build's backend segments speech itself"
-    )
-)]
+#[cfg(web)]
 pub(crate) use segmenter::Segmenter;
 
 /// A backend's stable id, as catalogue builds name it ([`BuildEntry::backend`](crate::BuildEntry::backend)): "sherpa-onnx",

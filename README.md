@@ -370,7 +370,7 @@ src/            the crate sidevoice-engine, one package per concept (`x.rs` is t
 catalog/        families/<family>.json, the bundled catalogue; pins written by `cargo xtask pin-catalog`
 tests/          the voice loop (voice_loop.rs) and the remote providers' real calls (remote_live.rs), both ignored
                 unless CI asks
-build.rs        the three cfg aliases: web, native, apple_silicon
+build.rs        the two cfg aliases: web, native
 npm/            the npm package's package.json and README, filled in by `cargo xtask npm`
 xtask/          build tooling (`cargo xtask`), a package of its own
 ```
@@ -614,7 +614,7 @@ new one. As an example, a Vosk backend (whisper.cpp's, `whisper_cpp.rs`, is a re
 for now, see sidevoice-engine#33):
 
 1. **Its file**, `src/backend/implementations/vosk.rs`. If its code cannot compile everywhere, the file
-   starts with one `#![cfg(<alias>)]` from `build.rs` (`web`, `native`, `apple_silicon`), with a comment saying why,
+   starts with one `#![cfg(<alias>)]` from `build.rs` (`web`, `native`), with a comment saying why,
    and does not exist elsewhere. If it links a library, that dependency goes under the same platform in `Cargo.toml`:
    the two must agree, or the file does not compile. Whatever else decides whether it runs (OS, GPU, drivers) is decided at run time.
 
