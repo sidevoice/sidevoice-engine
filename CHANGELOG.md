@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/sidevoice/sidevoice-engine/compare/v0.14.0...v0.14.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **provider:** serve listings without waiting on the network ([#176](https://github.com/sidevoice/sidevoice-engine/issues/176)) ([028b7ff](https://github.com/sidevoice/sidevoice-engine/commit/028b7ff581d558084b883d97fc31657eaf2b430c))
+
 ## [0.14.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.13.0...v0.14.0) (2026-11-14)
 
 
