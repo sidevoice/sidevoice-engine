@@ -262,6 +262,14 @@ let text = scribe.as_stt().expect("speech to text").transcribe(&pcm, 48_000, Som
 - **Listed live, kept in memory only.** A provider's status is `None` when its listing is current, else why not, as a
   stable code. Its spec and models are read when there are none (so the first call after the app starts reads every
   provider with a key), when they are a day old (its voices, an hour), and on `refresh`. Nothing is written anywhere.
+- **Nobody waits for a provider.** `status` and `models` answer from what is kept, with no call to the provider: what
+  is missing or old is read in the background, one read at a time for each provider, and shows on a later call. Until
+  a provider's first listing lands it has no models and reads as not reached (`provider-unreachable`, not `stale`: there
+  is nothing kept), so an app asks again, as it does after a `refresh`. A read that fails is tried again a minute
+  later, not on every call. `refresh` is the call that waits, for its own provider alone, and so does `load` of a model
+  of a provider with no listing yet (a model is made from the listing); a provider that does not answer holds up no
+  other. Reading in the background needs the Tokio runtime the native engine already expects (the page's event loop on
+  the web).
 - **No key, no listing.** Without a key (`credential-missing`) nothing is asked. A key the provider refuses
   (`credential-rejected`), or one it does not let list (`listing-not-permitted`: a 403, or ElevenLabs' 401 for a scoped
   key that lacks a permission), leaves the provider with no models: there is no fallback, the key must be allowed to

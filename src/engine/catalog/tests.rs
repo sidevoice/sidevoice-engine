@@ -2,6 +2,8 @@
 //! alike, a provider's status before and after its key, a refresh, and a remote model loaded from its catalogue that
 //! transcribes through the same interface as a local one.
 
+#[cfg(native)]
+use crate::test_support::ready;
 use crate::test_support::{block_on, openai_spec, FakeCatalog, MemoryHost};
 use crate::{Cancel, Capability, CatalogSource, Engine, LOCAL_CATALOG};
 
@@ -124,7 +126,7 @@ fn a_provider_whose_spec_cannot_be_read_has_no_models_and_says_why() {
     remote.answer(OPENAI_SPEC, 503, b"");
     let engine = Engine::new(Box::new(host), Vec::new()).expect("engine");
     let openai = engine.catalog("openai").expect("openai");
-    let status = block_on(openai.status());
+    let status = block_on(openai.refresh());
     assert_eq!(
         status.reason.map(|reason| reason.code),
         Some("provider-spec-unreadable")
@@ -155,6 +157,93 @@ fn a_remote_load_cancelled_while_its_listing_is_read_is_cancelled() {
         again.is_ok(),
         "the listing it read stands for the next load"
     );
+}
+
+#[cfg(native)]
+const ELEVENLABS_SPEC: &str = "https://api.elevenlabs.io/openapi.json";
+
+/// What an app's first read of a provider gets: no models, from a provider that reads as not reached, while its
+/// listing is read in the background; and the listing on a later read.
+///
+/// Native only: the read runs on the runtime, which the web's single-threaded test harness cannot drive.
+#[cfg(native)]
+#[test]
+fn a_catalogue_read_serves_what_is_kept_and_lists_in_the_background() {
+    let host = MemoryHost::default();
+    let remote = host.remote();
+    remote.key("openai", "sk-test");
+    remote.answer(OPENAI_SPEC, 200, openai_spec().to_string().as_bytes());
+    remote.answer(
+        "https://api.openai.com/v1/models",
+        200,
+        br#"{"data": [{"id": "gpt-4o-transcribe"}]}"#,
+    );
+    let engine = Engine::new(Box::new(host), Vec::new()).expect("engine");
+    let openai = engine.catalog("openai").expect("openai");
+
+    // The first read answers before anything is read: it is the read that starts it.
+    let status = block_on(async { ready(openai.status()) });
+    assert_eq!(
+        status.reason.map(|reason| reason.code),
+        Some("provider-unreachable")
+    );
+
+    let mut listed = Vec::new();
+    for _ in 0..1_000 {
+        listed = block_on(openai.models(None)).expect("models");
+        if !listed.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let ids: Vec<_> = listed.iter().map(|model| model.id()).collect();
+    assert_eq!(ids, ["gpt-4o-transcribe"], "listed by the read it started");
+    let status = block_on(openai.status());
+    assert_eq!((status.reason, status.stale), (None, false));
+}
+
+/// A provider that never answers: every read of its catalogue returns at once, and it holds up no other provider, not
+/// its read, its refresh nor loading its models.
+///
+/// Native only, as above.
+#[cfg(native)]
+#[test]
+fn a_provider_that_never_answers_holds_up_no_catalogue_read_and_no_other_provider() {
+    let host = MemoryHost::default();
+    let remote = host.remote();
+    remote.key("elevenlabs", "xi-test");
+    remote.hang(ELEVENLABS_SPEC);
+    remote.key("openai", "sk-test");
+    remote.answer(OPENAI_SPEC, 200, openai_spec().to_string().as_bytes());
+    remote.answer(
+        "https://api.openai.com/v1/models",
+        200,
+        br#"{"data": [{"id": "gpt-4o-transcribe"}]}"#,
+    );
+    let engine = Engine::new(Box::new(host), Vec::new()).expect("engine");
+
+    block_on(async {
+        // Every catalogue, as an app reads them all: status and models of each, none of which waits.
+        for _ in 0..3 {
+            for catalog in engine.catalogs() {
+                let status = ready(catalog.status());
+                let models = ready(catalog.models(None)).expect("models");
+                if catalog.id() == "elevenlabs" {
+                    assert_eq!(
+                        status.reason.map(|reason| reason.code),
+                        Some("provider-unreachable")
+                    );
+                    assert!(models.is_empty());
+                }
+            }
+        }
+        // The other provider lists and loads meanwhile (this would never return if it waited for the one that hangs).
+        let openai = engine.catalog("openai").expect("openai");
+        let status = openai.refresh().await;
+        assert_eq!((status.reason, status.stale), (None, false));
+        let loaded = ready(openai.load("gpt-4o-transcribe", &|_| {}, &Cancel::new()));
+        assert!(loaded.is_ok(), "loaded while the other provider hangs");
+    });
 }
 
 /// Speed means one thing: the local catalogue declares each text-to-speech family's speeds with their source, a bound
