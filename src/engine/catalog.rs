@@ -6,6 +6,8 @@
 //! types, with their specifics (a local model's builds and install state; a provider's listing), for code that knows
 //! which catalogue it asks.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::catalog::Capability;
@@ -35,13 +37,16 @@ pub trait Catalog: MaybeSend + MaybeSync {
     /// A remote provider's name, as a person reads it ("OpenAI"); `None` for the local catalogue, which the app names.
     fn name(&self) -> Option<&str>;
 
-    /// How it stands. A provider whose listing is missing or old is listed first, through the host: the first call
-    /// after the app starts lists it if the host has its key, and without one nothing is asked (`credential-missing`).
+    /// How it stands, from what is kept: it never waits for a provider. A provider's listing that is missing or old is
+    /// read in the background, through the host, and shows on a later call; the first call after the app starts starts
+    /// it if the host has the provider's key, and until it lands the provider has no models and reads as not reached
+    /// (`provider-unreachable`). Without a key nothing is asked (`credential-missing`).
     async fn status(&self) -> CatalogStatus;
 
     /// Its models, those of `capability` alone when given: the local catalogue's in catalogue order, each with its
-    /// builds ranked and what is installed; a provider's as listed (listed first if missing or old). A provider that
-    /// cannot list has none, and says why in [`Catalog::status`].
+    /// builds ranked and what is installed; a provider's as last listed, with no call to the provider and no wait (a
+    /// listing missing or old is read in the background, as [`Catalog::status`] says). A provider that cannot list has
+    /// none, and says why in [`Catalog::status`].
     ///
     /// # Errors
     ///
@@ -49,14 +54,17 @@ pub trait Catalog: MaybeSend + MaybeSync {
     /// here.
     async fn models(&self, capability: Option<Capability>) -> Result<Vec<Box<dyn ModelInfo>>>;
 
-    /// Reads it again now, whatever the age of what it has: a provider's spec, models and voices (what the app does
-    /// when the person asks, or saves a new key). The local catalogue is compiled in: nothing to read.
+    /// Reads it again now, whatever the age of what it has, and says how it stands after: a provider's spec, models and
+    /// voices (what the app does when the person asks, or saves a new key). This waits for the provider's answer, and
+    /// for a read of the same provider already under way before it starts its own (the key may have changed since
+    /// that one began); it waits for no other provider. The local catalogue is compiled in: nothing to read.
     async fn refresh(&self) -> CatalogStatus;
 
     /// The model `model`, ready to use. A local model is loaded as [`Engine::load`] does with no build named (an
     /// installed build that runs here, else the recommended one, installed first, telling `progress` and stopping once
-    /// `cancel` is cancelled). A remote one must be in the provider's listing; it makes no call, and is `cancelled`
-    /// once `cancel` is, while its listing is read too.
+    /// `cancel` is cancelled). A remote one must be in the provider's listing as last kept, whatever its age; it makes no
+    /// call, and waits for none unless the provider has no listing yet, which it then waits for (its own provider's
+    /// alone). It is `cancelled` once `cancel` is, while that listing is read too.
     ///
     /// # Errors
     ///
@@ -77,8 +85,10 @@ pub struct CatalogStatus {
     /// provider without a usable key (`credential-missing`, `credential-rejected`, `listing-not-permitted`: a key the
     /// provider does not let list, with no fallback) has no models; one that could not be asked
     /// (`provider-unreachable`, `provider-quota`, `plan-not-allowed`, `listing-failed`) keeps its last listing,
-    /// [`CatalogStatus::stale`]; one whose spec could not be read (`provider-spec-unreadable`) keeps its last facts, and
-    /// with none has no models.
+    /// [`CatalogStatus::stale`], and with none has no models (a provider not yet listed, whose first listing is still
+    /// being read, is the same as one that could not be reached: `provider-unreachable`, nothing stale); one whose spec
+    /// could not be read (`provider-spec-unreadable`) keeps its last facts, and with none has no models. A provider that
+    /// could not be asked is asked again in the background a minute after, not on every call.
     pub reason: Option<Reason>,
     /// Whether its models are the last listing kept after a refresh failed.
     pub stale: bool,
@@ -133,7 +143,7 @@ pub struct LocalCatalog<'a> {
 #[derive(Clone, Copy)]
 pub struct RemoteCatalog<'a> {
     engine: &'a Engine,
-    adapter: &'a dyn Adapter,
+    adapter: &'a Arc<dyn Adapter>,
 }
 
 impl std::fmt::Debug for RemoteCatalog<'_> {
@@ -153,7 +163,7 @@ impl Engine {
         let providers = self.providers.iter().map(|adapter| {
             Box::new(RemoteCatalog {
                 engine: self,
-                adapter: adapter.as_ref(),
+                adapter,
             }) as Box<dyn Catalog + '_>
         });
         std::iter::once(local).chain(providers).collect()
@@ -189,7 +199,7 @@ impl Engine {
             .find(|adapter| adapter.spec().id == id)
             .map(|adapter| RemoteCatalog {
                 engine: self,
-                adapter: adapter.as_ref(),
+                adapter,
             })
             .ok_or(Error::new("catalog-not-found"))
     }
@@ -252,7 +262,7 @@ impl LocalCatalog<'_> {
 impl RemoteCatalog<'_> {
     /// Its models, as [`Catalog::models`] lists them: the provider's listing.
     pub async fn models(&self, capability: Option<Capability>) -> Vec<RemoteModelInfo> {
-        let listed = self.engine.listed(self.adapter, false).await;
+        let listed = self.engine.listed(self.adapter).await;
         of_capability(listed.models, capability)
     }
 
@@ -313,7 +323,7 @@ impl Catalog for RemoteCatalog<'_> {
     }
 
     async fn status(&self) -> CatalogStatus {
-        CatalogStatus::of(&self.engine.listed(self.adapter, false).await)
+        CatalogStatus::of(&self.engine.listed(self.adapter).await)
     }
 
     async fn models(&self, capability: Option<Capability>) -> Result<Vec<Box<dyn ModelInfo>>> {
@@ -321,7 +331,7 @@ impl Catalog for RemoteCatalog<'_> {
     }
 
     async fn refresh(&self) -> CatalogStatus {
-        CatalogStatus::of(&self.engine.listed(self.adapter, true).await)
+        CatalogStatus::of(&self.engine.settled(self.adapter, true).await)
     }
 
     async fn load(

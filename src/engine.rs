@@ -57,7 +57,8 @@ pub struct Engine {
     host: Arc<dyn Host>,
     catalog: MergedCatalog,
     backends: Vec<Box<dyn Backend>>,
-    providers: Vec<Box<dyn Adapter>>,
+    /// Shared with the background reads of their listings.
+    providers: Vec<Arc<dyn Adapter>>,
     /// The providers' listings, in memory only.
     listings: Listings,
     resolver: Resolver,
@@ -116,7 +117,7 @@ impl Engine {
             host: Arc::from(host),
             catalog,
             backends,
-            providers: provider::built_in(),
+            providers: provider::built_in().into_iter().map(Arc::from).collect(),
             listings: Listings::default(),
             resolver: Resolver::default(),
             installer: Installer,

@@ -376,7 +376,9 @@ impl WebRemoteCatalog {
         crate::Catalog::name(&catalog).map(str::to_owned)
     }
 
-    /// How it stands: `{ reason?, stale, detail? }`, listing the provider first if its listing is missing or old.
+    /// How it stands: `{ reason?, stale, detail? }`, from what is kept, with no wait for the provider: a listing that
+    /// is missing or old is read in the background and shows on a later call (until then the provider has no models and
+    /// reads as `provider-unreachable`).
     #[wasm_bindgen(unchecked_return_type = "Promise<CatalogStatus>")]
     pub fn status(&self) -> Promise {
         let (engine, id) = (Rc::clone(&self.engine), self.id.clone());
@@ -388,7 +390,8 @@ impl WebRemoteCatalog {
         })
     }
 
-    /// Its models as listed, those of `capability` alone when given; rejects with `invalid-capability` for any other.
+    /// Its models as last listed, those of `capability` alone when given, with no wait for the provider (see `status`);
+    /// rejects with `invalid-capability` for any other.
     #[wasm_bindgen(unchecked_return_type = "Promise<RemoteModelInfo[]>")]
     pub fn models(
         &self,
@@ -407,7 +410,7 @@ impl WebRemoteCatalog {
         })
     }
 
-    /// Reads it again now, whatever its age: its status after.
+    /// Reads it again now, whatever its age, and waits for the provider's answer: its status after.
     #[wasm_bindgen(unchecked_return_type = "Promise<CatalogStatus>")]
     pub fn refresh(&self) -> Promise {
         let (engine, id) = (Rc::clone(&self.engine), self.id.clone());

@@ -911,9 +911,18 @@ pub(crate) struct FakeProvider {
     /// Cancelled when a request whose URL starts with its prefix is answered: what a person cancelling while that request
     /// is out does.
     cancels: Mutex<Vec<(String, crate::Cancel)>>,
+    /// URL prefixes whose requests are taken and never answered: a provider that has stopped responding.
+    hung: Mutex<Vec<String>>,
 }
 
 impl FakeProvider {
+    /// A request whose URL starts with `prefix` is taken and never answered, as by a provider that hangs. Native only:
+    /// what waits on it runs on the runtime, which the web's test harness cannot drive.
+    #[cfg(native)]
+    pub(crate) fn hang(&self, prefix: &str) {
+        lock(&self.hung).push(prefix.to_owned());
+    }
+
     /// `cancel` is cancelled while a request whose URL starts with `prefix` is out, before it is answered.
     pub(crate) fn cancel_during(&self, prefix: &str, cancel: &crate::Cancel) {
         lock(&self.cancels).push((prefix.to_owned(), cancel.clone()));
@@ -959,7 +968,13 @@ impl HttpClient for FakeProvider {
                 cancel.cancel();
             }
         }
+        let hangs = lock(&self.hung)
+            .iter()
+            .any(|prefix| request.url.starts_with(prefix.as_str()));
         lock(&self.requests).push(request);
+        if hangs {
+            std::future::pending::<()>().await;
+        }
         answer.ok_or(Error::new("request-failed"))
     }
 }
