@@ -256,7 +256,10 @@ pub fn gpu() -> Option<&'static Gpu> {
 /// the linker takes an archive member only for a symbol it already lacks, and the libraries that need these (ggml's)
 /// come after the library's own object files, which would otherwise be left out and the loader linked in for them.
 #[used]
-#[allow(clippy::fn_to_numeric_cast, reason = "only the addresses matter: they keep the definitions linked")]
+#[allow(
+    clippy::fn_to_numeric_cast,
+    reason = "only the addresses matter: they keep the definitions linked"
+)]
 static KEEP: [usize; 3] = [
     vkGetInstanceProcAddr as usize,
     vkGetPhysicalDeviceFeatures2 as usize,
