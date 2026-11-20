@@ -71,7 +71,9 @@ fn entry() -> Option<&'static Entry> {
 }
 
 /// What a command that fails every time stands for: it takes the arguments of whichever command it answers for and
-/// ignores them (the caller owns its arguments in the C calling conventions of every target).
+/// ignores them. That is sound because this module builds on x86_64 only (see `super`): there `extern "system"` is the
+/// one C calling convention (System V on Linux, Microsoft x64 on Windows), in which the caller owns its arguments. On
+/// 32-bit Windows `system` is stdcall, where the callee pops them, and this would unbalance the stack.
 pub(super) unsafe extern "system" fn failed() -> i32 {
     INITIALIZATION_FAILED
 }
@@ -232,6 +234,7 @@ fn devices() -> Vec<Device> {
 /// The GPU whisper.cpp runs on, asked of ggml once.
 pub fn gpu() -> Option<&'static Gpu> {
     static GPU_DEVICE: OnceLock<Option<Gpu>> = OnceLock::new();
+    std::hint::black_box(&KEEP);
     GPU_DEVICE
         .get_or_init(|| {
             let gpu = first_gpu(devices());
@@ -248,3 +251,14 @@ pub fn gpu() -> Option<&'static Gpu> {
         })
         .as_ref()
 }
+
+/// The definitions above, referenced from a static that [`gpu`] reads, so that a binary built from the library keeps them:
+/// the linker takes an archive member only for a symbol it already lacks, and the libraries that need these (ggml's)
+/// come after the library's own object files, which would otherwise be left out and the loader linked in for them.
+#[used]
+#[allow(clippy::fn_to_numeric_cast, reason = "only the addresses matter: they keep the definitions linked")]
+static KEEP: [usize; 3] = [
+    vkGetInstanceProcAddr as usize,
+    vkGetPhysicalDeviceFeatures2 as usize,
+    vkCmdCopyBuffer as usize,
+];
