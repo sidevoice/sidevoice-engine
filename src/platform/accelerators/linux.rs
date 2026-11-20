@@ -4,7 +4,7 @@ use std::path::Path;
 use super::Nvidia;
 
 /// Linux: what the NVIDIA kernel driver shows in `/proc/driver/nvidia`: its `version` once loaded, and a folder per
-/// device in `gpus`.
+/// device in `gpus`. A Vulkan GPU is the one ggml lists ([`crate::platform::vulkan`]), not a guess from the OS's files.
 pub struct Os;
 
 impl super::Accelerators for Os {
@@ -20,5 +20,9 @@ impl super::Accelerators for Os {
             Ok(Some(Ok(_))) => Nvidia::Present,
             _ => Nvidia::NoAdapter,
         }
+    }
+
+    fn vulkan() -> bool {
+        crate::platform::vulkan::present()
     }
 }

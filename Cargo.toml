@@ -116,6 +116,20 @@ sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["stat
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android"), not(target_os = "ios")))'.dependencies]
 whisper-rs = "=0.16.0"
 
+# Windows and Linux on x86_64, on top of the general table: whisper.cpp with its Vulkan backend, for the NVIDIA, AMD and
+# Intel GPUs that have a Vulkan driver (the `vulkan` feature of whisper-rs; `platform::local_engines::WHISPER_CPP_VULKAN`
+# and `platform::vulkan` are the same condition). whisper-rs-sys's build script runs CMake with GGML_VULKAN, which
+# needs the Vulkan headers and `glslc` (the SDK's shader compiler) at build time (`VULKAN_SDK` on Windows) and compiles
+# the shaders to SPIR-V into the binary: nothing is shipped but the binary. The loader (`vulkan-1.dll`,
+# `libvulkan.so.1`) is the system's and is opened when first needed, never linked: `platform::vulkan` defines the three
+# symbols ggml takes from it, so the binary starts without a loader and whisper.cpp runs on the CPU. `libloading` opens
+# it; `whisper-rs-sys` is named to ask ggml which GPU it listed (the same pinned version whisper-rs uses). Linux on
+# aarch64 builds no Vulkan shaders: nothing ships there with a GPU backend. The ONNX models stay on the CPU.
+[target.'cfg(all(target_arch = "x86_64", any(windows, target_os = "linux")))'.dependencies]
+whisper-rs = { version = "=0.16.0", features = ["vulkan"] }
+whisper-rs-sys = "=0.15.0"
+libloading = "0.8.9"
+
 # iOS only: whisper.cpp with its Metal backend (src/backend/implementations/whisper_cpp.rs), the same pinned dependency
 # as above, with Metal, in a table of its own so that no other build changes. whisper-rs-sys builds Metal with
 # GGML_METAL_EMBED_LIBRARY: the shaders' source is embedded in the binary and compiled when Metal starts, so no

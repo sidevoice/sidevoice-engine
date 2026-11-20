@@ -59,10 +59,10 @@ anything, gathered once when the host is built:
 |---|---|---|
 | `runs` | `Native` in a process, `Page` in the wasm32 build | always known |
 | `os`, `arch` | `std::env::consts::OS` and `ARCH` values. A page with nothing better: `"web"` and `"wasm32"` | always given |
-| `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
+| `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `Vulkan` with a GPU ggml's Vulkan backend lists (Windows and Linux on x86_64), `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
 | `memory_mb` | memory available to models, in MiB (2^20 bytes; every `_mb` in the engine) | `None` |
 | `cores` | CPU cores | `None` |
-| `accelerator_memory` | an explicit map accelerator to MiB, for the GPUs and neural engines the host lists; one left out has no memory, so no model runs on it (`Capabilities::memory_for`; a CPU always takes `memory_mb`). Natively: Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the machine's memory on macOS and iOS, none elsewhere yet; in a page, WebGPU takes `memoryMb` | leave it out (no GPU or neural engine runs) |
+| `accelerator_memory` | an explicit map accelerator to MiB, for the GPUs and neural engines the host lists; one left out has no memory, so no model runs on it (`Capabilities::memory_for`; a CPU always takes `memory_mb`). Natively: Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the machine's memory on macOS and iOS, the own memory of the first Vulkan GPU on Windows and Linux (none for an integrated one), none elsewhere yet; in a page, WebGPU takes `memoryMb` | leave it out (no GPU or neural engine runs) |
 | `gpu_stops_in_background` | whether the system stops serving the GPU to the app in the background: `true` on iOS (the native host's platform says so), `false` elsewhere and in a page | `false` |
 
 - **The host reports, the backend confirms.** Whether a backend can actually use an accelerator (a CUDA driver, a
@@ -79,11 +79,11 @@ anything, gathered once when the host is built:
 - **The accelerator list is fixed.** `Accelerator` is an enum of the engine (adding one is a change here, since it
   needs backend code anyway), marked `#[non_exhaustive]`.
 - **Each accelerator has a class**, the kind of hardware it is: `Accelerator::class()` gives an `AcceleratorClass`,
-  `Gpu` (`metal`, `cuda`, `webgpu`), `NeuralEngine` (`coreml`) or `Cpu` (`cpu`, `wasm`), whose stable ids are `gpu`,
+  `Gpu` (`metal`, `cuda`, `vulkan`, `webgpu`), `NeuralEngine` (`coreml`) or `Cpu` (`cpu`, `wasm`), whose stable ids are `gpu`,
   `neural-engine` and `cpu` (`AcceleratorClass::id`). The mapping lives there alone, matched exhaustively, so a new
   accelerator does not compile without its class; an app shows the class the engine gives and never derives it.
 - **A JavaScript host** resolves `capabilities()` to `{ os, arch, accelerators: string[], memoryMb?, cores? }`, the
-  accelerators by their stable ids: `cpu`, `cuda`, `coreml`, `metal`, `webgpu`, `wasm`. It is checked strictly: a
+  accelerators by their stable ids: `cpu`, `cuda`, `coreml`, `metal`, `vulkan`, `webgpu`, `wasm`. It is checked strictly: a
   missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
@@ -321,7 +321,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon and iOS, the CPU elsewhere (Windows too, built and tested in CI), natively; not on Android | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon and iOS, Vulkan on Windows and Linux on x86_64 (NVIDIA, AMD and Intel GPUs, the CPU when there is no Vulkan device), the CPU elsewhere, natively; not on Android | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links (on iOS, the shared `onnxruntime.framework` it loads) |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
@@ -405,6 +405,7 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
   desktop) do not inherit dependency Cargo configuration: set `GGML_NATIVE="OFF"`,
   `CMAKE_POLICY_DEFAULT_CMP0091="NEW"` and `CMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded"` in their own `[env]`, and
   `rustflags = ["-C", "target-feature=+crt-static"]` under each supported MSVC target table.
+- **Vulkan** (Windows and Linux on x86_64): whisper.cpp is built with ggml's Vulkan backend (whisper-rs's `vulkan` feature, set in Cargo.toml for these targets; Linux on aarch64 builds none, so it compiles no shaders). The build needs the Vulkan headers and `glslc`, the shader compiler, which compiles ggml's compute shaders to SPIR-V into the binary: on Linux `libvulkan-dev` and `glslc` (Ubuntu 24.04 packages them), on Windows the LunarG Vulkan SDK with `VULKAN_SDK` set. Nothing is shipped but the binary, and the binary does not need the loader to start: ggml takes three symbols from it (`vkGetInstanceProcAddr` and two core commands it calls by name), and `platform::vulkan` defines them, opening the loader (`libvulkan.so.1`; `vulkan-1.dll` from System32 only) the first time it is called. An app links nothing and adds no link argument, and no package has to declare `libvulkan1`. Without a loader ggml's backend registration (the first device query, any whisper.cpp load, on the CPU too) fails inside ggml's own `try` and registers no Vulkan device, so whisper.cpp runs on the CPU. CI checks that the Linux test binary has no `libvulkan` in its `NEEDED` entries. The ONNX models stay on the CPU. The accelerator list and the GPU's memory both come from ggml's device list (`platform::vulkan`): `Vulkan` is a candidate only when ggml lists a GPU (discrete or integrated; a software rasterizer or a DXGI adapter with no Vulkan driver is not one), the memory is that of the first such GPU, the one whisper.cpp takes, and an integrated GPU has none (it shares the system's memory, so its model stays on the CPU). When whisper.cpp runs on the CPU although Vulkan was asked for, the model's `AcceleratorUse.actual` says `cpu`. On Windows, ggml's shader generator is built by a nested CMake project that needs two things of the build's environment: `CMAKE_GENERATOR=Ninja` (the Visual Studio generator, CMake's default there, runs the nested project's configure and install steps at once, and MSBuild's file tracker fails on its files), and a short target directory, under about 40 characters (`CARGO_TARGET_DIR=D:\t`: CMake's compiler check there runs `cl.exe` on a path about 220 characters below it, which fails past 260 with `C1083`; a CI runner's `D:\a\<repo>\<repo>\target` is too long). This repository's setup action sets both; an app's own CI must too.
 - **On Windows, the executable must declare UTF-8 as its ANSI code page.** espeak-ng (Kokoro and Piper, through sherpa-onnx)
   takes its data directory as a narrow `char *`, which Windows reads in the ANSI code page: under a model directory with
   non-ASCII characters (a profile named `C:\Users\Iñaki`) it cannot open its data and aborts the whole process. The

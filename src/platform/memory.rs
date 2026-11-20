@@ -11,9 +11,10 @@
 //!   the native host reports as the memory models can take there, rather than the phone's.
 //!
 //! And, apart, the memory each GPU or neural engine can give models ([`MemoryObservation::accelerators`]): on macOS
-//! and iOS, Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the memory it has with the CPU; none
-//! elsewhere yet, since no backend runs on another GPU natively (CUDA, Vulkan or DXGI each add their figure when one
-//! does). An accelerator left out has none.
+//! and iOS, Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the memory it has with the CPU; on Windows
+//! and Linux, Vulkan's: the own memory of the first GPU ggml lists, the one whisper.cpp runs on (none for an
+//! integrated GPU, which works in the system's memory); none elsewhere yet (CUDA adds its figure when a backend runs
+//! on it). An accelerator left out has none.
 
 use crate::host::{Accelerator, AcceleratorMemory};
 

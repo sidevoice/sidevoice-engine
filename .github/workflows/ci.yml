@@ -75,6 +75,44 @@ jobs:
       # --include-ignored: the tests that need the network (a real download through NativeHost) run here too; the ones
       # that run real models have jobs of their own: test-inference below, and the voice loop (e2e.yml).
       - run: cargo test --locked -- --include-ignored --skip sherpa_onnx::inference_tests --skip the_voice_loop
+      # The binary starts on a machine without the Vulkan loader: `platform::vulkan` defines the one symbol ggml takes from
+      # it, so nothing links libvulkan. A needed library here would be a crash at launch for every user without one.
+      - name: The binary does not need libvulkan
+        if: matrix.target == 'linux-x86_64'
+        run: |
+          set -euo pipefail
+          bin=$(cargo test --locked --lib --no-run --message-format=json | jq -r 'select(.profile.test == true and (.target.src_path | endswith("/src/lib.rs"))) | .executable' | head -n 1)
+          readelf -d "$bin" | grep NEEDED
+          if readelf -d "$bin" | grep -q libvulkan; then
+            echo "::error::the binary needs libvulkan at load time"
+            exit 1
+          fi
+      # The same on Windows: the executable must not import vulkan-1.dll, at load time or delay-loaded.
+      - name: The binary does not import vulkan-1.dll
+        if: matrix.target == 'windows-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin=$(cargo test --locked --lib --no-run --message-format=json | jq -r 'select(.profile.test == true and (.target.src_path | test("src[/\\\\]lib[.]rs$"))) | .executable' | head -n 1)
+          dumpbin=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | head -n 1)
+          "$dumpbin" -dependents "$bin" | tee dependents.txt
+          if grep -qi 'vulkan-1.dll' dependents.txt; then
+            echo "::error::the binary imports vulkan-1.dll"
+            exit 1
+          fi
+      # No loader at all: remove it (the build is done) and load a small Whisper model through the engine, which must
+      # report the CPU and not crash (tests/whisper_no_loader.rs).
+      - name: Whisper loads without the Vulkan loader
+        if: matrix.target == 'linux-x86_64'
+        run: |
+          set -euo pipefail
+          cargo test --locked --test whisper_no_loader --no-run
+          sudo apt-get remove -y libvulkan1
+          if ldconfig -p | grep -q libvulkan.so; then
+            echo "::error::the Vulkan loader is still installed"
+            exit 1
+          fi
+          SIDEVOICE_NO_VULKAN_LOADER=1 cargo test --locked --test whisper_no_loader -- --ignored --nocapture
       - run: cargo xtask sherpa-libs --linked
 
   # Real models through the sherpa-onnx backend: Whisper transcribes, Kokoro speaks, and Whisper hears Kokoro back
@@ -132,13 +170,42 @@ jobs:
 
   # What a downstream app does on Windows: a crate outside this repository, with only the configuration the README asks of
   # a consumer (it inherits nothing from .cargo/config.toml), builds against the engine and runs (xtask/src/consumer_check.rs).
+  # Its binary must not need the Vulkan loader either: the engine's own tests do not prove that the symbols that replace
+  # it reach a binary built from the library. Linux x86_64 is built and checked too, for that.
   consumer:
-    name: Consumer build (windows-x86_64)
-    runs-on: windows-latest
+    name: Consumer build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64, runner: ubuntu-24.04 }
+          - { target: windows-x86_64, runner: windows-latest }
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/setup
       - run: cargo xtask consumer-check
+      - name: The consumer does not need the Vulkan loader
+        if: matrix.target == 'linux-x86_64'
+        run: |
+          set -euo pipefail
+          bin=/tmp/sidevoice-consumer-check/target/debug/consumer
+          readelf -d "$bin" | grep NEEDED
+          if readelf -d "$bin" | grep -q libvulkan; then
+            echo "::error::the consumer binary needs libvulkan at load time"
+            exit 1
+          fi
+      - name: The consumer does not import vulkan-1.dll
+        if: matrix.target == 'windows-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dumpbin=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | head -n 1)
+          "$dumpbin" -dependents "$(cygpath -u "$CARGO_TARGET_DIR")/consumer/debug/consumer.exe" | tee dependents.txt
+          if grep -qi 'vulkan-1.dll' dependents.txt; then
+            echo "::error::the consumer binary imports vulkan-1.dll"
+            exit 1
+          fi
 
   test-wasm:
     name: Test wasm (Node, npm package)

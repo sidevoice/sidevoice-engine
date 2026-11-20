@@ -53,6 +53,7 @@ fn accelerator(id: &str) -> Option<Accelerator> {
         "cuda" => Accelerator::Cuda,
         "coreml" => Accelerator::CoreMl,
         "metal" => Accelerator::Metal,
+        "vulkan" => Accelerator::Vulkan,
         "webgpu" => Accelerator::WebGpu,
         "wasm" => Accelerator::Wasm,
         _ => return None,
