@@ -234,7 +234,7 @@ fn devices() -> Vec<Device> {
 /// The GPU whisper.cpp runs on, asked of ggml once.
 pub fn gpu() -> Option<&'static Gpu> {
     static GPU_DEVICE: OnceLock<Option<Gpu>> = OnceLock::new();
-    std::hint::black_box(&KEEP);
+    std::hint::black_box(&KEEP.0);
     GPU_DEVICE
         .get_or_init(|| {
             let gpu = first_gpu(devices());
@@ -256,12 +256,14 @@ pub fn gpu() -> Option<&'static Gpu> {
 /// the linker takes an archive member only for a symbol it already lacks, and the libraries that need these (ggml's)
 /// come after the library's own object files, which would otherwise be left out and the loader linked in for them.
 #[used]
-#[allow(
-    clippy::fn_to_numeric_cast,
-    reason = "only the addresses matter: they keep the definitions linked"
-)]
-static KEEP: [usize; 3] = [
-    vkGetInstanceProcAddr as usize,
-    vkGetPhysicalDeviceFeatures2 as usize,
-    vkCmdCopyBuffer as usize,
-];
+static KEEP: Keep = Keep([
+    vkGetInstanceProcAddr as *const (),
+    vkGetPhysicalDeviceFeatures2 as *const (),
+    vkCmdCopyBuffer as *const (),
+]);
+
+/// The addresses of [`KEEP`]: function addresses, read by nobody.
+struct Keep([*const (); 3]);
+
+// SAFETY: the addresses of functions are never dereferenced, only kept.
+unsafe impl Sync for Keep {}
