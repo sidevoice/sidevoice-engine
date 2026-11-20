@@ -25,6 +25,17 @@
 //! ggml, not the OS, is what makes it the device a model really gets: a driver the loader cannot use, a software
 //! rasterizer (ggml keeps only discrete and integrated GPUs) or a GPU ggml rejects is not on the list.
 
+#![cfg_attr(
+    not(any(
+        all(windows, target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )),
+    allow(
+        dead_code,
+        reason = "the builds without ggml's Vulkan backend list no GPU, and only the Windows and Linux hosts ask"
+    )
+)]
+
 /// A GPU, as ggml's Vulkan backend lists it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Gpu {
