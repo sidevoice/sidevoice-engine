@@ -75,7 +75,7 @@ runs:
       run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
     # whisper.cpp's Vulkan backend (Linux and Windows builds on x86_64, whisper-rs's `vulkan` feature; nothing on Linux aarch64) needs the Vulkan headers and
     # `glslc`, the shader compiler, at build time; the loader and a GPU are only needed to run on one, never here.
-    - if: runner.os == 'Linux' && runner.arch == 'X64' && inputs.wasm != 'true' && inputs.android != 'true'
+    - if: runner.os == 'Linux' && runner.arch == 'X64' && inputs.android != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -89,3 +89,10 @@ runs:
         vulkan_version: 1.4.321.1
         cache: true
         stripdown: true
+    # ggml's shader generator is built by a nested CMake project, whose try-compile files sit about 230 characters below
+    # the target directory. MSBuild's file tracker (`tracker.exe`) cannot write below 260 characters and fails the
+    # compiler check (FTK1011) in a checkout as deep as a hosted runner's; the tracker only feeds incremental builds, which
+    # CMake's own dependency tracking replaces, so it is turned off (MSBuild reads it from the environment).
+    - if: runner.os == 'Windows'
+      shell: bash
+      run: echo "TrackFileAccess=false" >> "$GITHUB_ENV"
