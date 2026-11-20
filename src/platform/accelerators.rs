@@ -30,8 +30,12 @@ pub trait Accelerators {
     /// What the OS shows of an NVIDIA driver.
     fn nvidia() -> Nvidia;
 
+    /// Whether the OS shows a GPU with a Vulkan driver, of any maker (NVIDIA, AMD, Intel). Windows and Linux say what
+    /// they see; the systems without Vulkan say no (Apple's have Metal, and no backend asks for Vulkan on Android).
+    fn vulkan() -> bool;
+
     /// The accelerators the host reports here: the CPU always, Metal and Core ML where [`Accelerators::APPLE`], CUDA
-    /// where [`Accelerators::nvidia`] lists a device. Candidates, not proof.
+    /// where [`Accelerators::nvidia`] lists a device, Vulkan where [`Accelerators::vulkan`]. Candidates, not proof.
     #[must_use]
     fn detect() -> Vec<Accelerator> {
         let mut accelerators = vec![Accelerator::Cpu];
@@ -40,6 +44,9 @@ pub trait Accelerators {
         }
         if matches!(Self::nvidia(), Nvidia::Present) {
             accelerators.push(Accelerator::Cuda);
+        }
+        if Self::vulkan() {
+            accelerators.push(Accelerator::Vulkan);
         }
         accelerators
     }
@@ -66,7 +73,7 @@ mod macos;
 pub use macos::Os as Machine;
 
 #[cfg(windows)]
-mod windows;
+pub mod windows;
 #[cfg(windows)]
 pub use windows::Os as Machine;
 

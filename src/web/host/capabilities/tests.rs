@@ -23,6 +23,7 @@ fn every_accelerator_has_its_id_and_other_ids_name_none() {
         ("cuda", Accelerator::Cuda),
         ("coreml", Accelerator::CoreMl),
         ("metal", Accelerator::Metal),
+        ("vulkan", Accelerator::Vulkan),
         ("webgpu", Accelerator::WebGpu),
         ("wasm", Accelerator::Wasm),
     ];
@@ -36,6 +37,7 @@ fn every_accelerator_has_its_id_and_other_ids_name_none() {
             | Accelerator::Cuda
             | Accelerator::CoreMl
             | Accelerator::Metal
+            | Accelerator::Vulkan
             | Accelerator::WebGpu
             | Accelerator::Wasm => {}
         }

@@ -59,7 +59,7 @@ anything, gathered once when the host is built:
 |---|---|---|
 | `runs` | `Native` in a process, `Page` in the wasm32 build | always known |
 | `os`, `arch` | `std::env::consts::OS` and `ARCH` values. A page with nothing better: `"web"` and `"wasm32"` | always given |
-| `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
+| `accelerators` | what is present: `Cpu` natively, `Wasm` in a page, `Metal` and `CoreMl` on Apple, `Cuda` with an NVIDIA GPU, `Vulkan` with a GPU that has a Vulkan driver (Windows and Linux), `WebGpu` when the page exposes `navigator.gpu`. Order does not matter | leave it out |
 | `memory_mb` | memory available to models, in MiB (2^20 bytes; every `_mb` in the engine) | `None` |
 | `cores` | CPU cores | `None` |
 | `accelerator_memory` | an explicit map accelerator to MiB, for the GPUs and neural engines the host lists; one left out has no memory, so no model runs on it (`Capabilities::memory_for`; a CPU always takes `memory_mb`). Natively: Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the machine's memory on macOS and iOS, none elsewhere yet; in a page, WebGPU takes `memoryMb` | leave it out (no GPU or neural engine runs) |
@@ -79,11 +79,11 @@ anything, gathered once when the host is built:
 - **The accelerator list is fixed.** `Accelerator` is an enum of the engine (adding one is a change here, since it
   needs backend code anyway), marked `#[non_exhaustive]`.
 - **Each accelerator has a class**, the kind of hardware it is: `Accelerator::class()` gives an `AcceleratorClass`,
-  `Gpu` (`metal`, `cuda`, `webgpu`), `NeuralEngine` (`coreml`) or `Cpu` (`cpu`, `wasm`), whose stable ids are `gpu`,
+  `Gpu` (`metal`, `cuda`, `vulkan`, `webgpu`), `NeuralEngine` (`coreml`) or `Cpu` (`cpu`, `wasm`), whose stable ids are `gpu`,
   `neural-engine` and `cpu` (`AcceleratorClass::id`). The mapping lives there alone, matched exhaustively, so a new
   accelerator does not compile without its class; an app shows the class the engine gives and never derives it.
 - **A JavaScript host** resolves `capabilities()` to `{ os, arch, accelerators: string[], memoryMb?, cores? }`, the
-  accelerators by their stable ids: `cpu`, `cuda`, `coreml`, `metal`, `webgpu`, `wasm`. It is checked strictly: a
+  accelerators by their stable ids: `cpu`, `cuda`, `coreml`, `metal`, `vulkan`, `webgpu`, `wasm`. It is checked strictly: a
   missing or malformed field, an unknown id, or a `memoryMb` or `cores` that is not a positive whole number fails with
   `host-capabilities-<field>`. Leaving `memoryMb` or `cores` out (or `null`) is how a page says it cannot tell.
 
@@ -321,7 +321,7 @@ The catalogue, the installer, the lifecycle and the native host work, and so do 
 | Backend | Runs | On | Linked through |
 |---|---|---|---|
 | `sherpa-onnx` | speech to text with Whisper and NeMo transducers; text to speech with Kokoro, Piper and Supertonic; voice activity with Silero | the CPU, natively | the official `sherpa-onnx` crate (static ONNX Runtime) |
-| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon and iOS, the CPU elsewhere (Windows too, built and tested in CI), natively; not on Android | `whisper-rs` (whisper.cpp and ggml, built from source) |
+| `whisper-cpp` | speech to text with Whisper's ggml builds | Metal on Apple silicon and iOS, Vulkan on Windows (x86_64) and Linux (NVIDIA, AMD and Intel GPUs, the CPU when there is no Vulkan device), the CPU elsewhere, natively; not on Android | `whisper-rs` (whisper.cpp and ggml, built from source) |
 | `onnxruntime` | end of turn with smart-turn v3 | the CPU, natively | `ort` (safe API, no runtime of its own) over the ONNX Runtime sherpa-onnx already links (on iOS, the shared `onnxruntime.framework` it loads) |
 | `transformers-js` | speech to text with Whisper; text to speech with Kokoro (Spanish included, through eSpeak NG) and Supertonic 2; voice activity with Silero (its ONNX Runtime Web, run window by window); end of turn with smart-turn | WebGPU or WebAssembly, in the browser | the npm package's `@huggingface/transformers`, imported when a model loads |
 
@@ -405,6 +405,7 @@ links none: it runs on the ONNX Runtime inside sherpa-onnx's libraries, through 
   desktop) do not inherit dependency Cargo configuration: set `GGML_NATIVE="OFF"`,
   `CMAKE_POLICY_DEFAULT_CMP0091="NEW"` and `CMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded"` in their own `[env]`, and
   `rustflags = ["-C", "target-feature=+crt-static"]` under each supported MSVC target table.
+- **Vulkan** (Windows on x86_64 and Linux): whisper.cpp is built with ggml's Vulkan backend (whisper-rs's `vulkan` feature, set in Cargo.toml for these targets). The build needs the Vulkan headers and `glslc`, the shader compiler, which compiles ggml's compute shaders to SPIR-V into the binary: on Linux `libvulkan-dev` and `glslc` (Ubuntu 24.04 packages them), on Windows the LunarG Vulkan SDK with `VULKAN_SDK` set. The loader (`vulkan-1.dll`, `libvulkan.so.1`) is the system's and is not shipped. With no loader or no device whisper.cpp runs on the CPU. But the build links the loader, so the binary needs it at load time unless the link delays it: on Windows this repository's `build.rs` links with `delayimp.lib` and `/DELAYLOAD:vulkan-1.dll`, and an app does the same for its own executables (`cargo:rustc-link-arg` of a dependency never reaches the app), so it starts on a machine with no Vulkan driver; whisper.cpp then looks the loader up itself when a model loads. On Linux there is no such switch (whisper-rs links `-lvulkan`; ggml has no `GGML_BACKEND_DL` in this binding): the app's package must declare the dependency (`libvulkan1` in a `.deb`), and an AppImage relies on the system's loader. The ONNX models stay on the CPU. A GPU's memory for models is DXGI's on Windows, and on Linux what sysfs shows (AMD; Intel counts half the system memory as an estimate); an NVIDIA GPU on its proprietary driver shows none, so it is a candidate that runs nothing yet.
 - **On Windows, the executable must declare UTF-8 as its ANSI code page.** espeak-ng (Kokoro and Piper, through sherpa-onnx)
   takes its data directory as a narrow `char *`, which Windows reads in the ANSI code page: under a model directory with
   non-ASCII characters (a profile named `C:\Users\Iñaki`) it cannot open its data and aborts the whole process. The

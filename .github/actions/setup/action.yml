@@ -4,7 +4,10 @@ description: >-
   prebuilt libraries (`cargo xtask sherpa-libs`). With `wasm: true`, also the wasm32 target and the wasm-bindgen CLI
   (`wasm-bindgen`, and `wasm-bindgen-test-runner`, the wasm32 tests' runner in .cargo/config.toml). With `android: true`,
   the Android targets, the NDK and cargo-ndk (`cargo xtask android-build`). With `ios: true`, the iOS targets
-  (`cargo xtask ios-build`, on macOS).
+  (`cargo xtask ios-build`, on macOS). On Linux and Windows, also what whisper.cpp's Vulkan backend needs to build
+  (Cargo.toml: the `vulkan` feature of whisper-rs): the Vulkan headers and `glslc` on Linux (apt), the LunarG Vulkan SDK
+  on Windows (`VULKAN_SDK`); nothing on macOS, whose whisper.cpp runs on Metal. No GPU is needed to build or test: the
+  tests run on the CPU.
 
 inputs:
   wasm:
@@ -33,7 +36,7 @@ runs:
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
         # GGML_NATIVE=OFF lives in .cargo/config.toml; never restore a CPU-specific ggml cache.
-        key: ggml-portable-${{ inputs.wasm == 'true' && 'wasm' || 'native' }}
+        key: ggml-portable-vulkan-${{ inputs.wasm == 'true' && 'wasm' || 'native' }}
     # sherpa-onnx's prebuilt static libraries, which the `sherpa-onnx` crate links: fetched once by `cargo xtask
     # sherpa-libs`, checked against the digests in xtask/sherpa-onnx-libs.json, and kept outside target/, which
     # rust-cache prunes. The build links them through SHERPA_ONNX_LIB_DIR, which the command exports, so
@@ -70,3 +73,19 @@ runs:
     - if: inputs.ios == 'true'
       shell: bash
       run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+    # whisper.cpp's Vulkan backend (Linux and Windows builds, whisper-rs's `vulkan` feature) needs the Vulkan headers and
+    # `glslc`, the shader compiler, at build time; the loader and a GPU are only needed to run on one, never here.
+    - if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libvulkan-dev glslc
+    # The SDK version is pinned, as the Rust toolchain is. The action exports VULKAN_SDK, which whisper-rs-sys's build
+    # script requires on Windows; the SDK folder is cached, as the installer is large.
+    - if: runner.os == 'Windows'
+      uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+      with:
+        vulkan_version: 1.4.321.1
+        cache: true
+        stripdown: true

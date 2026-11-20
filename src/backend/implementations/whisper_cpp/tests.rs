@@ -2,18 +2,20 @@
 //! each (the GPU and flash attention, or neither), how it fails without a model file or with one that is not a model,
 //! and how a language reaches whisper.cpp. Running a real model is the voice loop of `cargo xtask e2e`.
 
-use super::{context_params, language_id, WhisperCpp, SPEC};
+use super::{context_params, flash_attention, language_id, WhisperCpp, SPEC};
 use crate::backend::{Backend, BackendModel};
 use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
-use crate::platform::local_engines::WHISPER_CPP_METAL;
+use crate::platform::local_engines::{WHISPER_CPP_METAL, WHISPER_CPP_VULKAN};
 use crate::test_support::{block_on, build};
 use crate::Result;
 
 #[test]
-fn it_declares_metal_first_where_it_is_compiled_in_and_the_cpu_everywhere() {
+fn it_declares_its_gpu_first_where_it_is_compiled_in_and_the_cpu_everywhere() {
     if WHISPER_CPP_METAL {
         assert_eq!(SPEC.accelerators, [Accelerator::Metal, Accelerator::Cpu]);
+    } else if WHISPER_CPP_VULKAN {
+        assert_eq!(SPEC.accelerators, [Accelerator::Vulkan, Accelerator::Cpu]);
     } else {
         assert_eq!(SPEC.accelerators, [Accelerator::Cpu]);
     }
@@ -71,6 +73,20 @@ fn it_refuses_an_accelerator_it_does_not_run_on_before_reading_the_model() {
     } else {
         assert_eq!(metal, "unsupported-accelerator");
     }
+    let vulkan = code(load(Accelerator::Vulkan, &model));
+    if WHISPER_CPP_VULKAN {
+        assert_eq!(vulkan, "model-load-failed");
+    } else {
+        assert_eq!(vulkan, "unsupported-accelerator");
+    }
+}
+
+#[test]
+fn flash_attention_is_asked_for_on_metal_only() {
+    assert!(flash_attention(Accelerator::Metal));
+    for other in [Accelerator::Vulkan, Accelerator::Cuda, Accelerator::Cpu] {
+        assert!(!flash_attention(other), "{other:?}");
+    }
 }
 
 #[test]
@@ -88,10 +104,10 @@ fn a_language_reaches_whisper_cpp_as_its_primary_subtag() {
     }
 }
 
-/// On the GPU whisper.cpp runs with flash attention; on the CPU with neither the GPU nor flash attention. What it does
+/// On Metal whisper.cpp runs with the GPU and flash attention, on Vulkan with the GPU alone, on the CPU with neither. What it does
 /// not run on is refused before any parameter is set.
 #[test]
-fn flash_attention_is_on_with_the_gpu_and_off_on_the_cpu() {
+fn flash_attention_is_on_with_metal_and_off_on_the_cpu_and_on_vulkan() {
     let on =
         |accelerator| context_params(accelerator).map(|params| (params.use_gpu, params.flash_attn));
     assert_eq!(on(Accelerator::Cpu), Ok((false, false)));
@@ -100,6 +116,15 @@ fn flash_attention_is_on_with_the_gpu_and_off_on_the_cpu() {
     } else {
         assert_eq!(
             on(Accelerator::Metal).unwrap_err().code,
+            "unsupported-accelerator"
+        );
+    }
+    if WHISPER_CPP_VULKAN {
+        // The GPU, without flash attention.
+        assert_eq!(on(Accelerator::Vulkan), Ok((true, false)));
+    } else {
+        assert_eq!(
+            on(Accelerator::Vulkan).unwrap_err().code,
             "unsupported-accelerator"
         );
     }

@@ -7,11 +7,16 @@ struct NoDriver;
 struct DriverWithoutAdapter;
 struct DriverWithAdapter;
 struct AppleSystem;
+struct VulkanGpu;
+struct NvidiaWithVulkan;
 
 impl Accelerators for NoDriver {
     const APPLE: bool = false;
     fn nvidia() -> Nvidia {
         Nvidia::Absent
+    }
+    fn vulkan() -> bool {
+        false
     }
 }
 
@@ -20,6 +25,9 @@ impl Accelerators for DriverWithoutAdapter {
     fn nvidia() -> Nvidia {
         Nvidia::NoAdapter
     }
+    fn vulkan() -> bool {
+        false
+    }
 }
 
 impl Accelerators for DriverWithAdapter {
@@ -27,12 +35,38 @@ impl Accelerators for DriverWithAdapter {
     fn nvidia() -> Nvidia {
         Nvidia::Present
     }
+    fn vulkan() -> bool {
+        false
+    }
+}
+
+impl Accelerators for VulkanGpu {
+    const APPLE: bool = false;
+    fn nvidia() -> Nvidia {
+        Nvidia::Absent
+    }
+    fn vulkan() -> bool {
+        true
+    }
+}
+
+impl Accelerators for NvidiaWithVulkan {
+    const APPLE: bool = false;
+    fn nvidia() -> Nvidia {
+        Nvidia::Present
+    }
+    fn vulkan() -> bool {
+        true
+    }
 }
 
 impl Accelerators for AppleSystem {
     const APPLE: bool = true;
     fn nvidia() -> Nvidia {
         Nvidia::Absent
+    }
+    fn vulkan() -> bool {
+        false
     }
 }
 
@@ -55,6 +89,15 @@ fn a_driver_that_lists_an_adapter_makes_cuda_a_candidate_after_the_cpu() {
 }
 
 #[test]
+fn a_gpu_with_a_vulkan_driver_makes_vulkan_a_candidate_whoever_made_it() {
+    assert_eq!(VulkanGpu::detect(), [Accelerator::Cpu, Accelerator::Vulkan]);
+    assert_eq!(
+        NvidiaWithVulkan::detect(),
+        [Accelerator::Cpu, Accelerator::Cuda, Accelerator::Vulkan]
+    );
+}
+
+#[test]
 fn apple_systems_offer_metal_and_core_ml() {
     assert_eq!(
         AppleSystem::detect(),
@@ -67,9 +110,13 @@ fn this_machine_always_reports_the_cpu_first() {
     let detected = Machine::detect();
     assert_eq!(detected.first(), Some(&Accelerator::Cpu));
     assert_eq!(detected.contains(&Accelerator::Metal), Machine::APPLE);
-    // Candidates only: Vulkan and DirectML are not named until a runtime proves them.
+    // Candidates only: DirectML is not named until a runtime proves it.
     assert!(detected.iter().all(|accelerator| matches!(
         accelerator,
-        Accelerator::Cpu | Accelerator::Cuda | Accelerator::Metal | Accelerator::CoreMl
+        Accelerator::Cpu
+            | Accelerator::Cuda
+            | Accelerator::Vulkan
+            | Accelerator::Metal
+            | Accelerator::CoreMl
     )));
 }

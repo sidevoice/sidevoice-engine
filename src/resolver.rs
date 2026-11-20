@@ -8,7 +8,7 @@
 //! run first, each on its backend's preferred accelerator, and every one that does not with its reason (`rejection`).
 //!
 //! The builds that run are ranked by the class of the accelerator each would run on here ([`Accelerator::class`],
-//! sidevoice-engine#4): a GPU (Metal, CUDA, WebGPU) first, then a neural engine (Core ML), then a CPU (natively or in
+//! sidevoice-engine#4): a GPU (Metal, CUDA, Vulkan, WebGPU) first, then a neural engine (Core ML), then a CPU (natively or in
 //! WebAssembly). Within a class they keep catalogue order: that is the documented fallback until measured speed and
 //! quality rank them (sidevoice-engine#16). So on Apple silicon whisper.cpp on Metal comes before sherpa-onnx on the
 //! CPU, and where both run on the CPU the catalogue's order stands.
