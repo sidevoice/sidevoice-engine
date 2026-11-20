@@ -81,7 +81,7 @@ jobs:
         if: matrix.target == 'linux-x86_64'
         run: |
           set -euo pipefail
-          bin=$(cargo test --locked --lib --no-run --message-format=json | jq -r 'select(.profile.test == true and (.target.kind | index("lib"))) | .executable' | head -n 1)
+          bin=$(cargo test --locked --lib --no-run --message-format=json | jq -r 'select(.profile.test == true and (.target.src_path | endswith("/src/lib.rs"))) | .executable' | head -n 1)
           readelf -d "$bin" | grep NEEDED
           if readelf -d "$bin" | grep -q libvulkan; then
             echo "::error::the binary needs libvulkan at load time"
