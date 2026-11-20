@@ -39,13 +39,8 @@ fn a_whisper_model_loads_on_the_cpu_without_the_vulkan_loader() {
         Some(Accelerator::Cpu),
         "without the loader the build is offered on the CPU"
     );
-    let loaded = block_on(engine.load(
-        &model.id,
-        Some(BUILD),
-        &|_: Progress| {},
-        &Cancel::new(),
-    ))
-    .expect("the model loads");
+    let loaded = block_on(engine.load(&model.id, Some(BUILD), &|_: Progress| {}, &Cancel::new()))
+        .expect("the model loads");
     assert_eq!(loaded.accelerator().actual, Some(Accelerator::Cpu));
     // A second of silence: it runs the model, and says whatever it says.
     let silence = vec![0.0_f32; 16_000];
