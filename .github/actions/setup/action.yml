@@ -5,7 +5,7 @@ description: >-
   (`wasm-bindgen`, and `wasm-bindgen-test-runner`, the wasm32 tests' runner in .cargo/config.toml). With `android: true`,
   the Android targets, the NDK and cargo-ndk (`cargo xtask android-build`). With `ios: true`, the iOS targets
   (`cargo xtask ios-build`, on macOS). On Linux and Windows, also what whisper.cpp's Vulkan backend needs to build
-  (Cargo.toml: the `vulkan` feature of whisper-rs): the Vulkan headers and `glslc` on Linux (apt), the LunarG Vulkan SDK
+  (Cargo.toml: the `vulkan` feature of whisper-rs): the Vulkan headers and `glslc` on Linux x86_64 (apt), the LunarG Vulkan SDK
   on Windows (`VULKAN_SDK`); nothing on macOS, whose whisper.cpp runs on Metal. No GPU is needed to build or test: the
   tests run on the CPU.
 
@@ -73,9 +73,9 @@ runs:
     - if: inputs.ios == 'true'
       shell: bash
       run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-    # whisper.cpp's Vulkan backend (Linux and Windows builds, whisper-rs's `vulkan` feature) needs the Vulkan headers and
+    # whisper.cpp's Vulkan backend (Linux and Windows builds on x86_64, whisper-rs's `vulkan` feature; nothing on Linux aarch64) needs the Vulkan headers and
     # `glslc`, the shader compiler, at build time; the loader and a GPU are only needed to run on one, never here.
-    - if: runner.os == 'Linux'
+    - if: runner.os == 'Linux' && runner.arch == 'X64' && inputs.wasm != 'true' && inputs.android != 'true'
       shell: bash
       run: |
         set -euo pipefail

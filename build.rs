@@ -6,8 +6,6 @@
 //!
 //! And the link to the shared ONNX Runtime framework that sherpa-onnx loads on iOS (`onnxruntime_framework`).
 //!
-//! And, on Windows (MSVC, x86_64), the delayed load of the Vulkan loader (`delay_vulkan`).
-//!
 //! And, when CI asks, on Windows, the manifest that makes UTF-8 the tests' ANSI code page.
 
 // A build script talks to Cargo through stdout.
@@ -26,7 +24,6 @@ fn main() {
     bundled_families();
     onnxruntime_framework();
     test_manifest();
-    delay_vulkan();
 }
 
 /// Links `onnxruntime.framework` when `ONNXRUNTIME_FRAMEWORK_DIR` names the directory holding it, which an iOS build
@@ -86,20 +83,4 @@ fn bundled_families() {
     list.push(']');
     let out = Path::new(&env::var("OUT_DIR").expect("OUT_DIR")).join("bundled_families.rs");
     fs::write(out, list).expect("bundled_families.rs");
-}
-
-/// whisper.cpp's Vulkan backend (Windows on x86_64, Cargo.toml) links the loader, `vulkan-1.dll`, and a binary that
-/// imports it does not start on a machine without one. This delays that import until the first call into it, so the
-/// binary starts, and whisper.cpp (which looks the loader up itself when it starts its GPU backend, and runs on the CPU
-/// when there is none) finds out when a model loads. It applies to the engine's own binaries (the tests, the cdylib):
-/// `cargo:rustc-link-arg` of a dependency's build script never reaches the app that links the rlib, which adds the
-/// same two arguments to its own link (README, "Vulkan"). Nothing for any target but MSVC on x86_64.
-fn delay_vulkan() {
-    if env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc")
-        || env::var("CARGO_CFG_TARGET_ARCH").as_deref() != Ok("x86_64")
-    {
-        return;
-    }
-    println!("cargo:rustc-link-arg=delayimp.lib");
-    println!("cargo:rustc-link-arg=/DELAYLOAD:vulkan-1.dll");
 }

@@ -12,8 +12,9 @@
 //!
 //! And, apart, the memory each GPU or neural engine can give models ([`MemoryObservation::accelerators`]): on macOS
 //! and iOS, Metal's `recommendedMaxWorkingSetSize` and Core ML's share of the memory it has with the CPU; on Windows
-//! and Linux, Vulkan's (DXGI's adapters; the kernel's render nodes, which show no NVIDIA GPU's); none elsewhere yet
-//! (CUDA adds its figure when a backend runs on it). An accelerator left out has none.
+//! and Linux, Vulkan's: the own memory of the first GPU ggml lists, the one whisper.cpp runs on (none for an
+//! integrated GPU, which works in the system's memory); none elsewhere yet (CUDA adds its figure when a backend runs
+//! on it). An accelerator left out has none.
 
 use crate::host::{Accelerator, AcceleratorMemory};
 

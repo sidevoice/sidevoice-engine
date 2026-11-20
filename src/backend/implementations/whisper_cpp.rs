@@ -29,15 +29,16 @@
 //! (whisper-rs builds with GGML_METAL_EMBED_LIBRARY) and compiled when the first model loads, so an app ships no
 //! `.metallib`.
 //!
-//! Vulkan on Windows (x86_64) and Linux (the `vulkan` feature of whisper-rs; `platform::local_engines::WHISPER_CPP_VULKAN`),
+//! Vulkan on Windows and Linux on x86_64 (the `vulkan` feature of whisper-rs; `platform::local_engines::WHISPER_CPP_VULKAN`),
 //! for NVIDIA, AMD and Intel GPUs alike. The model asks whisper.cpp for its GPU, without flash attention (the whisper.cpp
-//! bundled is 1.8.3, whose Vulkan flash-attention path predates many fixes). With no Vulkan device, or one that does not
-//! start, whisper.cpp runs the model on the CPU and says so in its log; a load that fails on Vulkan is loaded again on
-//! the CPU by the engine. The shaders are compiled to SPIR-V when whisper.cpp is built (`glslc`, README "Vulkan"). The
-//! loader is the system's: ggml looks it up itself when it starts, but the build also links it, so a binary needs it at
-//! load time unless its link delays it (Windows: `/DELAYLOAD:vulkan-1.dll`, which build.rs does for the engine's own
-//! binaries and an app does for its own; Linux: the package declares `libvulkan1`). The CPU is everywhere else, and CUDA
-//! is a feature of whisper-rs that is not turned on.
+//! bundled is 1.8.3, whose Vulkan flash-attention path predates many fixes). The GPU is the first one ggml lists
+//! (`platform::vulkan`, which also gives its memory: a discrete GPU's own, none for an integrated one, so no model is
+//! sent there); when ggml lists none (no loader, no driver, or only a software rasterizer) the model runs on the CPU
+//! and says so: [`BackendModel::confirmed_accelerator`] answers the CPU, not the Vulkan it was asked for. A load that
+//! fails on Vulkan is loaded again on the CPU by the engine. The shaders are compiled to SPIR-V when whisper.cpp is
+//! built (`glslc`, README "Vulkan"). The Vulkan loader is the system's and is opened when first needed, never linked
+//! (`platform::vulkan`), so a binary starts on a machine without one. The CPU is everywhere else, and CUDA is a feature
+//! of whisper-rs that is not turned on.
 //!
 //! # Languages
 //!
@@ -59,6 +60,7 @@ use crate::catalog::BuildEntry;
 use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
 use crate::platform::local_engines::{WHISPER_CPP_METAL, WHISPER_CPP_VULKAN};
+use crate::platform::vulkan;
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -120,6 +122,8 @@ impl Library for Linked {
 /// and the decoding parameters for each language it has been asked for.
 struct Whisper {
     state: WhisperState,
+    /// The accelerator it is known to run on ([`confirmed_on`]).
+    confirmed: Option<Accelerator>,
     /// By whisper.cpp's language id, `None` for detecting it. whisper-rs gives up the language's C string it hands
     /// whisper.cpp each time a language is set, so each language's parameters are made once and copied after that.
     params: HashMap<Option<c_int>, FullParams<'static, 'static>>,
@@ -134,7 +138,12 @@ impl Whisper {
             .get("model")
             .map(String::as_str)
             .ok_or(Error::new("file-not-installed"))?;
-        let context = context_params(accelerator)?;
+        let mut context = context_params(accelerator)?;
+        let confirmed = confirmed_on(accelerator, vulkan::present());
+        if confirmed == Some(Accelerator::Cpu) {
+            // No GPU listed: the CPU, asked for plainly rather than left to whisper.cpp's fallback.
+            context.use_gpu(false);
+        }
         if path.contains('\0') {
             return Err(Error::new("model-load-failed"));
         }
@@ -145,6 +154,7 @@ impl Whisper {
             .map_err(|_| Error::new("model-load-failed"))?;
         Ok(Self {
             state,
+            confirmed,
             params: HashMap::new(),
         })
     }
@@ -185,6 +195,17 @@ fn context_params(accelerator: Accelerator) -> Result<WhisperContextParameters<'
     Ok(params)
 }
 
+/// The accelerator a load on `accelerator` is known to end up on, given whether ggml lists a Vulkan GPU: whisper.cpp
+/// falls back to the CPU by itself when it finds no GPU, so a Vulkan model is a GPU one only when ggml has a GPU for it,
+/// and is confirmed on the CPU when it has none. Metal is whisper.cpp's to start and say so in its log: not confirmed.
+fn confirmed_on(accelerator: Accelerator, vulkan_gpu: bool) -> Option<Accelerator> {
+    match accelerator {
+        Accelerator::Vulkan if vulkan_gpu => Some(Accelerator::Vulkan),
+        Accelerator::Vulkan => Some(Accelerator::Cpu),
+        _ => None,
+    }
+}
+
 /// Whether whisper.cpp is asked for flash attention on `accelerator`: on Metal, where it shortens the encoder, and
 /// nowhere else (the CPU never had it, and Vulkan's is left off with the whisper.cpp bundled).
 fn flash_attention(accelerator: Accelerator) -> bool {
@@ -219,6 +240,10 @@ fn language_id(tag: &str) -> Result<c_int> {
 impl BackendModel for Whisper {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
+    }
+
+    fn confirmed_accelerator(&self) -> Option<Accelerator> {
+        self.confirmed
     }
 }
 

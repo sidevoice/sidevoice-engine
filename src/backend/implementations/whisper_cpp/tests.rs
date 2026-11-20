@@ -2,7 +2,7 @@
 //! each (the GPU and flash attention, or neither), how it fails without a model file or with one that is not a model,
 //! and how a language reaches whisper.cpp. Running a real model is the voice loop of `cargo xtask e2e`.
 
-use super::{context_params, flash_attention, language_id, WhisperCpp, SPEC};
+use super::{confirmed_on, context_params, flash_attention, language_id, WhisperCpp, SPEC};
 use crate::backend::{Backend, BackendModel};
 use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
@@ -149,5 +149,20 @@ fn a_gpu_the_backend_was_not_built_for_is_refused() {
             "unsupported-accelerator",
             "{gpu:?}"
         );
+    }
+}
+
+#[test]
+fn a_vulkan_model_is_confirmed_on_the_gpu_only_when_ggml_lists_one() {
+    assert_eq!(confirmed_on(Accelerator::Vulkan, true), Some(Accelerator::Vulkan));
+    // whisper.cpp falls back silently: the model is reported on the CPU, not on the Vulkan it was asked for.
+    assert_eq!(confirmed_on(Accelerator::Vulkan, false), Some(Accelerator::Cpu));
+}
+
+#[test]
+fn only_vulkan_is_confirmed_here() {
+    for other in [Accelerator::Cpu, Accelerator::Metal, Accelerator::Cuda] {
+        assert_eq!(confirmed_on(other, true), None, "{other:?}");
+        assert_eq!(confirmed_on(other, false), None, "{other:?}");
     }
 }

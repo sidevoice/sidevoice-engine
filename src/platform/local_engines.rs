@@ -21,12 +21,13 @@ macro_rules! where_whisper_cpp_builds {
 pub(crate) use where_whisper_cpp_builds;
 
 where_whisper_cpp_builds! {
-    /// Whether the whisper.cpp backend is built with ggml's Vulkan backend: Windows on x86_64 and Linux, where
-    /// Cargo.toml turns on whisper-rs's `vulkan` feature (the same condition). Elsewhere Metal or the CPU.
+    /// Whether the whisper.cpp backend is built with ggml's Vulkan backend: Windows and Linux on x86_64, where
+    /// Cargo.toml turns on whisper-rs's `vulkan` feature (the same condition, which `platform::vulkan` spells out
+    /// too: change them together). Elsewhere Metal or the CPU; Linux on aarch64 builds no Vulkan shaders.
     #[cfg(native)]
-    pub const WHISPER_CPP_VULKAN: bool = cfg!(any(
-        all(windows, target_arch = "x86_64"),
-        target_os = "linux"
+    pub const WHISPER_CPP_VULKAN: bool = cfg!(all(
+        target_arch = "x86_64",
+        any(windows, target_os = "linux")
     ));
 }
 
