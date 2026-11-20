@@ -112,7 +112,7 @@ jobs:
             echo "::error::the Vulkan loader is still installed"
             exit 1
           fi
-          cargo test --locked --test whisper_no_loader -- --ignored --nocapture
+          SIDEVOICE_NO_VULKAN_LOADER=1 cargo test --locked --test whisper_no_loader -- --ignored --nocapture
       - run: cargo xtask sherpa-libs --linked
 
   # Real models through the sherpa-onnx backend: Whisper transcribes, Kokoro speaks, and Whisper hears Kokoro back
