@@ -93,7 +93,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bin=$(cargo test --locked --lib --no-run --message-format=json | jq -r 'select(.profile.test == true and (.target.src_path | endswith("/src/lib.rs"))) | .executable' | head -n 1)
+          bin=$(cargo test --locked --lib --no-run --message-format=json | jq -r 'select(.profile.test == true and (.target.src_path | test("src[/\\\\]lib[.]rs$"))) | .executable' | head -n 1)
           dumpbin=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | head -n 1)
           "$dumpbin" -dependents "$bin" | tee dependents.txt
           if grep -qi 'vulkan-1.dll' dependents.txt; then
