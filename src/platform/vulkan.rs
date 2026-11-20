@@ -6,10 +6,11 @@
 //!
 //! # The loader is looked up when it is needed, never linked
 //!
-//! ggml's Vulkan backend calls one function of the loader by name, `vkGetInstanceProcAddr`, and gets every other
-//! through it. whisper-rs-sys links the loader (`-lvulkan`, `vulkan-1.lib`) for that one symbol, so a binary that links
-//! it would not start on a machine without the loader (`libvulkan.so.1`, `vulkan-1.dll`). This module defines that
-//! symbol itself, so the linker never needs the loader's: the first call opens the loader (on Linux through the
+//! ggml's Vulkan backend calls three functions of the loader by name: `vkGetInstanceProcAddr`, through which it gets every
+//! other, and two core commands it calls directly (`vkGetPhysicalDeviceFeatures2`, `vkCmdCopyBuffer`). whisper-rs-sys links
+//! the loader (`-lvulkan`, `vulkan-1.lib`) for them, so a binary that links
+//! it would not start on a machine without the loader (`libvulkan.so.1`, `vulkan-1.dll`). This module defines those
+//! symbols itself, so the linker never needs the loader's: the first call opens the loader (on Linux through the
 //! system's library search, on Windows only from System32, never from the application's folder or `PATH`) and forwards
 //! to it. Without a loader the answer for the four commands that need no instance (`vkEnumerateInstanceVersion`,
 //! `vkEnumerateInstanceExtensionProperties`, `vkEnumerateInstanceLayerProperties`, `vkCreateInstance`) is a function

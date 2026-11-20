@@ -121,8 +121,8 @@ whisper-rs = "=0.16.0"
 # and `platform::vulkan` are the same condition). whisper-rs-sys's build script runs CMake with GGML_VULKAN, which
 # needs the Vulkan headers and `glslc` (the SDK's shader compiler) at build time (`VULKAN_SDK` on Windows) and compiles
 # the shaders to SPIR-V into the binary: nothing is shipped but the binary. The loader (`vulkan-1.dll`,
-# `libvulkan.so.1`) is the system's and is opened when first needed, never linked: `platform::vulkan` defines the one
-# symbol ggml takes from it, so the binary starts without a loader and whisper.cpp runs on the CPU. `libloading` opens
+# `libvulkan.so.1`) is the system's and is opened when first needed, never linked: `platform::vulkan` defines the three
+# symbols ggml takes from it, so the binary starts without a loader and whisper.cpp runs on the CPU. `libloading` opens
 # it; `whisper-rs-sys` is named to ask ggml which GPU it listed (the same pinned version whisper-rs uses). Linux on
 # aarch64 builds no Vulkan shaders: nothing ships there with a GPU backend. The ONNX models stay on the CPU.
 [target.'cfg(all(target_arch = "x86_64", any(windows, target_os = "linux")))'.dependencies]

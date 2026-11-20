@@ -109,6 +109,56 @@ pub unsafe extern "system" fn vkGetInstanceProcAddr(
     }
 }
 
+/// A function the loader exports by name, found once. ggml's Vulkan backend calls two of the core commands directly by
+/// name instead of through `vkGetInstanceProcAddr` (`vkGetPhysicalDeviceFeatures2` and `vkCmdCopyBuffer`), so they are
+/// defined here too, or the linker would bring the loader back in for them.
+fn exported<T: Copy>(name: &'static [u8]) -> Option<T> {
+    let entry = entry()?;
+    // SAFETY: `T` is the signature the Vulkan specification gives the command named.
+    unsafe { entry._library.get::<T>(name).ok().map(|symbol| *symbol) }
+}
+
+/// `vkGetPhysicalDeviceFeatures2`. A physical device exists only when the loader gave it, so the loader is there.
+///
+/// # Safety
+///
+/// As `vkGetPhysicalDeviceFeatures2`.
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub unsafe extern "system" fn vkGetPhysicalDeviceFeatures2(
+    physical_device: *mut c_void,
+    features: *mut c_void,
+) {
+    type Command = unsafe extern "system" fn(*mut c_void, *mut c_void);
+    static COMMAND: OnceLock<Option<Command>> = OnceLock::new();
+    if let Some(command) = COMMAND.get_or_init(|| exported(b"vkGetPhysicalDeviceFeatures2\0")) {
+        // SAFETY: the loader's own function, with the caller's arguments.
+        unsafe { command(physical_device, features) }
+    }
+}
+
+/// `vkCmdCopyBuffer`. A command buffer exists only when the loader gave it, so the loader is there.
+///
+/// # Safety
+///
+/// As `vkCmdCopyBuffer`.
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub unsafe extern "system" fn vkCmdCopyBuffer(
+    command_buffer: *mut c_void,
+    source: u64,
+    destination: u64,
+    region_count: u32,
+    regions: *const c_void,
+) {
+    type Command = unsafe extern "system" fn(*mut c_void, u64, u64, u32, *const c_void);
+    static COMMAND: OnceLock<Option<Command>> = OnceLock::new();
+    if let Some(command) = COMMAND.get_or_init(|| exported(b"vkCmdCopyBuffer\0")) {
+        // SAFETY: the loader's own function, with the caller's arguments.
+        unsafe { command(command_buffer, source, destination, region_count, regions) }
+    }
+}
+
 /// What a device of ggml's list is, for choosing among them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {
