@@ -166,5 +166,6 @@ artifact is not there yet; when the job that builds it failed, it is never there
 
 ## What this needs from the repository settings
 
+- The settings every repository needs (squash merging, "Allow GitHub Actions to create and approve pull requests", `ci` and the PR title check as required checks in a ruleset) are in the guideline, section 7.
 - On npmjs.com, the scope and the trusted publisher of `@sidevoice/engine` ([Before the first versioned
   release](#before-the-first-versioned-release)).
