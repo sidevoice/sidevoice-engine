@@ -1,5 +1,7 @@
 # Releasing
 
+The release rules (nightlies during development, the release-please PR, release day, pins) are the organisation's, in the [releasing guideline](https://github.com/sidevoice/.github-private/blob/main/docs/releasing.md). This file is only this repository's own steps.
+
 One version for the whole workspace, tagged `vX.Y.Z`. It lives in the workspace's `Cargo.toml` (and `Cargo.lock`);
 release-please moves it (`release-please-config.json`: release type `rust`, `bump-minor-pre-major`, draft
 releases). Never edit it by hand.
@@ -65,10 +67,6 @@ gh attestation verify sidevoice-engine-0.2.0.tgz \
   --deny-self-hosted-runners
 ```
 
-The changelog is written from the squashed PR titles. To change it, edit `CHANGELOG.md` in the release PR right
-before merging it: any later merge into `main` regenerates the PR. After the release, fix the notes on the
-Release itself.
-
 ## npm
 
 Every `vX.Y.Z` release (never the nightly) goes to npm as `@sidevoice/engine` at that version, dist-tag `latest`, or
@@ -127,24 +125,6 @@ fails and nothing reaches npm; the GitHub Release is published regardless.
 
 Every workflow on the way grants `id-token: write`.
 
-## Which version comes next
-
-`fix:` → patch, `feat:` → minor. While the version is 0.x a breaking change (`feat!:` or a `BREAKING CHANGE:`
-footer) bumps the minor, not the major. `docs:`, `chore:`, `ci:`, `test:`, `refactor:` alone make no release.
-
-## A release candidate, or any explicit version
-
-Put the footer as the **last line of a PR's description** (the squash commit takes the description as its body):
-
-```
-Release-As: 0.2.0-rc.1
-```
-
-The release PR then proposes exactly that version. A version with a `-` suffix is published as a **pre-release and
-never as latest**, on GitHub and on npm (`next`). The next candidate is `Release-As: 0.2.0-rc.2`; the final one is
-`Release-As: 0.2.0` (say it: after a candidate, do not leave the next version to the computation). With nothing
-else to merge, a PR with one empty commit (`git commit --allow-empty`) carries the footer.
-
 ## Nightly
 
 Every green `release` run on `main` moves the tag `nightly` to that commit and replaces every asset of the one
@@ -186,10 +166,5 @@ artifact is not there yet; when the job that builds it failed, it is never there
 
 ## What this needs from the repository settings
 
-- Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests**: without it
-  release-please cannot open its PR.
-- Squash merging, with the PR title as the commit message.
-- `ci` and **PR title is a conventional commit** run on every PR; release-please's own PR gets both through a
-  dispatched run (its pushes start no workflow by themselves). Make both required in a ruleset to enforce them.
 - On npmjs.com, the scope and the trusted publisher of `@sidevoice/engine` ([Before the first versioned
   release](#before-the-first-versioned-release)).
