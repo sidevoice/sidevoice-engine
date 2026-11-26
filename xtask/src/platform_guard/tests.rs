@@ -182,11 +182,20 @@ fn imports_are_followed_through_renames_and_chains_in_any_order() {
 }
 
 #[test]
-fn dead_code_suppressions_and_os_command_helpers_are_seen() {
-    assert_eq!(n("#[allow(dead_code)] fn unavailable() {}"), 1);
-    assert_eq!(n("#[expect(dead_code)] fn unavailable() {}"), 1);
+fn dead_code_counts_only_under_an_os_condition_and_os_command_helpers_are_seen() {
+    assert_eq!(n("#[allow(dead_code)] fn unused() {}"), 0);
+    assert_eq!(n("#[expect(dead_code)] fn unused() {}"), 0);
     assert_eq!(
         n("#[cfg_attr(feature = \"x\", allow(dead_code))] fn f() {}"),
+        0
+    );
+    assert_eq!(n("#[cfg_attr(native, allow(dead_code))] fn f() {}"), 0);
+    assert_eq!(n("#[cfg_attr(web, expect(dead_code))] fn f() {}"), 0);
+    assert_eq!(n("#[cfg_attr(test, allow(dead_code))] fn f() {}"), 0);
+    // Cross-OS dead code stays visible through its OS condition, once per attribute.
+    assert_eq!(n("#[cfg_attr(windows, allow(dead_code))] fn f() {}"), 1);
+    assert_eq!(
+        n("#[cfg_attr(not(target_os = \"macos\"), expect(dead_code))] fn f() {}"),
         1
     );
     assert_eq!(n("#[allow(clippy::too_many_arguments)] fn f() {}"), 0);
@@ -196,4 +205,27 @@ fn dead_code_suppressions_and_os_command_helpers_are_seen() {
         1
     );
     assert_eq!(n("fn f() { let _ = sh(\"cargo metadata\"); }"), 0);
+}
+
+#[test]
+fn plain_dead_code_suppressions_are_audited_not_counted() {
+    // A shared helper whose only caller is another OS's implementation inside `platform`.
+    let report = scan(
+        "#[allow(dead_code)]\npub(crate) fn helper() {}\n#[cfg_attr(native, expect(dead_code))] fn g() {}",
+        &Shared::default(),
+    )
+    .unwrap();
+    assert_eq!(report.count, 0);
+    assert_eq!(report.audit.into_iter().collect::<Vec<_>>(), vec![1, 3]);
+    // Under an OS condition it counts and is not listed twice.
+    let report = scan(
+        "#[cfg_attr(windows, allow(dead_code))] fn f() {}",
+        &Shared::default(),
+    )
+    .unwrap();
+    assert_eq!((report.count, report.audit.len()), (1, 0));
+    assert!(scan("#[allow(clippy::x)] fn f() {}", &Shared::default())
+        .unwrap()
+        .audit
+        .is_empty());
 }

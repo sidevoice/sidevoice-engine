@@ -11,6 +11,12 @@
 //! - a `Command::new("<program>")` of a program that exists on one OS only (shells, `uname`, `launchctl`…);
 //! - the Cargo OS variables (`CARGO_CFG_TARGET_OS`…) read by a build script.
 //!
+//! `allow(dead_code)` / `expect(dead_code)` outside `platform` is not an OS operation and is never counted, unless it
+//! sits under an OS condition (`#[cfg_attr(windows, allow(dead_code))]`), which the rule above counts already. The
+//! others are listed apart under "dead_code suppressions to audit", without failing the job: code can be dead only
+//! because its sole caller is another OS's implementation inside `platform`, and the scan cannot tell that from
+//! ordinary dead code. Limit: the list is a prompt for review, not a check; it does not say why code is dead.
+//!
 //! Limits, by design of a token scan: a program name or OS variable reaching `Command::new` through a constant
 //! or a computed value, and a bare function imported by glob (`use libc::*`), are not followed.
 use std::{
@@ -362,6 +368,8 @@ struct Scan {
     /// Literals already reported, by position.
     literals: HashSet<(usize, usize)>,
     count: usize,
+    /// Lines of `dead_code` suppressions that are not OS code: reported apart, never counted.
+    audit: BTreeSet<usize>,
     /// First pass: only learn names, report nothing.
     collecting: bool,
 }
@@ -433,6 +441,12 @@ fn native_os_link(trees: &[TokenTree]) -> bool {
 }
 
 impl Scan {
+    fn audit_dead_code(&mut self, tree: &TokenTree) {
+        if !self.collecting {
+            self.audit.insert(tree.span().start().line);
+        }
+    }
+
     fn found(&mut self, tree: &TokenTree) {
         if !self.collecting {
             self.count += 1;
@@ -505,12 +519,13 @@ impl Scan {
                         let name = body.first().and_then(ident);
                         let cfg = matches!(name.as_deref(), Some("cfg" | "cfg_attr"));
                         // One attribute is one occurrence, however many rules it breaks.
-                        if name.as_deref() == Some("windows_subsystem")
+                        let counted = name.as_deref() == Some("windows_subsystem")
                             || native_os_link(&body)
-                            || suppresses_dead_code(&body)
-                            || (cfg && os_attr_tokens(&body, &self.shared.cfg_aliases))
-                        {
+                            || (cfg && os_attr_tokens(&body, &self.shared.cfg_aliases));
+                        if counted {
                             self.found(&trees[i]);
+                        } else if suppresses_dead_code(&body) {
+                            self.audit_dead_code(&trees[i]);
                         }
                         // Other attributes can carry paths and strings (`doc`): scan them like any tokens.
                         if !cfg {
@@ -716,6 +731,7 @@ fn mentions_command(stream: TokenStream) -> bool {
 struct Report {
     count: usize,
     lines: BTreeSet<usize>,
+    audit: BTreeSet<usize>,
     shared: Shared,
 }
 
@@ -735,6 +751,7 @@ fn scan(source: &str, shared: &Shared) -> Result<Report> {
     Ok(Report {
         count: scan.count,
         lines: scan.lines,
+        audit: scan.audit,
         shared: scan.shared,
     })
 }
@@ -794,12 +811,17 @@ fn inspect(root: &Path) -> Result<()> {
         }
     }
     let mut errors = Vec::new();
+    let mut audit = Vec::new();
     let mut total = 0;
     for (path, source) in &files {
         if exempt(Path::new(path)) {
             continue;
         }
         let report = scan(source, &shared).map_err(|e| format!("{path}: {e}"))?;
+        if !report.audit.is_empty() {
+            let lines: Vec<String> = report.audit.iter().map(usize::to_string).collect();
+            audit.push(format!("  {path} (lines {})", lines.join(", ")));
+        }
         if report.count > 0 {
             total += report.count;
             let lines: Vec<String> = report.lines.iter().map(usize::to_string).collect();
@@ -809,6 +831,12 @@ fn inspect(root: &Path) -> Result<()> {
                 lines.join(", ")
             ));
         }
+    }
+    if !audit.is_empty() {
+        println!(
+            "dead_code suppressions to audit (not OS code, not counted):\n{}",
+            audit.join("\n")
+        );
     }
     if errors.is_empty() {
         println!("platform boundary: no OS-specific code outside platform");
