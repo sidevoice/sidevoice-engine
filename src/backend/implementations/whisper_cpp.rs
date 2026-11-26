@@ -27,8 +27,18 @@
 //! asks whisper.cpp for its GPU, with flash attention; should Metal not start (the iOS simulator's GPU may lack what
 //! ggml asks of it), whisper.cpp says so in its log and runs on the CPU. The Metal shaders are embedded in the binary
 //! (whisper-rs builds with GGML_METAL_EMBED_LIBRARY) and compiled when the first model loads, so an app ships no
-//! `.metallib`. Windows is built and tested in CI: the CPU, through whisper.cpp built with `GGML_NATIVE=OFF`. CUDA and
-//! Vulkan are features of whisper-rs that are not turned on.
+//! `.metallib`.
+//!
+//! Vulkan on Windows and Linux on x86_64 (the `vulkan` feature of whisper-rs; `platform::local_engines::WHISPER_CPP_VULKAN`),
+//! for NVIDIA, AMD and Intel GPUs alike. The model asks whisper.cpp for its GPU, without flash attention (the whisper.cpp
+//! bundled is 1.8.3, whose Vulkan flash-attention path predates many fixes). The GPU is the first one ggml lists
+//! (`platform::vulkan`, which also gives its memory: a discrete GPU's own, none for an integrated one, so no model is
+//! sent there); when ggml lists none (no loader, no driver, or only a software rasterizer) the model runs on the CPU
+//! and says so: [`BackendModel::confirmed_accelerator`] answers the CPU, not the Vulkan it was asked for. A load that
+//! fails on Vulkan is loaded again on the CPU by the engine. The shaders are compiled to SPIR-V when whisper.cpp is
+//! built (`glslc`, README "Vulkan"). The Vulkan loader is the system's and is opened when first needed, never linked
+//! (`platform::vulkan`), so a binary starts on a machine without one. The CPU is everywhere else, and CUDA is a feature
+//! of whisper-rs that is not turned on.
 //!
 //! # Languages
 //!
@@ -49,7 +59,8 @@ use crate::backend::{Backend, BackendModel, BackendSpec, Library};
 use crate::catalog::BuildEntry;
 use crate::host::{Accelerator, AcceleratorClass};
 use crate::install::Installed;
-use crate::platform::local_engines::WHISPER_CPP_METAL;
+use crate::platform::local_engines::{WHISPER_CPP_METAL, WHISPER_CPP_VULKAN};
+use crate::platform::vulkan;
 use crate::{Error, Result};
 
 #[cfg(test)]
@@ -57,9 +68,11 @@ mod tests;
 
 struct WhisperCpp;
 
-/// Metal where it is compiled in (see *Accelerators*), then the CPU.
+/// Metal or Vulkan where each is compiled in (see *Accelerators*), then the CPU.
 const ACCELERATORS: &[Accelerator] = if WHISPER_CPP_METAL {
     &[Accelerator::Metal, Accelerator::Cpu]
+} else if WHISPER_CPP_VULKAN {
+    &[Accelerator::Vulkan, Accelerator::Cpu]
 } else {
     &[Accelerator::Cpu]
 };
@@ -109,6 +122,8 @@ impl Library for Linked {
 /// and the decoding parameters for each language it has been asked for.
 struct Whisper {
     state: WhisperState,
+    /// The accelerator it is known to run on ([`confirmed_on`]).
+    confirmed: Option<Accelerator>,
     /// By whisper.cpp's language id, `None` for detecting it. whisper-rs gives up the language's C string it hands
     /// whisper.cpp each time a language is set, so each language's parameters are made once and copied after that.
     params: HashMap<Option<c_int>, FullParams<'static, 'static>>,
@@ -123,7 +138,12 @@ impl Whisper {
             .get("model")
             .map(String::as_str)
             .ok_or(Error::new("file-not-installed"))?;
-        let context = context_params(accelerator)?;
+        let mut context = context_params(accelerator)?;
+        let confirmed = confirmed_on(accelerator, vulkan::present());
+        if confirmed == Some(Accelerator::Cpu) {
+            // No GPU listed: the CPU, asked for plainly rather than left to whisper.cpp's fallback.
+            context.use_gpu(false);
+        }
         if path.contains('\0') {
             return Err(Error::new("model-load-failed"));
         }
@@ -134,6 +154,7 @@ impl Whisper {
             .map_err(|_| Error::new("model-load-failed"))?;
         Ok(Self {
             state,
+            confirmed,
             params: HashMap::new(),
         })
     }
@@ -161,19 +182,37 @@ impl Whisper {
 
 /// How whisper.cpp is asked to run a model on `accelerator`, or `unsupported-accelerator`. Two questions, asked apart:
 /// whether this build of the backend runs on it at all ([`supported`]), then whether it is a GPU
-/// ([`Accelerator::class`]). On a GPU it runs there with flash attention, on a CPU with neither. whisper-rs turns flash
-/// attention off by default, though the whisper.cpp it bundles turns it on; on the GPU it shortens the encoder
-/// (whisper.cpp's own benchmarks on Apple silicon), and all it rules out is DTW token timestamps, which the engine does
-/// not ask for. On the CPU it stays off, as it always was.
+/// ([`Accelerator::class`]). On a GPU it runs there, and flash attention is asked for on Metal only ([`flash_attention`]). whisper-rs turns it
+/// off by default, though the whisper.cpp it bundles turns it on; on Metal it shortens the encoder (whisper.cpp's own
+/// benchmarks on Apple silicon), and all it rules out is DTW token timestamps, which the engine does not ask for.
 fn context_params(accelerator: Accelerator) -> Result<WhisperContextParameters<'static>> {
     supported(accelerator)?;
     let on_gpu = accelerator.class() == AcceleratorClass::Gpu;
     let mut params = WhisperContextParameters::default();
-    params.use_gpu(on_gpu).flash_attn(on_gpu);
+    params
+        .use_gpu(on_gpu)
+        .flash_attn(flash_attention(accelerator));
     Ok(params)
 }
 
-/// Whether this build of the backend runs on `accelerator`: one its spec declares (Metal only where it is compiled in,
+/// The accelerator a load on `accelerator` is known to end up on, given whether ggml lists a Vulkan GPU: whisper.cpp
+/// falls back to the CPU by itself when it finds no GPU, so a Vulkan model is a GPU one only when ggml has a GPU for it,
+/// and is confirmed on the CPU when it has none. Metal is whisper.cpp's to start and say so in its log: not confirmed.
+fn confirmed_on(accelerator: Accelerator, vulkan_gpu: bool) -> Option<Accelerator> {
+    match accelerator {
+        Accelerator::Vulkan if vulkan_gpu => Some(Accelerator::Vulkan),
+        Accelerator::Vulkan => Some(Accelerator::Cpu),
+        _ => None,
+    }
+}
+
+/// Whether whisper.cpp is asked for flash attention on `accelerator`: on Metal, where it shortens the encoder, and
+/// nowhere else (the CPU never had it, and Vulkan's is left off with the whisper.cpp bundled).
+fn flash_attention(accelerator: Accelerator) -> bool {
+    accelerator == Accelerator::Metal
+}
+
+/// Whether this build of the backend runs on `accelerator`: one its spec declares (Metal or Vulkan only where compiled in,
 /// see *Accelerators*; the CPU everywhere), else `unsupported-accelerator`.
 fn supported(accelerator: Accelerator) -> Result<()> {
     if ACCELERATORS.contains(&accelerator) {
@@ -201,6 +240,10 @@ fn language_id(tag: &str) -> Result<c_int> {
 impl BackendModel for Whisper {
     fn as_stt(&mut self) -> Option<&mut dyn SttModel> {
         Some(self)
+    }
+
+    fn confirmed_accelerator(&self) -> Option<Accelerator> {
+        self.confirmed
     }
 }
 

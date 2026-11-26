@@ -20,6 +20,17 @@ macro_rules! where_whisper_cpp_builds {
 }
 pub(crate) use where_whisper_cpp_builds;
 
+where_whisper_cpp_builds! {
+    /// Whether the whisper.cpp backend is built with ggml's Vulkan backend: Windows and Linux on x86_64, where
+    /// Cargo.toml turns on whisper-rs's `vulkan` feature (the same condition, which `platform::vulkan` spells out
+    /// too: change them together). Elsewhere Metal or the CPU; Linux on aarch64 builds no Vulkan shaders.
+    #[cfg(native)]
+    pub const WHISPER_CPP_VULKAN: bool = cfg!(all(
+        target_arch = "x86_64",
+        any(windows, target_os = "linux")
+    ));
+}
+
 // Apple silicon, a Mac on `aarch64`, has the MLX backend and runs whisper.cpp on Metal. Rust cannot name a cfg condition
 // once, so it is spelled out side by side here: in `where_mlx_builds!`, in `MLX` and in `WHISPER_CPP_METAL`. Change them together.
 

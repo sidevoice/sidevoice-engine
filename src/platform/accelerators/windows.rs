@@ -13,6 +13,7 @@ const NVIDIA: u32 = 0x10DE;
 /// Windows: the graphics adapters DXGI lists. The system itself says which adapters there are and who makes them; no
 /// vendor library is loaded to find out (a library of NVIDIA's would be searched for, and its dependencies too, in places
 /// an attacker may write to). An NVIDIA adapter means NVIDIA's display driver is installed and running on it.
+/// A Vulkan GPU is the one ggml lists ([`crate::platform::vulkan`]): an adapter DXGI shows may have no Vulkan driver.
 pub struct Os;
 
 impl super::Accelerators for Os {
@@ -31,6 +32,10 @@ impl super::Accelerators for Os {
             Some((desc.VendorId, desc.Flags))
         });
         nvidia_among(adapters)
+    }
+
+    fn vulkan() -> bool {
+        crate::platform::vulkan::present()
     }
 }
 

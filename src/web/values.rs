@@ -226,6 +226,7 @@ fn accelerator(accelerator: Accelerator) -> &'static str {
         Accelerator::Cuda => "cuda",
         Accelerator::CoreMl => "coreml",
         Accelerator::Metal => "metal",
+        Accelerator::Vulkan => "vulkan",
         Accelerator::WebGpu => "webgpu",
         Accelerator::Wasm => "wasm",
     }

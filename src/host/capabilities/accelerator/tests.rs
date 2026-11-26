@@ -9,6 +9,7 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 fn each_accelerator_is_a_gpu_a_neural_engine_or_a_cpu() {
     let classes = [
         (Accelerator::Metal, AcceleratorClass::Gpu),
+        (Accelerator::Vulkan, AcceleratorClass::Gpu),
         (Accelerator::Cuda, AcceleratorClass::Gpu),
         (Accelerator::WebGpu, AcceleratorClass::Gpu),
         (Accelerator::CoreMl, AcceleratorClass::NeuralEngine),

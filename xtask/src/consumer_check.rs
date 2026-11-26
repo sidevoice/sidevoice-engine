@@ -6,6 +6,7 @@
 //! run, and must report both linked backends. `SHERPA_ONNX_LIB_DIR` comes from the environment, as in the build's setup.
 
 use std::env;
+use std::path::PathBuf;
 use std::process::Command;
 
 use crate::{empty_dir, read, repo, run_in, write, Result};
@@ -45,7 +46,12 @@ pub(crate) fn run() -> Result<()> {
     write(&dir.join(".cargo/config.toml"), CONFIG.as_bytes())?;
     // The engine's own lock, so that the consumer builds the versions the engine is tested with.
     write(&dir.join("Cargo.lock"), &read(&repo().join("Cargo.lock"))?)?;
-    let target = root.join("target");
+    // CARGO_TARGET_DIR, when the environment sets one (CI does on Windows, where the Vulkan build needs a short path),
+    // else beside the consumer; in a directory of its own, so the engine's own build is not shared.
+    let target = env::var_os("CARGO_TARGET_DIR").map_or_else(
+        || root.join("target"),
+        |dir| PathBuf::from(dir).join("consumer"),
+    );
     run_in(
         &dir,
         "cargo build --target-dir",

@@ -6,7 +6,7 @@ mod tests;
 /// The list is fixed: each accelerator needs backend code anyway, and a fixed list lets the funnel, the catalogue and
 /// the app name it. Adding one is a change to the engine. It is `#[non_exhaustive]`, so adding one is not a breaking
 /// change: match it with a wildcard arm. A JavaScript host and the catalogue name each by a stable id: "cpu", "cuda",
-/// "coreml", "metal", "webgpu", "wasm".
+/// "coreml", "metal", "vulkan", "webgpu", "wasm".
 ///
 /// Each variant says when a host reports it: what it can see, not whether it works.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize)]
@@ -17,6 +17,9 @@ pub enum Accelerator {
     Cpu,
     /// An NVIDIA GPU through CUDA. Reported when the host sees an NVIDIA GPU; the probe checks the driver.
     Cuda,
+    /// A GPU through Vulkan: NVIDIA, AMD or Intel. Reported on Windows and Linux when the OS shows a GPU with a Vulkan
+    /// driver; the backend's load checks that a device takes the model, and the CPU runs it when none does.
+    Vulkan,
     /// Apple's Core ML. Reported on Apple platforms; the probe checks that a model loads.
     CoreMl,
     /// An Apple GPU through Metal. Reported on Apple silicon.
@@ -35,7 +38,7 @@ impl Accelerator {
     pub const fn class(self) -> AcceleratorClass {
         // Exhaustive on purpose: a new accelerator does not compile until it is given its class.
         match self {
-            Self::Metal | Self::Cuda | Self::WebGpu => AcceleratorClass::Gpu,
+            Self::Metal | Self::Cuda | Self::Vulkan | Self::WebGpu => AcceleratorClass::Gpu,
             Self::CoreMl => AcceleratorClass::NeuralEngine,
             Self::Cpu | Self::Wasm => AcceleratorClass::Cpu,
         }
@@ -53,7 +56,7 @@ impl Accelerator {
 #[serde(rename_all = "kebab-case")]
 #[non_exhaustive]
 pub enum AcceleratorClass {
-    /// A GPU: Metal, CUDA, WebGPU.
+    /// A GPU: Metal, CUDA, Vulkan, WebGPU.
     Gpu,
     /// A neural engine: Core ML (Apple's Neural Engine, or whatever Core ML schedules it on).
     NeuralEngine,

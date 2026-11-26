@@ -9,4 +9,8 @@ impl super::Accelerators for Os {
     fn nvidia() -> Nvidia {
         Nvidia::Absent
     }
+
+    fn vulkan() -> bool {
+        false
+    }
 }
