@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/sidevoice/sidevoice-engine/compare/v0.14.1...v0.15.0) (2026-11-26)
+
+
+### Features
+
+* **whisper:** use the GPU through Vulkan on Windows and Linux ([#179](https://github.com/sidevoice/sidevoice-engine/issues/179)) ([defdef4](https://github.com/sidevoice/sidevoice-engine/commit/defdef4118fdbf18fcd1023684d8063d515dc63f))
+
 ## [0.14.1](https://github.com/sidevoice/sidevoice-engine/compare/v0.14.0...v0.14.1) (2026-11-18)
 
 
