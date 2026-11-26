@@ -1,5 +1,7 @@
 # Releasing
 
+This file is self-sufficient: it holds what anyone needs to build, release and download this repository. The maintainers also follow an internal release guideline shared by all Sidevoice repositories ([releasing guideline](https://github.com/sidevoice/.github-private/blob/main/docs/releasing.md), maintainers only; nothing here depends on it).
+
 One version for the whole workspace, tagged `vX.Y.Z`. It lives in the workspace's `Cargo.toml` (and `Cargo.lock`);
 release-please moves it (`release-please-config.json`: release type `rust`, `bump-minor-pre-major`, draft
 releases). Never edit it by hand.
@@ -9,7 +11,7 @@ The engine reaches its consumers in two ways:
 - **Native consumers** (the desktop app, later the core) depend on the crate at a git tag and compile them
   themselves: source, no binaries.
 - **The web** gets `@sidevoice/engine` on npm: the wasm32 build of the crate as `wasm-bindgen --target web`
-  emits it, with its `package.json`. Staged for `vX.Y.Z` releases only, and on npm once the operator approves it
+  emits it, with its `package.json`. Staged for `vX.Y.Z` releases only, and on npm once a maintainer approves it
   ([npm](#npm)).
 
 ## What each act means
@@ -19,7 +21,7 @@ The engine reaches its consumers in two ways:
 | Open / update a PR | anyone | `ci`: format and Clippy (Linux and macOS), the native tests on every target, the wasm32 tests in Node, and the npm package built and installed as a consumer installs it (`cargo xtask npm`, `npm-smoke`), publishing nothing; the package is kept 7 days as the artifact `engine-npm-<head sha>` ([A pull request's package](#a-pull-requests-package)). **PR title is a conventional commit**. |
 | Squash-merge into `main` | reviewer | The PR title becomes the commit. `release` runs: the wasm32 tests, the npm package built and smoke-tested; then it attests the assets, attaches them to the **`nightly`** pre-release, reads them back, verifies them and publishes it. Never on npm. release-please opens or updates the **release PR** ("chore(main): release X.Y.Z"). |
 | Merge the release PR | a maintainer | **This is the release.** release-please tags `vX.Y.Z` and creates a draft GitHub Release whose notes are that version's changelog; `release` runs from the tag, attaches and verifies the assets, and publishes the Release; then it **stages** `@sidevoice/engine@X.Y.Z` on npm. |
-| Approve the staged `@sidevoice/engine` on npmjs.com | the operator (2FA) | The version is on npm: `npm install @sidevoice/engine` gets it (dist-tag `latest`, or `next` for a candidate). |
+| Approve the staged `@sidevoice/engine` on npmjs.com | a maintainer (2FA), other than the one who cut the release | The version is on npm: `npm install @sidevoice/engine` gets it (dist-tag `latest`, or `next` for a candidate). |
 
 Everything besides the GitHub steps is either plain `cargo` or code in `xtask/` (`cargo xtask npm | npm-smoke |
 manifest | publish | npm-publish`, each described at the top of `xtask/src/main.rs`: thin calls to `cargo`,
@@ -72,8 +74,8 @@ Release itself.
 ## npm
 
 Every `vX.Y.Z` release (never the nightly) goes to npm as `@sidevoice/engine` at that version, dist-tag `latest`, or
-`next` for a version with a `-` suffix (a release candidate). **Every version is staged, and the operator approves
-it.** Nothing reaches npm without the operator's approval: that is the organisation's policy, and the package allows staged
+`next` for a version with a `-` suffix (a release candidate). **Every version is staged, and a maintainer (2FA), a team member other than the one who cut the release,
+approves it.** Nothing reaches npm without that approval: that is the organisation's policy, and the package allows staged
 publishing only.
 
 Only the release workflow stages, by npm's **trusted publishing** (OIDC) with provenance: no npm token exists. The
@@ -102,14 +104,14 @@ Re-running carries on:
   does not answer that token, staging goes ahead. If npm then refuses because the version is staged already, the error
   says to approve or reject it.
 
-**Success means "staged, awaiting the operator's approval".** The job's last line and its summary give the stage id
+**Success means "staged, awaiting a maintainer's approval".** The job's last line and its summary give the stage id
 and how to approve it: on npmjs.com (`@sidevoice/engine` → staged versions) or with `npm stage approve <id>`, both
 with 2FA. A staged version can also be rejected (`npm stage reject <id>`). Until it is approved, nothing new is on
 npm, and `npm install @sidevoice/engine` keeps resolving the previous version.
 
 ### Before the first versioned release
 
-The operator sets this up once on npmjs.com, before the first release PR is merged. Until then the `publish-npm` job
+A maintainer sets this up once on npmjs.com, before the first release PR is merged. Until then the `publish-npm` job
 fails and nothing reaches npm; the GitHub Release is published regardless.
 
 1. **The scope and the name.** `@sidevoice/engine` lives in the `@sidevoice` organisation, which must allow its
@@ -185,6 +187,8 @@ artifact is not there yet; when the job that builds it failed, it is never there
 - A release run is never cancelled half-way; nightlies queue behind each other.
 
 ## What this needs from the repository settings
+
+Set by the maintainers in the repository; nothing for anyone else to do.
 
 - Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests**: without it
   release-please cannot open its PR.
